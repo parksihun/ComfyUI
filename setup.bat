@@ -2,15 +2,17 @@
 cd /d %~dp0
 Title ComfyUI-Easy-Install - repo setup
 
-echo [1/3] custom_nodes\ComfyUI-ShortsRemake -> ComfyUI\custom_nodes (junction)
+echo [1/3] custom_nodes\* -> ComfyUI\custom_nodes (junctions)
 if not exist "ComfyUI\custom_nodes" (
     echo   ComfyUI\custom_nodes not found. Run this from the ComfyUI-Easy-Install folder.
     pause & exit /b 1
 )
-if exist "ComfyUI\custom_nodes\ComfyUI-ShortsRemake" (
-    echo   already present, skipping
-) else (
-    mklink /J "ComfyUI\custom_nodes\ComfyUI-ShortsRemake" "custom_nodes\ComfyUI-ShortsRemake"
+for /d %%D in ("custom_nodes\*") do (
+    if exist "ComfyUI\custom_nodes\%%~nxD" (
+        echo   %%~nxD already present, skipping
+    ) else (
+        mklink /J "ComfyUI\custom_nodes\%%~nxD" "%%D"
+    )
 )
 
 echo [2/3] python packages for ComfyUI-ShortsRemake (yt-dlp)

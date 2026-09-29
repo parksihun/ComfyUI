@@ -14,7 +14,9 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 │   ├── 4_ALL_in_One.json                      올인원 (1→2→3): 영상 파일 + 사진 → 인물 교체 영상
 │   ├── YouTube_Video_Analysis_GPU.json / _CPU.json  영상 내용 요약 (단일 실행)
 │   └── README_Shorts_Remake.md
+│   └── wan22_14b_flf_chain.json               Wan 2.2 첫/끝 프레임 구간 연결 (WanChain 노드 사용)
 ├── custom_nodes/ComfyUI-ShortsRemake/   위 워크플로우가 쓰는 커스텀 노드 9개 (yt-dlp 필요, setup.bat이 설치)
+├── custom_nodes/ComfyUI-WanChain/       Wan 2.2 FLF 구간 연결 보조 노드 2개 (Load Image Optional, Collect Segments)
 ├── tools/build_shorts_workflows.py      0_~4_ 워크플로우 JSON 생성 스크립트
 ├── setup.bat                            새 PC에서 노드 링크 + 의존성 설치 + 워크플로우 복사
 ├── Download_Models_Shorts.bat           Shorts 파이프라인 모델 전부 다운로드 (없는 파일만 받음, 오프라인 서버용)
@@ -39,7 +41,7 @@ git checkout -f -b main origin/main
 setup.bat
 ```
 
-`setup.bat`은 `custom_nodes\ComfyUI-ShortsRemake`를 `ComfyUI\custom_nodes\`에 정션(폴더 링크)으로 연결하고,
+`setup.bat`은 `custom_nodes\` 아래 폴더들(ShortsRemake, WanChain)을 `ComfyUI\custom_nodes\`에 정션(폴더 링크)으로 연결하고,
 노드가 쓰는 yt-dlp를 `python_embeded`에 설치한 뒤, `workflow\*.json`을 ComfyUI 사이드바용 폴더로 복사합니다. 이후 ComfyUI를 재시작하면 됩니다.
 
 ## 이 PC에서 수정 후 올리기
@@ -50,7 +52,7 @@ git commit -m "설명"
 git push
 ```
 
-`ComfyUI\custom_nodes\ComfyUI-ShortsRemake`는 정션이므로 그 안에서 고쳐도 `custom_nodes\ComfyUI-ShortsRemake`가 바뀌고 그대로 커밋됩니다.
+`ComfyUI\custom_nodes\ComfyUI-ShortsRemake`, `ComfyUI-WanChain`은 정션이므로 그 안에서 고쳐도 `custom_nodes\` 쪽 원본이 바뀌고 그대로 커밋됩니다.
 워크플로우를 ComfyUI UI에서 저장하면 `ComfyUI\user\default\workflows\`에 저장되므로, 올리려면 `workflow\`로 복사해야 합니다.
 
 ## 필요한 것

@@ -16,6 +16,8 @@
 !custom_nodes/
 !custom_nodes/ComfyUI-ShortsRemake/
 !custom_nodes/ComfyUI-ShortsRemake/**
+!custom_nodes/ComfyUI-WanChain/
+!custom_nodes/ComfyUI-WanChain/**
 
 !tools/
 !tools/**
