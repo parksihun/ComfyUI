@@ -209,7 +209,7 @@ def frag_analyze(with_youtube=False, free_from="summary"):
              [outp("segment_frames", "IMAGE", [1]), outp("segment_index", "INT", None), outp("segment_label", "STRING", None),
               outp("overview_frames", "IMAGE", [2]), outp("count", "INT", None), outp("video_path", "STRING", None),
               outp("segments_json", "STRING", [5])],
-             ["", "image", "", "fixed", 5.0, 1.5, 0.5, 8, 384],
+             ["", "", "fixed", 5.0, 1.5, 0.5, 8, 384],
              title="Shorts Video Segments - video_file에서 영상 선택, 5초 / 장면 단위로 나누기"),
         node(2, "AILab_QwenVL_Advanced", [-540, 80], [460, 620],
              [inp("image", "IMAGE", None), inp("video", "IMAGE", 1)],
@@ -617,8 +617,8 @@ def widget_names_for(ntype):
             names.append(name)
             if name in ("seed", "noise_seed") or opts.get("control_after_generate"):
                 names.append(None)
-            if opts.get("image_upload") or opts.get("video_upload") or opts.get("audio_upload"):
-                names.append(None)
+            if opts.get("image_upload") or opts.get("audio_upload"):
+                names.append(None)  # (video_upload combos on custom nodes carry no extra widget value)
     return names
 
 
