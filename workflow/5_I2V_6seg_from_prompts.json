@@ -863,6 +863,82 @@
       "widgets_values": []
     },
     {
+      "id": 22,
+      "type": "CreateVideo",
+      "pos": [
+        1960,
+        130
+      ],
+      "size": [
+        220,
+        78
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 27
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": null,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            28
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        16
+      ]
+    },
+    {
+      "id": 23,
+      "type": "SaveVideo",
+      "pos": [
+        2220,
+        40
+      ],
+      "size": [
+        300,
+        440
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 28
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "video/wan14b_30s/seg1",
+        "auto",
+        "auto"
+      ],
+      "title": "구간 1 저장"
+    },
+    {
       "id": 24,
       "type": "ImageFromBatch",
       "pos": [
@@ -874,7 +950,7 @@
         82
       ],
       "flags": {},
-      "order": 18,
+      "order": 20,
       "mode": 0,
       "inputs": [
         {
@@ -914,7 +990,7 @@
         100
       ],
       "flags": {},
-      "order": 19,
+      "order": 21,
       "mode": 0,
       "inputs": [
         {
@@ -966,7 +1042,7 @@
         90
       ],
       "flags": {},
-      "order": 20,
+      "order": 22,
       "mode": 0,
       "inputs": [
         {
@@ -1013,7 +1089,7 @@
         210
       ],
       "flags": {},
-      "order": 21,
+      "order": 23,
       "mode": 0,
       "inputs": [
         {
@@ -1118,7 +1194,7 @@
         334
       ],
       "flags": {},
-      "order": 22,
+      "order": 24,
       "mode": 0,
       "inputs": [
         {
@@ -1181,7 +1257,7 @@
         334
       ],
       "flags": {},
-      "order": 23,
+      "order": 25,
       "mode": 0,
       "inputs": [
         {
@@ -1244,7 +1320,7 @@
         46
       ],
       "flags": {},
-      "order": 24,
+      "order": 26,
       "mode": 0,
       "inputs": [
         {
@@ -1275,6 +1351,82 @@
       "widgets_values": []
     },
     {
+      "id": 32,
+      "type": "CreateVideo",
+      "pos": [
+        1960,
+        690
+      ],
+      "size": [
+        220,
+        78
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 51
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": null,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            52
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        16
+      ]
+    },
+    {
+      "id": 33,
+      "type": "SaveVideo",
+      "pos": [
+        2220,
+        600
+      ],
+      "size": [
+        300,
+        440
+      ],
+      "flags": {},
+      "order": 28,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 52
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "video/wan14b_30s/seg2",
+        "auto",
+        "auto"
+      ],
+      "title": "구간 2 저장"
+    },
+    {
       "id": 34,
       "type": "ImageFromBatch",
       "pos": [
@@ -1286,7 +1438,7 @@
         82
       ],
       "flags": {},
-      "order": 25,
+      "order": 29,
       "mode": 0,
       "inputs": [
         {
@@ -1326,7 +1478,7 @@
         100
       ],
       "flags": {},
-      "order": 26,
+      "order": 30,
       "mode": 0,
       "inputs": [
         {
@@ -1378,7 +1530,7 @@
         90
       ],
       "flags": {},
-      "order": 27,
+      "order": 31,
       "mode": 0,
       "inputs": [
         {
@@ -1425,7 +1577,7 @@
         210
       ],
       "flags": {},
-      "order": 28,
+      "order": 32,
       "mode": 0,
       "inputs": [
         {
@@ -1530,7 +1682,7 @@
         334
       ],
       "flags": {},
-      "order": 29,
+      "order": 33,
       "mode": 0,
       "inputs": [
         {
@@ -1593,7 +1745,7 @@
         334
       ],
       "flags": {},
-      "order": 30,
+      "order": 34,
       "mode": 0,
       "inputs": [
         {
@@ -1656,7 +1808,7 @@
         46
       ],
       "flags": {},
-      "order": 31,
+      "order": 35,
       "mode": 0,
       "inputs": [
         {
@@ -1687,6 +1839,82 @@
       "widgets_values": []
     },
     {
+      "id": 43,
+      "type": "CreateVideo",
+      "pos": [
+        1960,
+        1250
+      ],
+      "size": [
+        220,
+        78
+      ],
+      "flags": {},
+      "order": 36,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 76
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": null,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            77
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        16
+      ]
+    },
+    {
+      "id": 44,
+      "type": "SaveVideo",
+      "pos": [
+        2220,
+        1160
+      ],
+      "size": [
+        300,
+        440
+      ],
+      "flags": {},
+      "order": 37,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 77
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "video/wan14b_30s/seg3",
+        "auto",
+        "auto"
+      ],
+      "title": "구간 3 저장"
+    },
+    {
       "id": 45,
       "type": "ImageFromBatch",
       "pos": [
@@ -1698,7 +1926,7 @@
         82
       ],
       "flags": {},
-      "order": 32,
+      "order": 38,
       "mode": 0,
       "inputs": [
         {
@@ -1738,7 +1966,7 @@
         100
       ],
       "flags": {},
-      "order": 33,
+      "order": 39,
       "mode": 0,
       "inputs": [
         {
@@ -1790,7 +2018,7 @@
         90
       ],
       "flags": {},
-      "order": 34,
+      "order": 40,
       "mode": 0,
       "inputs": [
         {
@@ -1837,7 +2065,7 @@
         210
       ],
       "flags": {},
-      "order": 35,
+      "order": 41,
       "mode": 0,
       "inputs": [
         {
@@ -1942,7 +2170,7 @@
         334
       ],
       "flags": {},
-      "order": 36,
+      "order": 42,
       "mode": 0,
       "inputs": [
         {
@@ -2005,7 +2233,7 @@
         334
       ],
       "flags": {},
-      "order": 37,
+      "order": 43,
       "mode": 0,
       "inputs": [
         {
@@ -2068,7 +2296,7 @@
         46
       ],
       "flags": {},
-      "order": 38,
+      "order": 44,
       "mode": 0,
       "inputs": [
         {
@@ -2099,6 +2327,82 @@
       "widgets_values": []
     },
     {
+      "id": 54,
+      "type": "CreateVideo",
+      "pos": [
+        1960,
+        1810
+      ],
+      "size": [
+        220,
+        78
+      ],
+      "flags": {},
+      "order": 45,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 101
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": null,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            102
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        16
+      ]
+    },
+    {
+      "id": 55,
+      "type": "SaveVideo",
+      "pos": [
+        2220,
+        1720
+      ],
+      "size": [
+        300,
+        440
+      ],
+      "flags": {},
+      "order": 46,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 102
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "video/wan14b_30s/seg4",
+        "auto",
+        "auto"
+      ],
+      "title": "구간 4 저장"
+    },
+    {
       "id": 56,
       "type": "ImageFromBatch",
       "pos": [
@@ -2110,7 +2414,7 @@
         82
       ],
       "flags": {},
-      "order": 39,
+      "order": 47,
       "mode": 0,
       "inputs": [
         {
@@ -2150,7 +2454,7 @@
         100
       ],
       "flags": {},
-      "order": 40,
+      "order": 48,
       "mode": 0,
       "inputs": [
         {
@@ -2202,7 +2506,7 @@
         90
       ],
       "flags": {},
-      "order": 41,
+      "order": 49,
       "mode": 0,
       "inputs": [
         {
@@ -2249,7 +2553,7 @@
         210
       ],
       "flags": {},
-      "order": 42,
+      "order": 50,
       "mode": 0,
       "inputs": [
         {
@@ -2354,7 +2658,7 @@
         334
       ],
       "flags": {},
-      "order": 43,
+      "order": 51,
       "mode": 0,
       "inputs": [
         {
@@ -2417,7 +2721,7 @@
         334
       ],
       "flags": {},
-      "order": 44,
+      "order": 52,
       "mode": 0,
       "inputs": [
         {
@@ -2480,7 +2784,7 @@
         46
       ],
       "flags": {},
-      "order": 45,
+      "order": 53,
       "mode": 0,
       "inputs": [
         {
@@ -2511,6 +2815,82 @@
       "widgets_values": []
     },
     {
+      "id": 65,
+      "type": "CreateVideo",
+      "pos": [
+        1960,
+        2370
+      ],
+      "size": [
+        220,
+        78
+      ],
+      "flags": {},
+      "order": 54,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 126
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": null,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            127
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        16
+      ]
+    },
+    {
+      "id": 66,
+      "type": "SaveVideo",
+      "pos": [
+        2220,
+        2280
+      ],
+      "size": [
+        300,
+        440
+      ],
+      "flags": {},
+      "order": 55,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 127
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "video/wan14b_30s/seg5",
+        "auto",
+        "auto"
+      ],
+      "title": "구간 5 저장"
+    },
+    {
       "id": 67,
       "type": "ImageFromBatch",
       "pos": [
@@ -2522,7 +2902,7 @@
         82
       ],
       "flags": {},
-      "order": 46,
+      "order": 56,
       "mode": 0,
       "inputs": [
         {
@@ -2562,7 +2942,7 @@
         100
       ],
       "flags": {},
-      "order": 47,
+      "order": 57,
       "mode": 0,
       "inputs": [
         {
@@ -2614,7 +2994,7 @@
         90
       ],
       "flags": {},
-      "order": 48,
+      "order": 58,
       "mode": 0,
       "inputs": [
         {
@@ -2661,7 +3041,7 @@
         210
       ],
       "flags": {},
-      "order": 49,
+      "order": 59,
       "mode": 0,
       "inputs": [
         {
@@ -2766,7 +3146,7 @@
         334
       ],
       "flags": {},
-      "order": 50,
+      "order": 60,
       "mode": 0,
       "inputs": [
         {
@@ -2829,7 +3209,7 @@
         334
       ],
       "flags": {},
-      "order": 51,
+      "order": 61,
       "mode": 0,
       "inputs": [
         {
@@ -2892,7 +3272,7 @@
         46
       ],
       "flags": {},
-      "order": 52,
+      "order": 62,
       "mode": 0,
       "inputs": [
         {
@@ -2922,6 +3302,82 @@
       "widgets_values": []
     },
     {
+      "id": 76,
+      "type": "CreateVideo",
+      "pos": [
+        1960,
+        2930
+      ],
+      "size": [
+        220,
+        78
+      ],
+      "flags": {},
+      "order": 63,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 151
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": null,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            152
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        16
+      ]
+    },
+    {
+      "id": 77,
+      "type": "SaveVideo",
+      "pos": [
+        2220,
+        2840
+      ],
+      "size": [
+        300,
+        440
+      ],
+      "flags": {},
+      "order": 64,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 152
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "video/wan14b_30s/seg6",
+        "auto",
+        "auto"
+      ],
+      "title": "구간 6 저장"
+    },
+    {
       "id": 84,
       "type": "CreateVideo",
       "pos": [
@@ -2933,7 +3389,7 @@
         78
       ],
       "flags": {},
-      "order": 53,
+      "order": 65,
       "mode": 0,
       "inputs": [
         {
@@ -2977,7 +3433,7 @@
         620
       ],
       "flags": {},
-      "order": 54,
+      "order": 66,
       "mode": 0,
       "inputs": [
         {
@@ -3009,7 +3465,7 @@
         560
       ],
       "flags": {},
-      "order": 55,
+      "order": 67,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -3033,7 +3489,7 @@
         440
       ],
       "flags": {},
-      "order": 56,
+      "order": 68,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -3141,7 +3597,7 @@
         640
       ],
       "flags": {},
-      "order": 57,
+      "order": 69,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -3149,7 +3605,7 @@
         "Node name for S&R": "MarkdownNote"
       },
       "widgets_values": [
-        "## 5번: 분석 프롬프트 → Wan 2.2 I2V 6구간 (30초)\n\n`video_wan22_14b_i2v_6seg_30s`와 같은 그래프이고, 구간별 프롬프트 6개를 손으로 적는 대신 `Shorts Prompts Fanout`이 1번 결과 **prompts.json에서 읽어** 채웁니다.\n\n**입력**\n- `Shorts Prompts Fanout`의 `prompts_file`: 1번 결과 prompts.json을 드롭다운에서 선택. `first_segment`로 시작 구간을 고를 수 있습니다 (7이면 7~12 구간)\n- `시작 이미지`: 합성한 참조 이미지 (2번 결과 reference.png 또는 직접 만든 이미지)\n- `공통 스타일` 노드(파란색): 모든 구간 뒤에 붙는 문장. Fanout의 `common` 출력을 여기 연결하면 1번이 뽑은 배경 설명이 대신 들어갑니다\n- width/height는 `Shorts Size From Image`가 시작 이미지 비율대로 자동 계산합니다 (긴 변 `max_side`=1280, 16의 배수). 세로 사진이면 720x1280, 가로면 1280x720. 빠르게 보려면 `max_side`를 960이나 832로\n\n**3번(Wan Animate 2)과의 차이**: 원본 동작을 그대로 옮기지 않고 프롬프트 설명대로 움직입니다. 대신 구간이 앞 구간의 마지막 프레임에서 이어져 매끄럽고, 클립당 시간이 훨씬 짧습니다 (lightx2v 4-step).\n**구간이 6개보다 적으면** (30초 미만 영상) `Shorts Segments Collect`가 있는 구간까지만 실행하고 끝냅니다. 없는 구간의 샘플러는 아예 돌지 않습니다.\n**구간이 6개보다 많으면** `first_segment`를 7, 13 으로 바꿔 다시 돌리세요. 이때 `시작 이미지`에는 이전 회차가 `output/video/wan14b_30s/next_start_*.png`로 저장한 마지막 프레임을 넣으면 이어집니다.\n\n**출력**: `output/video/wan14b_30s/full_*.mp4` (합친 영상) + `next_start_*.png` (마지막 프레임)"
+        "## 5번: 분석 프롬프트 → Wan 2.2 I2V 6구간 (30초)\n\n`video_wan22_14b_i2v_6seg_30s`와 같은 그래프이고, 구간별 프롬프트 6개를 손으로 적는 대신 `Shorts Prompts Fanout`이 1번 결과 **prompts.json에서 읽어** 채웁니다.\n\n**입력**\n- `Shorts Prompts Fanout`의 `prompts_file`: 1번 결과 prompts.json을 드롭다운에서 선택. `first_segment`로 시작 구간을 고를 수 있습니다 (7이면 7~12 구간)\n- `시작 이미지`: 합성한 참조 이미지 (2번 결과 reference.png 또는 직접 만든 이미지)\n- `공통 스타일` 노드(파란색): 모든 구간 뒤에 붙는 문장. Fanout의 `common` 출력을 여기 연결하면 1번이 뽑은 배경 설명이 대신 들어갑니다\n- width/height는 `Shorts Size From Image`가 시작 이미지 비율대로 자동 계산합니다 (긴 변 `max_side`=1280, 16의 배수). 세로 사진이면 720x1280, 가로면 1280x720. 빠르게 보려면 `max_side`를 960이나 832로\n\n**3번(Wan Animate 2)과의 차이**: 원본 동작을 그대로 옮기지 않고 프롬프트 설명대로 움직입니다. 대신 구간이 앞 구간의 마지막 프레임에서 이어져 매끄럽고, 클립당 시간이 훨씬 짧습니다 (lightx2v 4-step).\n**구간이 6개보다 적으면** (30초 미만 영상) `Shorts Segments Collect`가 있는 구간까지만 실행하고 끝냅니다. 없는 구간의 샘플러는 아예 돌지 않습니다.\n**구간이 6개보다 많으면** `first_segment`를 7, 13 으로 바꿔 다시 돌리세요. 이때 `시작 이미지`에는 이전 회차가 `output/video/wan14b_30s/next_start_*.png`로 저장한 마지막 프레임을 넣으면 이어집니다.\n\n**출력**: `output/video/wan14b_30s/seg1..6_*.mp4` (구간별, 생성되는 대로 확인 가능) + `full_*.mp4` (합친 영상) + `next_start_*.png` (마지막 프레임)"
       ],
       "title": "사용법 (5번 I2V 6구간)",
       "color": "#223",
@@ -3164,10 +3620,10 @@
       ],
       "size": [
         400,
-        330
+        460
       ],
       "flags": {},
-      "order": 58,
+      "order": 70,
       "mode": 0,
       "inputs": [
         {
@@ -3235,6 +3691,58 @@
           "name": "count",
           "type": "INT",
           "links": null
+        },
+        {
+          "name": "seg_1",
+          "type": "IMAGE",
+          "links": [
+            27
+          ]
+        },
+        {
+          "name": "seg_2",
+          "type": "IMAGE",
+          "links": [
+            51
+          ]
+        },
+        {
+          "name": "seg_3",
+          "type": "IMAGE",
+          "links": [
+            76
+          ]
+        },
+        {
+          "name": "seg_4",
+          "type": "IMAGE",
+          "links": [
+            101
+          ]
+        },
+        {
+          "name": "seg_5",
+          "type": "IMAGE",
+          "links": [
+            126
+          ]
+        },
+        {
+          "name": "seg_6",
+          "type": "IMAGE",
+          "links": [
+            151
+          ]
+        },
+        {
+          "name": "seg_7",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "seg_8",
+          "type": "IMAGE",
+          "links": null
         }
       ],
       "properties": {
@@ -3257,7 +3765,7 @@
         320
       ],
       "flags": {},
-      "order": 59,
+      "order": 71,
       "mode": 0,
       "inputs": [
         {
@@ -3287,7 +3795,7 @@
         130
       ],
       "flags": {},
-      "order": 60,
+      "order": 72,
       "mode": 0,
       "inputs": [
         {
@@ -3544,6 +4052,22 @@
       "VAE"
     ],
     [
+      27,
+      89,
+      3,
+      22,
+      0,
+      "IMAGE"
+    ],
+    [
+      28,
+      22,
+      0,
+      23,
+      0,
+      "VIDEO"
+    ],
+    [
       29,
       21,
       0,
@@ -3710,6 +4234,22 @@
       31,
       1,
       "VAE"
+    ],
+    [
+      51,
+      89,
+      4,
+      32,
+      0,
+      "IMAGE"
+    ],
+    [
+      52,
+      32,
+      0,
+      33,
+      0,
+      "VIDEO"
     ],
     [
       53,
@@ -3880,6 +4420,22 @@
       "VAE"
     ],
     [
+      76,
+      89,
+      5,
+      43,
+      0,
+      "IMAGE"
+    ],
+    [
+      77,
+      43,
+      0,
+      44,
+      0,
+      "VIDEO"
+    ],
+    [
       78,
       42,
       0,
@@ -4046,6 +4602,22 @@
       53,
       1,
       "VAE"
+    ],
+    [
+      101,
+      89,
+      6,
+      54,
+      0,
+      "IMAGE"
+    ],
+    [
+      102,
+      54,
+      0,
+      55,
+      0,
+      "VIDEO"
     ],
     [
       103,
@@ -4216,6 +4788,22 @@
       "VAE"
     ],
     [
+      126,
+      89,
+      7,
+      65,
+      0,
+      "IMAGE"
+    ],
+    [
+      127,
+      65,
+      0,
+      66,
+      0,
+      "VIDEO"
+    ],
+    [
       128,
       64,
       0,
@@ -4382,6 +4970,22 @@
       75,
       1,
       "VAE"
+    ],
+    [
+      151,
+      89,
+      8,
+      76,
+      0,
+      "IMAGE"
+    ],
+    [
+      152,
+      76,
+      0,
+      77,
+      0,
+      "VIDEO"
     ],
     [
       165,

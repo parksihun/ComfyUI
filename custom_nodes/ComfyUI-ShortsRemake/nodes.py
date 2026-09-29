@@ -1356,10 +1356,13 @@ class ShortsSegmentsCollect:
             "optional": {f"seg_{i + 1}": ("IMAGE", {"lazy": True}) for i in range(COLLECT_SLOTS)},
         }
 
-    RETURN_TYPES = ("IMAGE", "IMAGE", "INT")
-    RETURN_NAMES = ("frames", "last_frame", "count")
+    RETURN_TYPES = tuple(["IMAGE", "IMAGE", "INT"] + ["IMAGE"] * COLLECT_SLOTS)
+    RETURN_NAMES = tuple(["frames", "last_frame", "count"] + [f"seg_{i + 1}" for i in range(COLLECT_SLOTS)])
     FUNCTION = "collect"
     CATEGORY = "ShortsRemake"
+    DESCRIPTION = ("Lazy: only the first `count` segments run. frames = all of them joined; seg_N = that segment's own "
+                   "frames (for per-segment previews/saves) - segments beyond count are execution-blocked, so their "
+                   "save nodes are skipped instead of forcing the segment to render.")
 
     def check_lazy_status(self, count, drop_duplicate_first_frame=True, **kw):
         n = max(0, min(int(count), COLLECT_SLOTS))
@@ -1382,7 +1385,12 @@ class ShortsSegmentsCollect:
             parts.append(t)
         merged = torch.cat(parts, dim=0)
         print(f"[ShortsRemake] collected {len(segs)} segment(s) -> {merged.shape[0]} frames")
-        return (merged, merged[-1:], len(segs))
+        try:
+            from comfy_execution.graph_utils import ExecutionBlocker
+        except ImportError:  # older ComfyUI
+            from comfy_execution.graph import ExecutionBlocker
+        per_seg = [segs[i] if i < len(segs) else ExecutionBlocker(None) for i in range(COLLECT_SLOTS)]
+        return tuple([merged, merged[-1:], len(segs)] + per_seg)
 
 
 # --------------------------------------------------------------------------- #

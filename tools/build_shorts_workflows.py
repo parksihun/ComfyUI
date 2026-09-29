@@ -764,8 +764,8 @@ I2V_SOURCE = "video_wan22_14b_i2v_6seg_30s.json"
 I2V_SEGMENT_PROMPT_NODES = [15, 25, 36, 47, 58, 69]   # PrimitiveStringMultiline '구간 N 프롬프트' -> replaced by the fan-out
 I2V_CONCAT_NODES = [16, 26, 37, 48, 59, 70]           # StringConcatenate: string_a <- segment prompt
 I2V_DECODE_NODES = [21, 31, 42, 53, 64, 75]           # VAEDecode of segment 1..6 -> collector seg_1..seg_6
-I2V_DROP_NODES = [22, 23, 32, 33, 43, 44, 54, 55, 65, 66, 76, 77,   # per-segment CreateVideo/SaveVideo (would force every segment to run)
-                  35, 46, 57, 68, 78,                              # '첫 프레임 제외' ImageFromBatch (collector drops the frame itself)
+I2V_SEG_CREATE = [22, 32, 43, 54, 65, 76]             # per-segment CreateVideo: images <- collector seg_N (blocked when unused)
+I2V_DROP_NODES = [35, 46, 57, 68, 78,                              # '첫 프레임 제외' ImageFromBatch (collector drops the frame itself)
                   79, 80, 81, 82, 83]                              # ImageBatch chain -> replaced by the lazy collector
 I2V_FINAL_CREATE = 84                                 # CreateVideo of the full video: images <- collector
 I2V_START_IMAGE = 9                                   # LoadImage '시작 이미지'
@@ -787,7 +787,7 @@ NOTE_I2V = (
     "없는 구간의 샘플러는 아예 돌지 않습니다.\n"
     "**구간이 6개보다 많으면** `first_segment`를 7, 13 으로 바꿔 다시 돌리세요. 이때 `시작 이미지`에는 "
     "이전 회차가 `output/video/wan14b_30s/next_start_*.png`로 저장한 마지막 프레임을 넣으면 이어집니다.\n\n"
-    "**출력**: `output/video/wan14b_30s/full_*.mp4` (합친 영상) + `next_start_*.png` (마지막 프레임)"
+    "**출력**: `output/video/wan14b_30s/seg1..6_*.mp4` (구간별, 생성되는 대로 확인 가능) + `full_*.mp4` (합친 영상) + `next_start_*.png` (마지막 프레임)"
 )
 
 
@@ -829,8 +829,9 @@ def build_i2v_bridge():
     cid = fid + 2
     col_inputs = [inp("count", "INT", None), inp("drop_duplicate_first_frame", "BOOLEAN", None)]
     col_inputs = [inp("count", "INT", None)] + [inp(f"seg_{i + 1}", "IMAGE", None) for i in range(8)]
-    col = node(cid, "ShortsSegmentsCollect", [2560, 1200], [400, 330], col_inputs,
-               [outp("frames", "IMAGE", None), outp("last_frame", "IMAGE", None), outp("count", "INT", None)], [True],
+    col = node(cid, "ShortsSegmentsCollect", [2560, 1200], [400, 460], col_inputs,
+               [outp("frames", "IMAGE", None), outp("last_frame", "IMAGE", None), outp("count", "INT", None)]
+               + [outp(f"seg_{i + 1}", "IMAGE", None) for i in range(8)], [True],
                title="Shorts Segments Collect - 있는 구간까지만 실행")
     lid += 1
     links[lid] = [lid, fid, 12, cid, 0, "INT"]            # fanout n_slots -> count
@@ -842,6 +843,16 @@ def build_i2v_bridge():
         links[lid] = [lid, dec, 0, cid, k + 1, "IMAGE"]
         dn["outputs"][0]["links"] = [x for x in (dn["outputs"][0].get("links") or []) if x in links] + [lid]
         col["inputs"][k + 1]["link"] = lid
+    # per-segment seg1..seg6 videos: fed from the collector's pass-through outputs (blocked for unused segments)
+    for k, cv in enumerate(I2V_SEG_CREATE):
+        cvn = next(n for n in nodes if n["id"] == cv)
+        for i in cvn["inputs"]:
+            if i["name"] == "images" and i.get("link") in links:
+                old = links[i["link"]]
+                src = next(n for n in nodes if n["id"] == old[1])
+                src["outputs"][old[2]]["links"] = [x for x in (src["outputs"][old[2]].get("links") or []) if x != old[0]] or None
+                old[1], old[2] = cid, 3 + k
+                col["outputs"][3 + k]["links"] = [old[0]]
     fin = next(n for n in nodes if n["id"] == I2V_FINAL_CREATE)
     lid += 1
     links[lid] = [lid, cid, 0, I2V_FINAL_CREATE, 0, "IMAGE"]
@@ -856,7 +867,7 @@ def build_i2v_bridge():
     nodes.append(col)
     nodes.append(node(sid, "SaveImage", [2560, 1580], [400, 320], [inp("images", "IMAGE", lid)], [], ["video/wan14b_30s/next_start"],
                       title="마지막 프레임 저장 (다음 회차 시작 이미지)"))
-    fin_save = next(n for n in nodes if n["type"] == "SaveVideo")
+    fin_save = next(n for n in nodes if n["id"] == 85)   # '전체 30초 저장'
     fin_save["title"] = "전체 저장 (있는 구간까지)"
 
     # ---- width/height follow the start image's aspect ratio ----

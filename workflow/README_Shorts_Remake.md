@@ -142,7 +142,7 @@ prompts.json 구조:
 1. `Shorts Prompts Fanout`의 `prompts_file` 드롭다운에서 1번 결과 prompts.json 선택. 구간이 6개보다 많으면 `first_segment`를 7, 13으로 바꿔 여러 번 돌립니다.
 2. `시작 이미지`에 합성한 참조 이미지(전신, 세로 영상이면 9:16). width/height는 `Shorts Size From Image`가 이미지 비율대로 자동 계산합니다 (긴 변 1280, 16의 배수). 빠르게 보려면 `max_side`를 960이나 832로.
 3. 파란 `공통 스타일` 노드는 모든 구간 뒤에 붙는 문장입니다. Fanout의 `common` 출력을 여기 연결하면 1번이 뽑은 배경 설명이 대신 들어갑니다.
-4. Queue. 구간 1~6이 앞 구간의 마지막 프레임에서 이어져 생성되고 `output/video/wan14b_30s/full_*.mp4`로 합쳐 저장됩니다.
+4. Queue. 구간 1~6이 앞 구간의 마지막 프레임에서 이어져 생성됩니다. 구간마다 `output/video/wan14b_30s/segN_*.mp4`가 바로 저장되어 중간 결과를 볼 수 있고, 끝나면 `full_*.mp4`로 합쳐 저장됩니다.
    마지막 프레임은 `next_start_*.png`로 따로 저장됩니다.
 5. **구간이 6개보다 적으면** (30초 미만 영상) `Shorts Segments Collect`가 있는 구간까지만 실행하고 끝냅니다. 없는 구간의 샘플러는 돌지 않습니다.
    **6개보다 많으면** `first_segment`를 7, 13으로 바꿔 다시 돌리고, 그때 `시작 이미지`에 이전 회차의 `next_start_*.png`를 넣으면 이어집니다.

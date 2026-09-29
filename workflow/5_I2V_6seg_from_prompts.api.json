@@ -276,6 +276,31 @@
   },
   "class_type": "VAEDecode"
  },
+ "22": {
+  "inputs": {
+   "fps": 16,
+   "images": [
+    "89",
+    3
+   ]
+  },
+  "class_type": "CreateVideo"
+ },
+ "23": {
+  "inputs": {
+   "filename_prefix": "video/wan14b_30s/seg1",
+   "format": "auto",
+   "format.codec": "auto",
+   "video": [
+    "22",
+    0
+   ]
+  },
+  "class_type": "SaveVideo",
+  "_meta": {
+   "title": "구간 1 저장"
+  }
+ },
  "24": {
   "inputs": {
    "batch_index": -1,
@@ -435,6 +460,31 @@
    ]
   },
   "class_type": "VAEDecode"
+ },
+ "32": {
+  "inputs": {
+   "fps": 16,
+   "images": [
+    "89",
+    4
+   ]
+  },
+  "class_type": "CreateVideo"
+ },
+ "33": {
+  "inputs": {
+   "filename_prefix": "video/wan14b_30s/seg2",
+   "format": "auto",
+   "format.codec": "auto",
+   "video": [
+    "32",
+    0
+   ]
+  },
+  "class_type": "SaveVideo",
+  "_meta": {
+   "title": "구간 2 저장"
+  }
  },
  "34": {
   "inputs": {
@@ -596,6 +646,31 @@
   },
   "class_type": "VAEDecode"
  },
+ "43": {
+  "inputs": {
+   "fps": 16,
+   "images": [
+    "89",
+    5
+   ]
+  },
+  "class_type": "CreateVideo"
+ },
+ "44": {
+  "inputs": {
+   "filename_prefix": "video/wan14b_30s/seg3",
+   "format": "auto",
+   "format.codec": "auto",
+   "video": [
+    "43",
+    0
+   ]
+  },
+  "class_type": "SaveVideo",
+  "_meta": {
+   "title": "구간 3 저장"
+  }
+ },
  "45": {
   "inputs": {
    "batch_index": -1,
@@ -755,6 +830,31 @@
    ]
   },
   "class_type": "VAEDecode"
+ },
+ "54": {
+  "inputs": {
+   "fps": 16,
+   "images": [
+    "89",
+    6
+   ]
+  },
+  "class_type": "CreateVideo"
+ },
+ "55": {
+  "inputs": {
+   "filename_prefix": "video/wan14b_30s/seg4",
+   "format": "auto",
+   "format.codec": "auto",
+   "video": [
+    "54",
+    0
+   ]
+  },
+  "class_type": "SaveVideo",
+  "_meta": {
+   "title": "구간 4 저장"
+  }
  },
  "56": {
   "inputs": {
@@ -916,6 +1016,31 @@
   },
   "class_type": "VAEDecode"
  },
+ "65": {
+  "inputs": {
+   "fps": 16,
+   "images": [
+    "89",
+    7
+   ]
+  },
+  "class_type": "CreateVideo"
+ },
+ "66": {
+  "inputs": {
+   "filename_prefix": "video/wan14b_30s/seg5",
+   "format": "auto",
+   "format.codec": "auto",
+   "video": [
+    "65",
+    0
+   ]
+  },
+  "class_type": "SaveVideo",
+  "_meta": {
+   "title": "구간 5 저장"
+  }
+ },
  "67": {
   "inputs": {
    "batch_index": -1,
@@ -1075,6 +1200,31 @@
    ]
   },
   "class_type": "VAEDecode"
+ },
+ "76": {
+  "inputs": {
+   "fps": 16,
+   "images": [
+    "89",
+    8
+   ]
+  },
+  "class_type": "CreateVideo"
+ },
+ "77": {
+  "inputs": {
+   "filename_prefix": "video/wan14b_30s/seg6",
+   "format": "auto",
+   "format.codec": "auto",
+   "video": [
+    "76",
+    0
+   ]
+  },
+  "class_type": "SaveVideo",
+  "_meta": {
+   "title": "구간 6 저장"
+  }
  },
  "84": {
   "inputs": {
