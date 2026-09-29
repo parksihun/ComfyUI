@@ -1,0 +1,24 @@
+@echo off
+cd /d %~dp0
+Title ComfyUI-Easy-Install - repo setup
+
+echo [1/2] custom_nodes\ComfyUI-ShortsRemake -> ComfyUI\custom_nodes (junction)
+if not exist "ComfyUI\custom_nodes" (
+    echo   ComfyUI\custom_nodes not found. Run this from the ComfyUI-Easy-Install folder.
+    pause & exit /b 1
+)
+if exist "ComfyUI\custom_nodes\ComfyUI-ShortsRemake" (
+    echo   already present, skipping
+) else (
+    mklink /J "ComfyUI\custom_nodes\ComfyUI-ShortsRemake" "custom_nodes\ComfyUI-ShortsRemake"
+)
+
+echo [2/2] workflow\*.json -> ComfyUI\user\default\workflows (copy, shows up in the ComfyUI sidebar)
+if not exist "ComfyUI\user\default\workflows" mkdir "ComfyUI\user\default\workflows"
+for %%F in (workflow\*.json) do (
+    echo %%~nxF | findstr /i "\.api\.json" >nul || copy /Y "%%F" "ComfyUI\user\default\workflows\" >nul
+)
+
+echo.
+echo done. Restart ComfyUI to load the nodes.
+pause

@@ -1,0 +1,370 @@
+{
+  "id": "shorts-1-analyze",
+  "revision": 0,
+  "last_node_id": 10,
+  "last_link_id": 6,
+  "nodes": [
+    {
+      "id": 10,
+      "type": "MarkdownNote",
+      "pos": [
+        -1560,
+        80
+      ],
+      "size": [
+        520,
+        520
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "MarkdownNote"
+      },
+      "widgets_values": [
+        "## 1단계: 영상 분석 → 프롬프트 추출\n\n**입력**: `Shorts Video Segments` 노드의 `video_path`에 받아둔 영상 전체 경로.\n\n**동작**\n1. 영상을 구간으로 나누고 구간마다 `frames_per_segment`장을 뽑습니다.\n   - `split_mode` = fixed : `segment_seconds`(기본 5초) 고정 길이\n   - `split_mode` = scene : 장면 전환(컷) 지점에서 자름. `segment_seconds`보다 긴 장면은 균등 분할, `min_seconds`보다 짧은 조각은 이웃과 합침. `scene_threshold`를 낮추면 컷을 더 민감하게 잡음\n2. 위쪽 QwenVL이 **구간마다 한 번씩** 실행되어 구간 프롬프트(JSON)를 씁니다.\n3. 아래쪽 QwenVL이 구간별 대표 프레임을 한꺼번에 보고 **공통 프롬프트 · 네거티브**를 씁니다.\n4. `Shorts Prompts Collector`가 결과를 모아 저장합니다.\n\n**출력** (`out_dir` 비우면 영상 옆 `<영상이름>_prompts/`)\n- `prompts.json` : common_prompt, negative_prompt, segments[].positive_prompt / motion / camera / scene_ko\n- `comfyui_prompts.txt` : 사람이 보는 정리본\n\n**다음 단계**: `Shorts_2_Replace_Person_WanAnimate2` 워크플로우의 `prompts_json`에 이 파일 경로를 넣습니다.\n\nGPU 서버: Qwen3-VL-8B-Instruct(FP16, ~16GB). 더 정밀하게: Qwen3-VL-32B-Instruct-FP8.\n이 PC(CPU)에서 확인할 때는 QwenVL 노드를 `QwenVL Advanced (GGUF)`, device=cpu로 바꿔 쓰세요."
+      ],
+      "title": "사용법 (1단계 분석)",
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 1,
+      "type": "ShortsVideoSegments",
+      "pos": [
+        -1000,
+        80
+      ],
+      "size": [
+        420,
+        220
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "segment_frames",
+          "type": "IMAGE",
+          "links": [
+            1
+          ]
+        },
+        {
+          "name": "segment_index",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "segment_label",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "overview_frames",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        },
+        {
+          "name": "count",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "segments_json",
+          "type": "STRING",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsVideoSegments"
+      },
+      "widgets_values": [
+        "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking.mp4",
+        "fixed",
+        5.0,
+        1.5,
+        0.5,
+        8,
+        384
+      ]
+    },
+    {
+      "id": 2,
+      "type": "AILab_QwenVL_Advanced",
+      "pos": [
+        -540,
+        80
+      ],
+      "size": [
+        460,
+        620
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "video",
+          "type": "IMAGE",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "RESPONSE",
+          "type": "STRING",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AILab_QwenVL_Advanced"
+      },
+      "widgets_values": [
+        "Qwen3-VL-8B-Instruct",
+        "None (FP16)",
+        "auto",
+        false,
+        "auto",
+        "📹 Video Summary",
+        "These frames are ONE consecutive segment of a video, in time order (first frame = segment start, last = segment end). You write prompts for an AI video generator (Wan) that will re-create this segment with a DIFFERENT person, so never describe the person's identity, face, hair, skin, age or clothing.\nReturn ONLY a JSON object, no markdown, with exactly these keys:\n\"scene_ko\": Korean, 1-2 sentences, what is visible and what happens in this segment.\n\"positive_prompt\": English, 50-90 words, natural sentences: environment and background, the person's actions and body motion from first to last frame, camera framing and movement, lighting, colors. No text, logos or captions.\n\"camera\": English, one short line describing the camera framing and movement.\n\"motion\": English, one short line describing only the person's motion (for a pose prompt), e.g. \"a person talking to the camera, nodding and gesturing with one hand\".\nAll values except scene_ko MUST be written in English.",
+        512,
+        0.3,
+        0.9,
+        1,
+        1.2,
+        8,
+        "auto",
+        true,
+        1,
+        "fixed"
+      ],
+      "title": "QwenVL - 구간별 프롬프트 (구간 수만큼 실행)"
+    },
+    {
+      "id": 3,
+      "type": "AILab_QwenVL_Advanced",
+      "pos": [
+        -540,
+        760
+      ],
+      "size": [
+        460,
+        620
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "video",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "RESPONSE",
+          "type": "STRING",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AILab_QwenVL_Advanced"
+      },
+      "widgets_values": [
+        "Qwen3-VL-8B-Instruct",
+        "None (FP16)",
+        "auto",
+        false,
+        "auto",
+        "📹 Video Summary",
+        "Each frame is taken from a different consecutive segment of the SAME video. Return ONLY a JSON object, no markdown, with exactly these keys:\n\"summary_ko\": Korean, 1-2 sentences summarizing the whole video.\n\"common_prompt\": English, 30-60 words describing what stays the same across the whole video: setting, environment, lighting, color palette, camera style, visual style. Describe looks only, no motion, and do NOT describe the person's identity, face, hair or clothing.\n\"person_in_video\": English, 1-2 sentences describing the main person's appearance (reference only).\n\"negative_prompt\": English, comma-separated list of visual artifacts to avoid for this kind of footage.\nAll values except summary_ko MUST be written in English.",
+        512,
+        0.3,
+        0.9,
+        1,
+        1.2,
+        16,
+        "auto",
+        true,
+        1,
+        "fixed"
+      ],
+      "title": "QwenVL - 공통 프롬프트 + 네거티브"
+    },
+    {
+      "id": 4,
+      "type": "ShortsPromptsCollector",
+      "pos": [
+        -40,
+        80
+      ],
+      "size": [
+        460,
+        300
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "segment_responses",
+          "type": "STRING",
+          "link": 3
+        },
+        {
+          "name": "common_response",
+          "type": "STRING",
+          "link": 4
+        },
+        {
+          "name": "segments_json",
+          "type": "STRING",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "summary",
+          "type": "STRING",
+          "links": [
+            6
+          ]
+        },
+        {
+          "name": "prompts_json",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsPromptsCollector"
+      },
+      "widgets_values": [
+        "",
+        "blurry, low quality, worst quality, jpeg artifacts, watermark, text, logo, subtitles, deformed, extra limbs, extra fingers, bad anatomy, distorted face, flicker, jitter, static image, frozen frame, duplicated subject, overexposed, oversaturated",
+        16
+      ]
+    },
+    {
+      "id": 5,
+      "type": "PreviewAny",
+      "pos": [
+        -40,
+        440
+      ],
+      "size": [
+        640,
+        500
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 6
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        false
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      1,
+      "IMAGE"
+    ],
+    [
+      2,
+      1,
+      3,
+      3,
+      1,
+      "IMAGE"
+    ],
+    [
+      3,
+      2,
+      0,
+      4,
+      0,
+      "STRING"
+    ],
+    [
+      4,
+      3,
+      0,
+      4,
+      1,
+      "STRING"
+    ],
+    [
+      5,
+      1,
+      6,
+      4,
+      2,
+      "STRING"
+    ],
+    [
+      6,
+      4,
+      0,
+      5,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.6,
+      "offset": [
+        1650,
+        60
+      ]
+    }
+  },
+  "version": 0.4
+}

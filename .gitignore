@@ -1,0 +1,21 @@
+# Only our own work is tracked. Everything ComfyUI-Easy-Install ships (python_embeded, ComfyUI core,
+# models, other custom nodes, outputs) stays untracked so this repo can live inside any
+# ComfyUI-Easy-Install folder.
+*
+!.gitignore
+!README.md
+!setup.bat
+!Start ComfyUI CPU.bat
+
+!workflow/
+!workflow/**
+
+!custom_nodes/
+!custom_nodes/ComfyUI-ShortsRemake/
+!custom_nodes/ComfyUI-ShortsRemake/**
+
+!tools/
+!tools/**
+
+__pycache__/
+*.pyc
