@@ -14,6 +14,7 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 │   ├── 4_ALL_in_One.json                      올인원 (1→2→3): 영상 파일 + 사진 → 인물 교체 영상
 │   ├── 5_I2V_6seg_from_prompts.json           빠른 대안: 프롬프트 + 참조 이미지 → Wan 2.2 I2V 6구간 30초
 │   ├── video_wan22_14b_i2v_6seg_30s.json      5번의 원본 (수동 프롬프트 6구간)
+│   ├── image_qwen_image_2_1_image_edit.json   Qwen-Image 2.1 이미지 편집 (옷 갈아입히기 등, ComfyUI 0.37 이상)
 │   ├── YouTube_Video_Analysis_GPU.json / _CPU.json  영상 내용 요약 (단일 실행)
 │   └── README_Shorts_Remake.md
 │   └── wan22_14b_flf_chain.json               Wan 2.2 첫/끝 프레임 구간 연결 (WanChain 노드 사용)
@@ -22,6 +23,7 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 ├── tools/build_shorts_workflows.py      0_~4_ 워크플로우 JSON 생성 스크립트
 ├── setup.bat                            새 PC에서 노드 링크 + 의존성 설치 + 워크플로우 복사
 ├── Download_Models_Shorts.bat           Shorts 파이프라인 모델 전부 다운로드 (없는 파일만 받음, 오프라인 서버용)
+├── Download_Models_QwenImage21.bat      image_qwen_image_2_1_image_edit 워크플로우 모델 (Qwen-Image 2.1 int8, 약 17GB)
 ├── Start_ComfyUI_L40S.bat               GPU 서버(L40S) 실행 스크립트 (SageAttention, 외부 접속, 오프라인 설정 포함)
 └── Start ComfyUI CPU.bat                GPU 없는 PC용 실행 스크립트 (--cpu)
 
