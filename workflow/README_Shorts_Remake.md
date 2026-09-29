@@ -52,7 +52,7 @@
 ## 0단계: 0_YouTube_Download_Trim.json
 
 `Shorts YouTube Download / Trim`의 `url`에 링크(또는 받아둔 파일 경로)를 넣고 Queue. `max_height`(기본 1080)까지 받아
-ComfyUI 출력 폴더(`output/<id>.mp4`)에 저장하고, 결과 경로를 `PreviewAny`에 표시합니다.
+`ComfyUI-Easy-Install/output/<날짜>_<영상 제목>.mp4`로 저장하고, 결과 경로를 `PreviewAny`에 표시합니다. 같은 영상은 날짜가 달라도 다시 받지 않습니다.
 
 **구간만 쓰려면** `start`, `end`에 `1:20` / `1:50` (또는 초 단위 `80` / `110`)을 넣습니다. 한쪽만 넣어도 되고, 둘 다 비우면 전체 영상입니다.
 잘라낸 클립은 `<원본이름>_1m20s-1m50s.mp4`로 따로 저장되며 원본은 남습니다. 프레임 단위로 정확히 자르기 위해 H.264로 다시 인코딩합니다.

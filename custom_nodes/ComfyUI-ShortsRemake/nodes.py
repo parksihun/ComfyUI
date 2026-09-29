@@ -22,12 +22,14 @@ per segment, so a normal single-clip generation graph becomes a per-segment loop
 
 from __future__ import annotations
 
+import glob
 import json
 import math
 import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import numpy as np
@@ -766,7 +768,7 @@ class ShortsYouTubeDownload:
                 "out_dir": ("STRING", {"default": "", "placeholder": "empty = ComfyUI output folder (output/)"}),
                 "max_height": ("INT", {"default": 1080, "min": 144, "max": 4320, "step": 1,
                                        "tooltip": "Highest video resolution to download (720/1080 is enough for analysis + pose driving)."}),
-                "filename": ("STRING", {"default": "", "placeholder": "empty = <video id>"}),
+                "filename": ("STRING", {"default": "", "placeholder": "empty = <YYYYMMDD>_<video title>"}),
                 "force_redownload": ("BOOLEAN", {"default": False}),
                 "ensure_h264": ("BOOLEAN", {"default": True,
                                             "tooltip": "If the video is not H.264 (e.g. AV1/VP9 from YouTube) or carries rotation metadata (phone video), "
@@ -802,7 +804,21 @@ class ShortsYouTubeDownload:
             raise RuntimeError("[ShortsRemake] yt-dlp is not installed. Run: python_embeded\\python.exe -m pip install yt-dlp") from None
 
         od = self._out_dir(out_dir)
-        stem = _sanitize_name(filename) if (filename or "").strip() else "%(id)s"
+        if (filename or "").strip():
+            stem = _sanitize_name(filename)
+        else:
+            # <YYYYMMDD>_<video title>.mp4 ; a download of the same title from an earlier day is reused
+            with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True}) as probe:
+                info0 = probe.extract_info(url, download=False) or {}
+            if info0.get("entries"):
+                info0 = info0["entries"][0]
+            safe_title = _sanitize_name(info0.get("title") or info0.get("id") or "video")[:60].rstrip(" ._")
+            stem = time.strftime("%Y%m%d") + "_" + safe_title
+            if not force_redownload:
+                cands = [p for p in glob.glob(os.path.join(od, f"*_{glob.escape(safe_title)}.mp4")) if os.path.isfile(p)]
+                if cands:
+                    stem = os.path.splitext(os.path.basename(max(cands, key=os.path.getmtime)))[0]
+                    print(f"[ShortsRemake] reusing earlier download {stem}.mp4")
         h = int(max_height)
         opts = {
             # prefer H.264 (avc1): decodes far faster than AV1/VP9 in OpenCV / VHS
@@ -848,7 +864,9 @@ class ShortsYouTubeDownload:
         if not od:
             try:
                 import folder_paths
-                od = folder_paths.get_output_directory()   # root output\ when the launcher passes --output-directory
+                # ComfyUI-Easy-Install layout: <root>\ComfyUI\ and <root>\output\ side by side
+                root_out = os.path.join(os.path.dirname(os.path.abspath(folder_paths.base_path)), "output")
+                od = root_out if os.path.isdir(root_out) else folder_paths.get_output_directory()
             except Exception:  # noqa: BLE001
                 od = os.path.join(os.getcwd(), "output")
         os.makedirs(od, exist_ok=True)
