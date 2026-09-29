@@ -8,13 +8,15 @@ REM  L40S (48GB / TCC mode) settings
 REM ------------------------------------------------------------
 REM  --disable-cuda-malloc : TCC 모드에서 cudaMallocAsync 미지원 (필수)
 REM  --use-sage-attention  : SageAttention 2.2.0 활성
-REM  --highvram            : 46GB VRAM - 모델을 VRAM에 상주 (재로딩 제거)
+REM  (--highvram 은 아래 주석 참고, 제거됨)
 REM  --bf16-vae            : Ada 네이티브 bf16, VAE 검은 화면 방지
 REM  --listen 0.0.0.0      : 외부 PC 브라우저 접속 허용
 REM  --disable-auto-launch : 헤드리스 - 브라우저 자동 실행 안 함
 REM ============================================================
 
-set "COMFY_ARGS=--windows-standalone-build --use-sage-attention --disable-cuda-malloc --highvram --bf16-vae --preview-method auto --listen 0.0.0.0 --port 8188 --disable-auto-launch"
+REM  --highvram 제거 (2026-09-29): Wan 2.2 14B high/low 두 모델 + Qwen3-VL 을 번갈아 쓰는 Shorts 파이프라인에서는
+REM  모델을 전부 VRAM 에 상주시키면 46GB 를 넘겨 "Not enough GPU memory" 가 남. 기본(normal) 모드는 안 쓰는 모델을 RAM 으로 내림.
+set "COMFY_ARGS=--windows-standalone-build --use-sage-attention --disable-cuda-malloc --bf16-vae --preview-method auto --listen 0.0.0.0 --port 8188 --disable-auto-launch"
 
 REM  input / output / temp 를 ComfyUI-Easy-Install 루트 폴더로 (ComfyUI\input 등이 아니라 .\input .\output .\temp)
 REM  --temp-directory 는 ComfyUI 가 뒤에 \temp 를 붙이므로 루트(.)를 넘김
