@@ -294,31 +294,6 @@
   },
   "class_type": "VAEDecode"
  },
- "22": {
-  "inputs": {
-   "fps": 16,
-   "images": [
-    "21",
-    0
-   ]
-  },
-  "class_type": "CreateVideo"
- },
- "23": {
-  "inputs": {
-   "filename_prefix": "video/wan14b_30s/seg1",
-   "format": "auto",
-   "format.codec": "auto",
-   "video": [
-    "22",
-    0
-   ]
-  },
-  "class_type": "SaveVideo",
-  "_meta": {
-   "title": "구간 1 저장"
-  }
- },
  "24": {
   "inputs": {
    "batch_index": -1,
@@ -479,31 +454,6 @@
   },
   "class_type": "VAEDecode"
  },
- "32": {
-  "inputs": {
-   "fps": 16,
-   "images": [
-    "31",
-    0
-   ]
-  },
-  "class_type": "CreateVideo"
- },
- "33": {
-  "inputs": {
-   "filename_prefix": "video/wan14b_30s/seg2",
-   "format": "auto",
-   "format.codec": "auto",
-   "video": [
-    "32",
-    0
-   ]
-  },
-  "class_type": "SaveVideo",
-  "_meta": {
-   "title": "구간 2 저장"
-  }
- },
  "34": {
   "inputs": {
    "batch_index": -1,
@@ -516,20 +466,6 @@
   "class_type": "ImageFromBatch",
   "_meta": {
    "title": "마지막 프레임 → 다음 구간"
-  }
- },
- "35": {
-  "inputs": {
-   "batch_index": 1,
-   "length": 4096,
-   "image": [
-    "31",
-    0
-   ]
-  },
-  "class_type": "ImageFromBatch",
-  "_meta": {
-   "title": "첫 프레임 제외 (중복)"
   }
  },
  "37": {
@@ -678,31 +614,6 @@
   },
   "class_type": "VAEDecode"
  },
- "43": {
-  "inputs": {
-   "fps": 16,
-   "images": [
-    "42",
-    0
-   ]
-  },
-  "class_type": "CreateVideo"
- },
- "44": {
-  "inputs": {
-   "filename_prefix": "video/wan14b_30s/seg3",
-   "format": "auto",
-   "format.codec": "auto",
-   "video": [
-    "43",
-    0
-   ]
-  },
-  "class_type": "SaveVideo",
-  "_meta": {
-   "title": "구간 3 저장"
-  }
- },
  "45": {
   "inputs": {
    "batch_index": -1,
@@ -715,20 +626,6 @@
   "class_type": "ImageFromBatch",
   "_meta": {
    "title": "마지막 프레임 → 다음 구간"
-  }
- },
- "46": {
-  "inputs": {
-   "batch_index": 1,
-   "length": 4096,
-   "image": [
-    "42",
-    0
-   ]
-  },
-  "class_type": "ImageFromBatch",
-  "_meta": {
-   "title": "첫 프레임 제외 (중복)"
   }
  },
  "48": {
@@ -877,31 +774,6 @@
   },
   "class_type": "VAEDecode"
  },
- "54": {
-  "inputs": {
-   "fps": 16,
-   "images": [
-    "53",
-    0
-   ]
-  },
-  "class_type": "CreateVideo"
- },
- "55": {
-  "inputs": {
-   "filename_prefix": "video/wan14b_30s/seg4",
-   "format": "auto",
-   "format.codec": "auto",
-   "video": [
-    "54",
-    0
-   ]
-  },
-  "class_type": "SaveVideo",
-  "_meta": {
-   "title": "구간 4 저장"
-  }
- },
  "56": {
   "inputs": {
    "batch_index": -1,
@@ -914,20 +786,6 @@
   "class_type": "ImageFromBatch",
   "_meta": {
    "title": "마지막 프레임 → 다음 구간"
-  }
- },
- "57": {
-  "inputs": {
-   "batch_index": 1,
-   "length": 4096,
-   "image": [
-    "53",
-    0
-   ]
-  },
-  "class_type": "ImageFromBatch",
-  "_meta": {
-   "title": "첫 프레임 제외 (중복)"
   }
  },
  "59": {
@@ -1076,31 +934,6 @@
   },
   "class_type": "VAEDecode"
  },
- "65": {
-  "inputs": {
-   "fps": 16,
-   "images": [
-    "64",
-    0
-   ]
-  },
-  "class_type": "CreateVideo"
- },
- "66": {
-  "inputs": {
-   "filename_prefix": "video/wan14b_30s/seg5",
-   "format": "auto",
-   "format.codec": "auto",
-   "video": [
-    "65",
-    0
-   ]
-  },
-  "class_type": "SaveVideo",
-  "_meta": {
-   "title": "구간 5 저장"
-  }
- },
  "67": {
   "inputs": {
    "batch_index": -1,
@@ -1113,20 +946,6 @@
   "class_type": "ImageFromBatch",
   "_meta": {
    "title": "마지막 프레임 → 다음 구간"
-  }
- },
- "68": {
-  "inputs": {
-   "batch_index": 1,
-   "length": 4096,
-   "image": [
-    "64",
-    0
-   ]
-  },
-  "class_type": "ImageFromBatch",
-  "_meta": {
-   "title": "첫 프레임 제외 (중복)"
   }
  },
  "70": {
@@ -1275,130 +1094,11 @@
   },
   "class_type": "VAEDecode"
  },
- "76": {
-  "inputs": {
-   "fps": 16,
-   "images": [
-    "75",
-    0
-   ]
-  },
-  "class_type": "CreateVideo"
- },
- "77": {
-  "inputs": {
-   "filename_prefix": "video/wan14b_30s/seg6",
-   "format": "auto",
-   "format.codec": "auto",
-   "video": [
-    "76",
-    0
-   ]
-  },
-  "class_type": "SaveVideo",
-  "_meta": {
-   "title": "구간 6 저장"
-  }
- },
- "78": {
-  "inputs": {
-   "batch_index": 1,
-   "length": 4096,
-   "image": [
-    "75",
-    0
-   ]
-  },
-  "class_type": "ImageFromBatch",
-  "_meta": {
-   "title": "첫 프레임 제외 (중복)"
-  }
- },
- "79": {
-  "inputs": {
-   "image1": [
-    "21",
-    0
-   ],
-   "image2": [
-    "35",
-    0
-   ]
-  },
-  "class_type": "ImageBatch",
-  "_meta": {
-   "title": "합치기 1"
-  }
- },
- "80": {
-  "inputs": {
-   "image1": [
-    "79",
-    0
-   ],
-   "image2": [
-    "46",
-    0
-   ]
-  },
-  "class_type": "ImageBatch",
-  "_meta": {
-   "title": "합치기 2"
-  }
- },
- "81": {
-  "inputs": {
-   "image1": [
-    "80",
-    0
-   ],
-   "image2": [
-    "57",
-    0
-   ]
-  },
-  "class_type": "ImageBatch",
-  "_meta": {
-   "title": "합치기 3"
-  }
- },
- "82": {
-  "inputs": {
-   "image1": [
-    "81",
-    0
-   ],
-   "image2": [
-    "68",
-    0
-   ]
-  },
-  "class_type": "ImageBatch",
-  "_meta": {
-   "title": "합치기 4"
-  }
- },
- "83": {
-  "inputs": {
-   "image1": [
-    "82",
-    0
-   ],
-   "image2": [
-    "78",
-    0
-   ]
-  },
-  "class_type": "ImageBatch",
-  "_meta": {
-   "title": "합치기 5"
-  }
- },
  "84": {
   "inputs": {
    "fps": 16,
    "images": [
-    "83",
+    "89",
     0
    ]
   },
@@ -1416,7 +1116,7 @@
   },
   "class_type": "SaveVideo",
   "_meta": {
-   "title": "전체 30초 저장"
+   "title": "전체 저장 (있는 구간까지)"
   }
  },
  "87": {
@@ -1429,6 +1129,56 @@
   "class_type": "ShortsPromptsFanout",
   "_meta": {
    "title": "Shorts Prompts Fanout - prompts.json → 구간 1~6 프롬프트"
+  }
+ },
+ "89": {
+  "inputs": {
+   "drop_duplicate_first_frame": true,
+   "count": [
+    "87",
+    12
+   ],
+   "seg_1": [
+    "21",
+    0
+   ],
+   "seg_2": [
+    "31",
+    0
+   ],
+   "seg_3": [
+    "42",
+    0
+   ],
+   "seg_4": [
+    "53",
+    0
+   ],
+   "seg_5": [
+    "64",
+    0
+   ],
+   "seg_6": [
+    "75",
+    0
+   ]
+  },
+  "class_type": "ShortsSegmentsCollect",
+  "_meta": {
+   "title": "Shorts Segments Collect - 있는 구간까지만 실행"
+  }
+ },
+ "90": {
+  "inputs": {
+   "filename_prefix": "video/wan14b_30s/next_start",
+   "images": [
+    "89",
+    1
+   ]
+  },
+  "class_type": "SaveImage",
+  "_meta": {
+   "title": "마지막 프레임 저장 (다음 회차 시작 이미지)"
   }
  }
 }

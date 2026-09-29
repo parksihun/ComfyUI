@@ -14,6 +14,7 @@ Nodes
 - Shorts Reference Save   : composed reference -> <prompts dir>/reference.png (+ copy to ComfyUI/input)
 - Shorts Reference Loader : prompts.json path -> reference IMAGE (reference.png / linked / fallback) + prompts_json passthrough
 - Shorts Prompts Fanout   : prompts.json -> seg_1..seg_8 STRING outputs (for graphs with one text box per segment)
+- Shorts Segments Collect : lazy seg_1..seg_8 IMAGE inputs; only the first `count` segments execute, frames concatenated
 
 List mechanics: outputs flagged in OUTPUT_IS_LIST make every downstream node run once
 per segment, so a normal single-clip generation graph becomes a per-segment loop.
@@ -1121,8 +1122,8 @@ class ShortsPromptsFanout:
             }
         }
 
-    RETURN_TYPES = tuple(["STRING"] * FANOUT_SLOTS + ["STRING", "STRING", "INT", "STRING"])
-    RETURN_NAMES = tuple([f"seg_{i + 1}" for i in range(FANOUT_SLOTS)] + ["common", "negative", "count", "summary"])
+    RETURN_TYPES = tuple(["STRING"] * FANOUT_SLOTS + ["STRING", "STRING", "INT", "STRING", "INT"])
+    RETURN_NAMES = tuple([f"seg_{i + 1}" for i in range(FANOUT_SLOTS)] + ["common", "negative", "count", "summary", "n_slots"])
     FUNCTION = "fanout"
     CATEGORY = "ShortsRemake"
 
@@ -1158,7 +1159,58 @@ class ShortsPromptsFanout:
             lines.append(f"[seg_{k + 1} = clip {idx} {sg.get('label', '')}] {text}")
         summary = "\n".join(lines) if lines else "(no segments)"
         print(f"[ShortsRemake] fanout: {len(lines)} of {FANOUT_SLOTS} slots filled from {len(segs)} segments (first={first_segment})")
-        return tuple(outs + [common, negative, len(segs), summary])
+        return tuple(outs + [common, negative, len(segs), summary, len(lines)])
+
+
+# --------------------------------------------------------------------------- #
+# 7. lazy collector: run only the first `count` segment chains and concatenate their frames
+# --------------------------------------------------------------------------- #
+COLLECT_SLOTS = 8
+
+
+class ShortsSegmentsCollect:
+    """seg_1..seg_N are lazy: only the first `count` are requested, so the sampler chains of unused
+    segments never execute (the graph simply ends after the last available segment)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "count": ("INT", {"default": 1, "min": 0, "max": COLLECT_SLOTS, "forceInput": True,
+                                  "tooltip": "How many segments exist (connect Shorts Prompts Fanout -> n_slots)."}),
+                "drop_duplicate_first_frame": ("BOOLEAN", {"default": True,
+                                                           "tooltip": "Segments 2+ start with the previous segment's last frame; drop it."}),
+            },
+            "optional": {f"seg_{i + 1}": ("IMAGE", {"lazy": True}) for i in range(COLLECT_SLOTS)},
+        }
+
+    RETURN_TYPES = ("IMAGE", "IMAGE", "INT")
+    RETURN_NAMES = ("frames", "last_frame", "count")
+    FUNCTION = "collect"
+    CATEGORY = "ShortsRemake"
+
+    def check_lazy_status(self, count, drop_duplicate_first_frame=True, **kw):
+        n = max(0, min(int(count), COLLECT_SLOTS))
+        return [f"seg_{i}" for i in range(1, n + 1) if kw.get(f"seg_{i}") is None]
+
+    def collect(self, count, drop_duplicate_first_frame=True, **kw):
+        n = max(0, min(int(count), COLLECT_SLOTS))
+        segs = [kw.get(f"seg_{i}") for i in range(1, n + 1)]
+        segs = [t for t in segs if t is not None]
+        if not segs:
+            raise ValueError("[ShortsRemake] no segments to collect (count is 0 or seg_1 is not connected)")
+        h, w = segs[0].shape[1], segs[0].shape[2]
+        parts = []
+        for i, t in enumerate(segs):
+            if t.shape[1] != h or t.shape[2] != w:
+                import comfy.utils
+                t = comfy.utils.common_upscale(t.movedim(-1, 1), w, h, "bilinear", "center").movedim(1, -1)
+            if i > 0 and drop_duplicate_first_frame and t.shape[0] > 1:
+                t = t[1:]
+            parts.append(t)
+        merged = torch.cat(parts, dim=0)
+        print(f"[ShortsRemake] collected {len(segs)} segment(s) -> {merged.shape[0]} frames")
+        return (merged, merged[-1:], len(segs))
 
 
 NODE_CLASS_MAPPINGS = {
@@ -1172,6 +1224,7 @@ NODE_CLASS_MAPPINGS = {
     "ShortsReferenceSave": ShortsReferenceSave,
     "ShortsReferenceLoader": ShortsReferenceLoader,
     "ShortsPromptsFanout": ShortsPromptsFanout,
+    "ShortsSegmentsCollect": ShortsSegmentsCollect,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsVideoSegments": "Shorts Video Segments",
@@ -1184,4 +1237,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsReferenceSave": "Shorts Reference Save",
     "ShortsReferenceLoader": "Shorts Reference Loader",
     "ShortsPromptsFanout": "Shorts Prompts Fanout (seg_1..8)",
+    "ShortsSegmentsCollect": "Shorts Segments Collect (lazy, stops after last segment)",
 }

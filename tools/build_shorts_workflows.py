@@ -7,7 +7,7 @@
                                          reference.png (or profile) + prompts.json + source video
                                          -> Wan Animate 2 per segment -> clip_NN.mp4 -> final.mp4
   4_ALL_in_One.json                 stages 1 + 2 + 3 in one graph (video file + images in, final.mp4 out)
-  5_I2V_6seg_from_prompts.json      prompts.json -> Wan 2.2 i2v 6-segment graph (fan-out node fills the prompts)
+  5_T2V_6seg_from_prompts.json      prompts.json -> Wan 2.2 i2v 6-segment graph (fan-out node fills the prompts)
 
 Stage 2 is flattened from the official video_wan_animate2.json template (loop nodes removed; per-segment
 execution comes from ShortsPromptsLoader list outputs). Stage 2 mirrors image_qwen_image_edit_2511.json.
@@ -749,9 +749,14 @@ def build_all():
 I2V_SOURCE = "video_wan22_14b_i2v_6seg_30s.json"
 I2V_SEGMENT_PROMPT_NODES = [15, 25, 36, 47, 58, 69]   # PrimitiveStringMultiline '구간 N 프롬프트' -> replaced by the fan-out
 I2V_CONCAT_NODES = [16, 26, 37, 48, 59, 70]           # StringConcatenate: string_a <- segment prompt
+I2V_DECODE_NODES = [21, 31, 42, 53, 64, 75]           # VAEDecode of segment 1..6 -> collector seg_1..seg_6
+I2V_DROP_NODES = [22, 23, 32, 33, 43, 44, 54, 55, 65, 66, 76, 77,   # per-segment CreateVideo/SaveVideo (would force every segment to run)
+                  35, 46, 57, 68, 78,                              # '첫 프레임 제외' ImageFromBatch (collector drops the frame itself)
+                  79, 80, 81, 82, 83]                              # ImageBatch chain -> replaced by the lazy collector
+I2V_FINAL_CREATE = 84                                 # CreateVideo of the full video: images <- collector
 
 NOTE_I2V = (
-    "## 5번: 분석 프롬프트 → Wan 2.2 I2V 6구간 (30초)\n\n"
+    "## 5번: 분석 프롬프트 → Wan 2.2 T2V 6구간 (30초)\n\n"
     "`video_wan22_14b_i2v_6seg_30s`와 같은 그래프이고, 구간별 프롬프트 6개를 손으로 적는 대신 "
     "`Shorts Prompts Fanout`이 1번 결과 **prompts.json에서 읽어** 채웁니다.\n\n"
     "**입력**\n"
@@ -761,14 +766,18 @@ NOTE_I2V = (
     "- width/height: 세로 영상이면 720 / 1280\n\n"
     "**3번(Wan Animate 2)과의 차이**: 원본 동작을 그대로 옮기지 않고 프롬프트 설명대로 움직입니다. "
     "대신 구간이 앞 구간의 마지막 프레임에서 이어져 매끄럽고, 클립당 시간이 훨씬 짧습니다 (lightx2v 4-step).\n"
-    "prompts.json 구간이 6개보다 많으면 `first_segment`를 7, 13 으로 바꿔 두 번 더 돌리면 됩니다."
+    "**구간이 6개보다 적으면** (30초 미만 영상) `Shorts Segments Collect`가 있는 구간까지만 실행하고 끝냅니다. "
+    "없는 구간의 샘플러는 아예 돌지 않습니다.\n"
+    "**구간이 6개보다 많으면** `first_segment`를 7, 13 으로 바꿔 다시 돌리세요. 이때 `시작 이미지`에는 "
+    "이전 회차가 `output/video/wan14b_30s/next_start_*.png`로 저장한 마지막 프레임을 넣으면 이어집니다.\n\n"
+    "**출력**: `output/video/wan14b_30s/full_*.mp4` (합친 영상) + `next_start_*.png` (마지막 프레임)"
 )
 
 
 def build_i2v_bridge():
     src = os.path.join(OUT_DIRS[0], I2V_SOURCE)
     if not os.path.isfile(src):
-        print("skip 5_I2V (source missing):", src)
+        print("skip 5_T2V (source missing):", src)
         return
     with io.open(src, encoding="utf-8") as f:
         wf = json.load(f)
@@ -780,7 +789,8 @@ def build_i2v_bridge():
     fid = wf["last_node_id"] + 1
     lid = wf["last_link_id"]
     outs = [outp(f"seg_{i + 1}", "STRING", None) for i in range(8)] + \
-           [outp("common", "STRING", None), outp("negative", "STRING", None), outp("count", "INT", None), outp("summary", "STRING", None)]
+           [outp("common", "STRING", None), outp("negative", "STRING", None), outp("count", "INT", None), outp("summary", "STRING", None),
+            outp("n_slots", "INT", None)]
     fan = node(fid, "ShortsPromptsFanout", [-620, 40], [560, 420], [], outs, [SAMPLE_PROMPTS, 1, "{segment}", ""],
                title="Shorts Prompts Fanout - prompts.json → 구간 1~6 프롬프트")
     for k, cid in enumerate(I2V_CONCAT_NODES):
@@ -793,19 +803,56 @@ def build_i2v_bridge():
         fan["outputs"][k]["links"] = [lid]
     links = {k: v for k, v in links.items() if k not in old_links}
     nodes.append(fan)
-    nodes.append(note(fid + 1, [-620, 500], [560, 520], NOTE_I2V, "사용법 (5번 I2V 6구간)", ("#223", "#335")))
+    nodes.append(note(fid + 1, [-620, 500], [560, 640], NOTE_I2V, "사용법 (5번 T2V 6구간)", ("#223", "#335")))
+
+    # ---- early stop: lazy collector replaces the ImageBatch chain and the per-segment save nodes ----
+    dropped = set(I2V_DROP_NODES)
+    nodes = [n for n in nodes if n["id"] not in dropped]
+    links = {k: v for k, v in links.items() if v[1] not in dropped and v[3] not in dropped}
+    cid = fid + 2
+    col_inputs = [inp("count", "INT", None), inp("drop_duplicate_first_frame", "BOOLEAN", None)]
+    col_inputs = [inp("count", "INT", None)] + [inp(f"seg_{i + 1}", "IMAGE", None) for i in range(8)]
+    col = node(cid, "ShortsSegmentsCollect", [2560, 1200], [400, 330], col_inputs,
+               [outp("frames", "IMAGE", None), outp("last_frame", "IMAGE", None), outp("count", "INT", None)], [True],
+               title="Shorts Segments Collect - 있는 구간까지만 실행")
+    lid += 1
+    links[lid] = [lid, fid, 12, cid, 0, "INT"]            # fanout n_slots -> count
+    fan["outputs"][12]["links"] = [lid]
+    col["inputs"][0]["link"] = lid
+    for k, dec in enumerate(I2V_DECODE_NODES):
+        dn = next(n for n in nodes if n["id"] == dec)
+        lid += 1
+        links[lid] = [lid, dec, 0, cid, k + 1, "IMAGE"]
+        dn["outputs"][0]["links"] = [x for x in (dn["outputs"][0].get("links") or []) if x in links] + [lid]
+        col["inputs"][k + 1]["link"] = lid
+    fin = next(n for n in nodes if n["id"] == I2V_FINAL_CREATE)
+    lid += 1
+    links[lid] = [lid, cid, 0, I2V_FINAL_CREATE, 0, "IMAGE"]
+    for i in fin["inputs"]:
+        if i["name"] == "images":
+            i["link"] = lid
+    col["outputs"][0]["links"] = [lid]
+    sid = fid + 3
+    lid += 1
+    links[lid] = [lid, cid, 1, sid, 0, "IMAGE"]
+    col["outputs"][1]["links"] = [lid]
+    nodes.append(col)
+    nodes.append(node(sid, "SaveImage", [2560, 1580], [400, 320], [inp("images", "IMAGE", lid)], [], ["video/wan14b_30s/next_start"],
+                      title="마지막 프레임 저장 (다음 회차 시작 이미지)"))
+    fin_save = next(n for n in nodes if n["type"] == "SaveVideo")
+    fin_save["title"] = "전체 저장 (있는 구간까지)"
     for n in nodes:
         for o in n.get("outputs", []):
             if o.get("links"):
                 o["links"] = [x for x in o["links"] if x in links]
     wf["nodes"] = nodes
     wf["links"] = list(links.values())
-    wf["last_node_id"] = fid + 1
+    wf["last_node_id"] = fid + 3
     wf["last_link_id"] = lid
     wf["id"] = "shorts-5-i2v-6seg-from-prompts"
     for i, n in enumerate(nodes):
         n["order"] = i
-    write_all(wf, "5_I2V_6seg_from_prompts.json")
+    write_all(wf, "5_T2V_6seg_from_prompts.json")
 
 
 
