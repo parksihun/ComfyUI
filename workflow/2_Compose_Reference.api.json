@@ -10,7 +10,8 @@
  },
  "20": {
   "inputs": {
-   "prompts_json": "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+   "prompts_file": "",
+   "prompts_json": "",
    "background_mode": "video_first_frame",
    "max_side": 1024,
    "divisible_by": 16,

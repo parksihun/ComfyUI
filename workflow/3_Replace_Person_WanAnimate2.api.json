@@ -10,7 +10,8 @@
  },
  "59": {
   "inputs": {
-   "prompts_json": "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+   "prompts_file": "",
+   "prompts_json": "",
    "filename": "reference.png",
    "fallback": [
     "52",
@@ -19,7 +20,7 @@
   },
   "class_type": "ShortsReferenceLoader",
   "_meta": {
-   "title": "Shorts Reference Loader - prompts.json 경로 입력 (3단계 시작점)"
+   "title": "Shorts Reference Loader - prompts_file에서 prompts.json 선택 (3단계 시작점)"
   }
  },
  "58": {

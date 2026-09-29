@@ -1121,7 +1121,8 @@
  },
  "87": {
   "inputs": {
-   "prompts_json": "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+   "prompts_file": "",
+   "prompts_json": "",
    "first_segment": 1,
    "template": "{segment}",
    "empty_text": ""

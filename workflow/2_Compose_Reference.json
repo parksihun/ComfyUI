@@ -24,7 +24,7 @@
         "Node name for S&R": "MarkdownNote"
       },
       "widgets_values": [
-        "## 2단계: 프로필 + 배경 + 소품 → 참조 이미지 (Qwen-Image-Edit-2511)\n\n영상에 넣을 **사람 · 배경 · 소품**을 한 장의 참조 이미지(reference.png)로 합칩니다. 3단계 Wan Animate 2는 이 이미지를 원본 영상의 동작대로 움직입니다.\n\n**입력**\n- `Load Image - 프로필` (필수): 바꿔 넣을 사람 사진 (상반신/전신)\n- `Load Image - 배경` (선택): 배경/장소 사진. **없으면 원본 영상의 첫 프레임을 배경으로 써서 사람만 바뀝니다.** 쓰지 않을 때는 노드를 선택하고 Ctrl+B (bypass)\n- `Load Image - 소품` (선택): 들고 있을 물건/소품 사진. 쓰지 않을 때는 Ctrl+B\n- `Shorts Reference Setup`의 `prompts_json`: 1단계 결과 prompts.json 경로 (영상 파일 경로를 넣어도 됩니다)\n\n**동작**\n1. Setup 노드가 Picture 1=프로필, Picture 2=배경(또는 원본 첫 프레임), Picture 3=소품 순으로 정리하고 합성 지시문(`instruction`)을 채웁니다. 원하는 문구는 `extra_instruction`에 추가 (예: wearing a red jacket)\n2. Qwen-Image-Edit-2511이 원본 영상과 같은 비율(`max_side` 1024)로 한 장을 만듭니다.\n3. `Shorts Reference Save`가 `<prompts 폴더>/reference.png`로 저장하고 ComfyUI/input에도 복사합니다. 3단계 `Shorts Reference Loader`가 이 파일을 자동으로 읽습니다.\n\n**모델** (ComfyUI 공식 템플릿 image_qwen_image_edit_2511과 동일)\n- diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors\n- text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors\n- vae/qwen_image_vae.safetensors\n- (선택) loras/Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors : 켜면 KSampler steps 4, cfg 1로 바꾸세요 (기본은 40 steps, cfg 3)\n\n**팁**: 결과가 마음에 안 들면 KSampler seed를 바꿔 다시 생성. 사람이 너무 작게 나오면 `extra_instruction`에 'medium shot, upper body fills the frame' 등을 추가. 결과가 원본 프레임과 너무 달라지면 프로필 사진을 배경 없는 정면 사진으로."
+        "## 2단계: 프로필 + 배경 + 소품 → 참조 이미지 (Qwen-Image-Edit-2511)\n\n영상에 넣을 **사람 · 배경 · 소품**을 한 장의 참조 이미지(reference.png)로 합칩니다. 3단계 Wan Animate 2는 이 이미지를 원본 영상의 동작대로 움직입니다.\n\n**입력**\n- `Load Image - 프로필` (필수): 바꿔 넣을 사람 사진 (상반신/전신)\n- `Load Image - 배경` (선택): 배경/장소 사진. **없으면 원본 영상의 첫 프레임을 배경으로 써서 사람만 바뀝니다.** 쓰지 않을 때는 노드를 선택하고 Ctrl+B (bypass)\n- `Load Image - 소품` (선택): 들고 있을 물건/소품 사진. 쓰지 않을 때는 Ctrl+B\n- `Shorts Reference Setup`의 `prompts_file`: 1단계 결과 prompts.json을 드롭다운에서 선택 (없으면 `prompts_json`에 경로 직접 입력)\n\n**동작**\n1. Setup 노드가 Picture 1=프로필, Picture 2=배경(또는 원본 첫 프레임), Picture 3=소품 순으로 정리하고 합성 지시문(`instruction`)을 채웁니다. 원하는 문구는 `extra_instruction`에 추가 (예: wearing a red jacket)\n2. Qwen-Image-Edit-2511이 원본 영상과 같은 비율(`max_side` 1024)로 한 장을 만듭니다.\n3. `Shorts Reference Save`가 `<prompts 폴더>/reference.png`로 저장하고 ComfyUI/input에도 복사합니다. 3단계 `Shorts Reference Loader`가 이 파일을 자동으로 읽습니다.\n\n**모델** (ComfyUI 공식 템플릿 image_qwen_image_edit_2511과 동일)\n- diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors\n- text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors\n- vae/qwen_image_vae.safetensors\n- (선택) loras/Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors : 켜면 KSampler steps 4, cfg 1로 바꾸세요 (기본은 40 steps, cfg 3)\n\n**팁**: 결과가 마음에 안 들면 KSampler seed를 바꿔 다시 생성. 사람이 너무 작게 나오면 `extra_instruction`에 'medium shot, upper body fills the frame' 등을 추가. 결과가 원본 프레임과 너무 달라지면 프로필 사진을 배경 없는 정면 사진으로."
       ],
       "title": "사용법 (2단계 참조 이미지)",
       "color": "#223",
@@ -243,7 +243,8 @@
         "Node name for S&R": "ShortsReferenceSetup"
       },
       "widgets_values": [
-        "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+        "",
+        "",
         "video_first_frame",
         1024,
         16,

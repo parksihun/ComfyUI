@@ -330,6 +330,76 @@ def _file_sig(path: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# file pickers: dropdown choices for videos / prompts.json in output\ and input\
+# --------------------------------------------------------------------------- #
+VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
+
+
+def _pick_bases() -> list[tuple[str, str]]:
+    """(prefix, folder) pairs the dropdowns are built from: <root>/output, ComfyUI output (if different), input."""
+    bases: list[tuple[str, str]] = []
+    try:
+        import folder_paths
+        comfy_out = os.path.abspath(folder_paths.get_output_directory())
+        inp = os.path.abspath(folder_paths.get_input_directory())
+        root_out = os.path.join(os.path.dirname(os.path.abspath(folder_paths.base_path)), "output")
+        if os.path.isdir(root_out):
+            bases.append(("output", root_out))
+        if os.path.isdir(comfy_out) and os.path.normcase(comfy_out) != os.path.normcase(os.path.abspath(root_out)):
+            bases.append(("ComfyUI/output", comfy_out))
+        if os.path.isdir(inp):
+            bases.append(("input", inp))
+    except Exception:  # noqa: BLE001
+        pass
+    return bases
+
+
+def _list_video_choices() -> list[str]:
+    items = []
+    for prefix, base in _pick_bases():
+        try:
+            names = os.listdir(base)
+        except OSError:
+            continue
+        for n in names:
+            p = os.path.join(base, n)
+            if os.path.isfile(p) and n.lower().endswith(VIDEO_EXTS):
+                items.append((os.path.getmtime(p), f"{prefix}/{n}"))
+    items.sort(reverse=True)  # newest first
+    return [x[1] for x in items]
+
+
+def _list_prompts_choices() -> list[str]:
+    items = []
+    for prefix, base in _pick_bases():
+        for p in glob.glob(os.path.join(base, "*", "prompts.json")) + glob.glob(os.path.join(base, "*", "*", "prompts.json")):
+            rel = os.path.relpath(p, base).replace("\\", "/")
+            items.append((os.path.getmtime(p), f"{prefix}/{rel}"))
+    items.sort(reverse=True)
+    return [x[1] for x in items]
+
+
+def _resolve_pick(text, choice) -> str:
+    """Typed path wins; otherwise map a dropdown choice ('output/x.mp4', 'input/y', or an uploaded bare name) to a path."""
+    t = os.path.expanduser((text or "").strip().strip('"'))
+    if t:
+        return t
+    c = (choice or "").strip()
+    if not c:
+        return ""
+    if os.path.isabs(c):
+        return c
+    for prefix, base in _pick_bases():
+        if c.startswith(prefix + "/"):
+            return os.path.join(base, c[len(prefix) + 1:])
+    try:
+        import folder_paths
+        return os.path.join(folder_paths.get_input_directory(), c)  # file uploaded through the Upload button
+    except Exception:  # noqa: BLE001
+        return c
+
+
+# --------------------------------------------------------------------------- #
 # 1. Video -> segments
 # --------------------------------------------------------------------------- #
 class ShortsVideoSegments:
@@ -337,7 +407,9 @@ class ShortsVideoSegments:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "video_path": ("STRING", {"default": "", "placeholder": "C:/path/to/video.mp4"}),
+                "video_file": (_list_video_choices(), {"video_upload": True,
+                               "tooltip": "Videos in output/ (stage-0 downloads) and input/, newest first. Upload adds a file from this PC."}),
+                "video_path": ("STRING", {"default": "", "placeholder": "empty = use video_file above; or type a full path"}),
                 "split_mode": (["fixed", "scene"], {"default": "fixed",
                                                     "tooltip": "fixed: every segment_seconds. scene: cut at scene changes; scenes longer than segment_seconds are split, shorter than min_seconds merged."}),
                 "segment_seconds": ("FLOAT", {"default": 5.0, "min": 1.0, "max": 60.0, "step": 0.5,
@@ -360,11 +432,17 @@ class ShortsVideoSegments:
     DESCRIPTION = "Splits a video into N-second segments. List outputs make downstream nodes run once per segment."
 
     @classmethod
-    def IS_CHANGED(cls, video_path, **kw):
-        return _file_sig(video_path)
+    def IS_CHANGED(cls, video_file, video_path, **kw):
+        return _file_sig(_resolve_pick(video_path, video_file))
 
-    def split(self, video_path, split_mode, segment_seconds, min_seconds, scene_threshold, frames_per_segment, max_side):
-        video_path = os.path.expanduser(video_path.strip().strip('"'))
+    @classmethod
+    def VALIDATE_INPUTS(cls, video_file, video_path):
+        return True  # the dropdown list is rebuilt on every refresh; a typed path or an older choice is fine
+
+    def split(self, video_file, video_path, split_mode, segment_seconds, min_seconds, scene_threshold, frames_per_segment, max_side):
+        video_path = _resolve_pick(video_path, video_file)
+        if not video_path:
+            raise ValueError("[ShortsRemake] pick a video in video_file or type a path in video_path")
         if not os.path.isfile(video_path):
             raise FileNotFoundError(f"[ShortsRemake] video not found: {video_path}")
         duration, fps, w, h = _video_info(video_path)
@@ -693,6 +771,33 @@ def _sanitize_name(name: str) -> str:
     return name[:80] or "video"
 
 
+LEADING_BRACKET = re.compile(r"^\s*[\[(【（].*?[\])】）]\s*")
+TITLE_KEEP = re.compile(r"[\w \-]")  # letters/digits of any script, space, hyphen
+
+
+def _title_stem(title: str, fallback: str = "video", max_len: int = 40) -> str:
+    """File-name stem from a video title: leading [tags] removed, then everything up to the first
+    special character (& | # emoji ...), trimmed to max_len.
+    'leggings fashion model dance & photo shoot 街拍' -> 'leggings fashion model dance'
+    '[4K] 아이돌 댄스 챌린지 | 직캠 #shorts' -> '아이돌 댄스 챌린지'."""
+    t = str(title or "").strip()
+    for _ in range(3):
+        t2 = LEADING_BRACKET.sub("", t)
+        if t2 == t:
+            break
+        t = t2
+    out = []
+    for ch in t.lstrip(" -_."):
+        if TITLE_KEEP.match(ch) and ch != "_":
+            out.append(ch)
+        else:
+            break
+    t = re.sub(r"\s+", " ", "".join(out)).strip(" -")
+    if len(t) > max_len:
+        t = t[:max_len].rstrip(" -")
+    return t or _sanitize_name(fallback)
+
+
 def _ytdlp_ffmpeg_location() -> str:
     """yt-dlp accepts a file path; it detects 'ffmpeg' in the basename (imageio's binary is ffmpeg-win-...exe)."""
     exe = _ffmpeg_exe()
@@ -812,7 +917,7 @@ class ShortsYouTubeDownload:
                 info0 = probe.extract_info(url, download=False) or {}
             if info0.get("entries"):
                 info0 = info0["entries"][0]
-            safe_title = _sanitize_name(info0.get("title") or info0.get("id") or "video")[:60].rstrip(" ._")
+            safe_title = _title_stem(info0.get("title") or "", info0.get("id") or "video")
             stem = time.strftime("%Y%m%d") + "_" + safe_title
             if not force_redownload:
                 cands = [p for p in glob.glob(os.path.join(od, f"*_{glob.escape(safe_title)}.mp4")) if os.path.isfile(p)]
@@ -989,7 +1094,8 @@ class ShortsReferenceSetup:
         return {
             "required": {
                 "profile": ("IMAGE", {"tooltip": "Picture 1: the person to put into the video."}),
-                "prompts_json": ("STRING", {"default": "", "placeholder": "C:/.../video_prompts/prompts.json  (or the video path)"}),
+                "prompts_file": (_list_prompts_choices(), {"tooltip": "prompts.json files found under output/ and input/, newest first."}),
+                "prompts_json": ("STRING", {"default": "", "placeholder": "empty = use prompts_file above; or type a path (prompts.json or a video)"}),
                 "background_mode": (["video_first_frame", "prompt_only"], {"default": "video_first_frame",
                                      "tooltip": "When no background image is connected: use the original video's first frame (same scene, person replaced) or describe the background with the analysed prompt only."}),
                 "max_side": ("INT", {"default": 1024, "min": 512, "max": 2048, "step": 16,
@@ -1014,12 +1120,16 @@ class ShortsReferenceSetup:
                    "composition instruction and gives the video-shaped canvas size. Missing images are passed as None.")
 
     @classmethod
-    def IS_CHANGED(cls, prompts_json, **kw):
-        return _file_sig(os.path.expanduser((prompts_json or "").strip().strip('"')))
+    def IS_CHANGED(cls, prompts_file, prompts_json, **kw):
+        return _file_sig(_resolve_pick(prompts_json, prompts_file))
 
-    def setup(self, profile, prompts_json, background_mode, max_side, divisible_by, instruction, extra_instruction,
+    @classmethod
+    def VALIDATE_INPUTS(cls, prompts_file, prompts_json):
+        return True
+
+    def setup(self, profile, prompts_file, prompts_json, background_mode, max_side, divisible_by, instruction, extra_instruction,
               background=None, props=None):
-        pr, video, pdir = _resolve_prompts_and_video(prompts_json)
+        pr, video, pdir = _resolve_prompts_and_video(_resolve_pick(prompts_json, prompts_file))
         w = int(pr.get("width") or 0)
         h = int(pr.get("height") or 0)
         if not w or not h:
@@ -1113,7 +1223,8 @@ class ShortsReferenceLoader:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "prompts_json": ("STRING", {"default": "", "placeholder": "C:/.../video_prompts/prompts.json"}),
+                "prompts_file": (_list_prompts_choices(), {"tooltip": "prompts.json files found under output/ and input/, newest first."}),
+                "prompts_json": ("STRING", {"default": "", "placeholder": "empty = use prompts_file above; or type a path"}),
                 "filename": ("STRING", {"default": "reference.png"}),
             },
             "optional": {
@@ -1129,13 +1240,17 @@ class ShortsReferenceLoader:
     DESCRIPTION = "Picks the reference image: linked reference > <prompts.json folder>/reference.png > fallback image. Passes prompts_json through."
 
     @classmethod
-    def IS_CHANGED(cls, prompts_json, filename, **kw):
-        pj = os.path.expanduser((prompts_json or "").strip().strip('"'))
+    def IS_CHANGED(cls, prompts_file, prompts_json, filename, **kw):
+        pj = _resolve_pick(prompts_json, prompts_file)
         return _file_sig(pj) + "|" + _file_sig(os.path.join(os.path.dirname(pj), (filename or "reference.png").strip()))
 
-    def load(self, prompts_json, filename, reference=None, fallback=None):
-        pj = os.path.expanduser((prompts_json or "").strip().strip('"'))
-        if not os.path.isfile(pj):
+    @classmethod
+    def VALIDATE_INPUTS(cls, prompts_file, prompts_json):
+        return True
+
+    def load(self, prompts_file, prompts_json, filename, reference=None, fallback=None):
+        pj = _resolve_pick(prompts_json, prompts_file)
+        if not pj or not os.path.isfile(pj):
             raise FileNotFoundError(f"[ShortsRemake] prompts.json not found: {pj}")
         if reference is not None:
             return (reference[:1], pj, "linked reference")
@@ -1163,7 +1278,8 @@ class ShortsPromptsFanout:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "prompts_json": ("STRING", {"default": "", "placeholder": "C:/.../video_prompts/prompts.json"}),
+                "prompts_file": (_list_prompts_choices(), {"tooltip": "prompts.json files found under output/ and input/, newest first."}),
+                "prompts_json": ("STRING", {"default": "", "placeholder": "empty = use prompts_file above; or type a path"}),
                 "first_segment": ("INT", {"default": 1, "min": 1, "max": 999,
                                           "tooltip": "prompts.json segment index that goes to seg_1 (e.g. 7 to render segments 7..14)."}),
                 "template": ("STRING", {"default": "{segment}", "multiline": True,
@@ -1178,12 +1294,16 @@ class ShortsPromptsFanout:
     CATEGORY = "ShortsRemake"
 
     @classmethod
-    def IS_CHANGED(cls, prompts_json, **kw):
-        return _file_sig(os.path.expanduser((prompts_json or "").strip().strip('"')))
+    def IS_CHANGED(cls, prompts_file, prompts_json, **kw):
+        return _file_sig(_resolve_pick(prompts_json, prompts_file))
 
-    def fanout(self, prompts_json, first_segment, template, empty_text):
-        pj = os.path.expanduser((prompts_json or "").strip().strip('"'))
-        if not os.path.isfile(pj):
+    @classmethod
+    def VALIDATE_INPUTS(cls, prompts_file, prompts_json):
+        return True
+
+    def fanout(self, prompts_file, prompts_json, first_segment, template, empty_text):
+        pj = _resolve_pick(prompts_json, prompts_file)
+        if not pj or not os.path.isfile(pj):
             raise FileNotFoundError(f"[ShortsRemake] prompts.json not found: {pj}")
         with open(pj, encoding="utf-8") as f:
             pr = json.load(f)

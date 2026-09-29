@@ -1,6 +1,7 @@
 {
  "1": {
   "inputs": {
+   "video_file": "",
    "video_path": "",
    "split_mode": "fixed",
    "segment_seconds": 5.0,
@@ -11,7 +12,7 @@
   },
   "class_type": "ShortsVideoSegments",
   "_meta": {
-   "title": "Shorts Video Segments - video_path에 영상 파일 경로, 5초 / 장면 단위로 나누기"
+   "title": "Shorts Video Segments - video_file에서 영상 선택, 5초 / 장면 단위로 나누기"
   }
  },
  "2": {

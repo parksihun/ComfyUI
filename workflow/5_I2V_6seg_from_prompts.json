@@ -3111,7 +3111,7 @@
       ],
       "size": [
         560,
-        420
+        440
       ],
       "flags": {},
       "order": 58,
@@ -3202,7 +3202,8 @@
         "Node name for S&R": "ShortsPromptsFanout"
       },
       "widgets_values": [
-        "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+        "",
+        "",
         1,
         "{segment}",
         ""
@@ -3229,7 +3230,7 @@
         "Node name for S&R": "MarkdownNote"
       },
       "widgets_values": [
-        "## 5번: 분석 프롬프트 → Wan 2.2 I2V 6구간 (30초)\n\n`video_wan22_14b_i2v_6seg_30s`와 같은 그래프이고, 구간별 프롬프트 6개를 손으로 적는 대신 `Shorts Prompts Fanout`이 1번 결과 **prompts.json에서 읽어** 채웁니다.\n\n**입력**\n- `Shorts Prompts Fanout`의 `prompts_json`: 1번 결과 경로. `first_segment`로 시작 구간을 고를 수 있습니다 (7이면 7~12 구간)\n- `시작 이미지`: 합성한 참조 이미지 (2번 결과 reference.png 또는 직접 만든 이미지)\n- `공통 스타일` 노드(파란색): 모든 구간 뒤에 붙는 문장. Fanout의 `common` 출력을 여기 연결하면 1번이 뽑은 배경 설명이 대신 들어갑니다\n- width/height: 세로 영상이면 720 / 1280\n\n**3번(Wan Animate 2)과의 차이**: 원본 동작을 그대로 옮기지 않고 프롬프트 설명대로 움직입니다. 대신 구간이 앞 구간의 마지막 프레임에서 이어져 매끄럽고, 클립당 시간이 훨씬 짧습니다 (lightx2v 4-step).\n**구간이 6개보다 적으면** (30초 미만 영상) `Shorts Segments Collect`가 있는 구간까지만 실행하고 끝냅니다. 없는 구간의 샘플러는 아예 돌지 않습니다.\n**구간이 6개보다 많으면** `first_segment`를 7, 13 으로 바꿔 다시 돌리세요. 이때 `시작 이미지`에는 이전 회차가 `output/video/wan14b_30s/next_start_*.png`로 저장한 마지막 프레임을 넣으면 이어집니다.\n\n**출력**: `output/video/wan14b_30s/full_*.mp4` (합친 영상) + `next_start_*.png` (마지막 프레임)"
+        "## 5번: 분석 프롬프트 → Wan 2.2 I2V 6구간 (30초)\n\n`video_wan22_14b_i2v_6seg_30s`와 같은 그래프이고, 구간별 프롬프트 6개를 손으로 적는 대신 `Shorts Prompts Fanout`이 1번 결과 **prompts.json에서 읽어** 채웁니다.\n\n**입력**\n- `Shorts Prompts Fanout`의 `prompts_file`: 1번 결과 prompts.json을 드롭다운에서 선택. `first_segment`로 시작 구간을 고를 수 있습니다 (7이면 7~12 구간)\n- `시작 이미지`: 합성한 참조 이미지 (2번 결과 reference.png 또는 직접 만든 이미지)\n- `공통 스타일` 노드(파란색): 모든 구간 뒤에 붙는 문장. Fanout의 `common` 출력을 여기 연결하면 1번이 뽑은 배경 설명이 대신 들어갑니다\n- width/height: 세로 영상이면 720 / 1280\n\n**3번(Wan Animate 2)과의 차이**: 원본 동작을 그대로 옮기지 않고 프롬프트 설명대로 움직입니다. 대신 구간이 앞 구간의 마지막 프레임에서 이어져 매끄럽고, 클립당 시간이 훨씬 짧습니다 (lightx2v 4-step).\n**구간이 6개보다 적으면** (30초 미만 영상) `Shorts Segments Collect`가 있는 구간까지만 실행하고 끝냅니다. 없는 구간의 샘플러는 아예 돌지 않습니다.\n**구간이 6개보다 많으면** `first_segment`를 7, 13 으로 바꿔 다시 돌리세요. 이때 `시작 이미지`에는 이전 회차가 `output/video/wan14b_30s/next_start_*.png`로 저장한 마지막 프레임을 넣으면 이어집니다.\n\n**출력**: `output/video/wan14b_30s/full_*.mp4` (합친 영상) + `next_start_*.png` (마지막 프레임)"
       ],
       "title": "사용법 (5번 I2V 6구간)",
       "color": "#223",

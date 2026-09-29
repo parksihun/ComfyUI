@@ -172,7 +172,8 @@ def assemble(wf_id, fragments, extra_links=(), ds=None):
 # --------------------------------------------------------------------------- #
 NOTE_ANALYZE = (
     "## 1단계: 영상 분석 → 프롬프트 추출\n\n"
-    "**입력**: `Shorts Video Segments` 노드의 `video_path`에 영상 파일 전체 경로.\n"
+    "**입력**: `Shorts Video Segments` 노드의 `video_file` 드롭다운에서 영상 선택 (output/, input/ 폴더의 영상이 최신순으로 나옴. "
+    "Upload 버튼으로 이 PC의 파일을 올릴 수도 있음). 목록에 없으면 `video_path`에 전체 경로를 직접 입력.\n"
     "유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받으면 경로가 `output/<id>.mp4`(또는 `_h264.mp4`)로 표시됩니다.\n\n"
     "**동작**\n"
     "1. `Shorts Video Segments`가 영상을 구간으로 나누고 구간마다 `frames_per_segment`장을 뽑습니다.\n"
@@ -204,8 +205,8 @@ def frag_analyze(with_youtube=False):
              [outp("segment_frames", "IMAGE", [1]), outp("segment_index", "INT", None), outp("segment_label", "STRING", None),
               outp("overview_frames", "IMAGE", [2]), outp("count", "INT", None), outp("video_path", "STRING", None),
               outp("segments_json", "STRING", [5])],
-             ["", "fixed", 5.0, 1.5, 0.5, 8, 384],
-             title="Shorts Video Segments - video_path에 영상 파일 경로, 5초 / 장면 단위로 나누기"),
+             ["", "image", "", "fixed", 5.0, 1.5, 0.5, 8, 384],
+             title="Shorts Video Segments - video_file에서 영상 선택, 5초 / 장면 단위로 나누기"),
         node(2, "AILab_QwenVL_Advanced", [-540, 80], [460, 620],
              [inp("image", "IMAGE", None), inp("video", "IMAGE", 1)],
              [outp("RESPONSE", "STRING", [3])], qwen_widgets(SEG_PROMPT, 8), title="QwenVL - 구간별 프롬프트 (구간 수만큼 실행)"),
@@ -285,7 +286,7 @@ NOTE_COMPOSE = (
     "- `Load Image - 배경` (선택): 배경/장소 사진. **없으면 원본 영상의 첫 프레임을 배경으로 써서 사람만 바뀝니다.** "
     "쓰지 않을 때는 노드를 선택하고 Ctrl+B (bypass)\n"
     "- `Load Image - 소품` (선택): 들고 있을 물건/소품 사진. 쓰지 않을 때는 Ctrl+B\n"
-    "- `Shorts Reference Setup`의 `prompts_json`: 1단계 결과 prompts.json 경로 (영상 파일 경로를 넣어도 됩니다)\n\n"
+    "- `Shorts Reference Setup`의 `prompts_file`: 1단계 결과 prompts.json을 드롭다운에서 선택 (없으면 `prompts_json`에 경로 직접 입력)\n\n"
     "**동작**\n"
     "1. Setup 노드가 Picture 1=프로필, Picture 2=배경(또는 원본 첫 프레임), Picture 3=소품 순으로 정리하고 "
     "합성 지시문(`instruction`)을 채웁니다. 원하는 문구는 `extra_instruction`에 추가 (예: wearing a red jacket)\n"
@@ -320,7 +321,7 @@ def frag_compose():
              [outp("image1", "IMAGE", [110, 113]), outp("image2", "IMAGE", [111, 114]), outp("image3", "IMAGE", [112, 115]),
               outp("prompt", "STRING", [116]), outp("width", "INT", [117]), outp("height", "INT", [118]),
               outp("first_frame", "IMAGE", None), outp("prompts_dir", "STRING", [130]), outp("video_path", "STRING", None)],
-             [SAMPLE_PROMPTS, "video_first_frame", 1024, 16, REF_INSTRUCTION, ""],
+             ["", "", "video_first_frame", 1024, 16, REF_INSTRUCTION, ""],
              title="Shorts Reference Setup - 프로필+배경+소품 정리"),
         # models
         node(24, "UNETLoader", [x0 + 980, y0 + 580], [400, 82], [], [outp("MODEL", "MODEL", [120])], [QIE_UNET, "default"]),
@@ -389,7 +390,7 @@ DROP = {288, 537, 595, 604, 605, 635, 636, 639, 642, 645, 646, 647, 648, 649, 65
 NOTE_REPLACE = (
     "## 3단계: 참조 이미지로 인물 교체 영상 생성 (Wan Animate 2)\n\n"
     "**입력**\n"
-    "- `Shorts Reference Loader`의 `prompts_json`: 1단계에서 만든 prompts.json 경로 (여기 한 곳만). 원본 영상 경로는 그 안의 video_file을 자동으로 씁니다\n"
+    "- `Shorts Reference Loader`의 `prompts_file`: 1단계에서 만든 prompts.json을 드롭다운에서 선택 (여기 한 곳만). 원본 영상 경로는 그 안의 video_file을 자동으로 씁니다\n"
     "- 참조 이미지: 같은 노드가 prompts.json 옆의 **reference.png**(2단계 결과)를 자동으로 읽습니다. "
     "없으면 `Load Image - 프로필`의 사진을 그대로 씁니다 (사람만 참조, 배경은 프롬프트로)\n\n"
     "**동작** (구간 수만큼 자동 반복)\n"
@@ -436,8 +437,8 @@ def frag_replace():
         node(59, "ShortsReferenceLoader", [x0, y0 + 460], [360, 150],
              [inp("reference", "IMAGE", None), inp("fallback", "IMAGE", 2000)],
              [outp("image", "IMAGE", [2001, 2002]), outp("prompts_json", "STRING", [2023]), outp("source", "STRING", None)],
-             [SAMPLE_PROMPTS, "reference.png"],
-             title="Shorts Reference Loader - prompts.json 경로 입력 (3단계 시작점)"),
+             ["", "", "reference.png"],
+             title="Shorts Reference Loader - prompts_file에서 prompts.json 선택 (3단계 시작점)"),
         node(58, "AILab_QwenVL_Advanced", [x0, y0 + 640], [460, 620],
              [inp("image", "IMAGE", 2002), inp("video", "IMAGE", None)],
              [outp("RESPONSE", "STRING", [2003])], qwen_widgets(CHAR_PROMPT, 1, 256, keep_loaded=False),
@@ -682,7 +683,7 @@ NOTE_ALL = (
     "# Shorts Remake 올인원: 영상 파일 + 프로필/배경/소품 사진 → 인물 교체 영상\n\n"
     "유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받고, 표시된 파일 경로를 여기 `video_path`에 넣습니다.\n"
     "위에서 아래로 세 구역이 한 번의 Queue로 이어서 실행됩니다.\n\n"
-    "1. **분석** (왼쪽 위): `Shorts Video Segments`의 `video_path`에 영상 경로 → 5초/장면 구간마다 QwenVL 프롬프트 → prompts.json\n"
+    "1. **분석** (왼쪽 위): `Shorts Video Segments`의 `video_file`에서 영상 선택 → 5초/장면 구간마다 QwenVL 프롬프트 → prompts.json\n"
     "2. **참조 이미지 합성** (왼쪽 아래): `Load Image` 프로필(필수) · 배경(선택) · 소품(선택) → Qwen-Image-Edit-2511 → reference.png. "
     "prompts.json 경로는 1구역에서 자동으로 연결됩니다 (`Shorts Reference Setup`의 prompts_json 입력).\n"
     "3. **영상 생성** (오른쪽): Wan Animate 2가 원본 동작 그대로 참조 이미지를 움직여 구간별 clip_NN.mp4 → final.mp4\n\n"
@@ -726,11 +727,9 @@ def build_all():
     for n in c_nodes:
         if n["id"] == 20:
             n["inputs"].append(inp("prompts_json", "STRING", 300, True))
-            n["widgets_values"][0] = ""
     for n in r_nodes:
         if n["id"] == 59:
             n["inputs"].append(inp("prompts_json", "STRING", 301, True))
-            n["widgets_values"][0] = ""
         if n["id"] == 52:
             n["title"] = "Load Image - 프로필 (합성 실패 시 대체용, 평소엔 미사용)"
     shift(c_nodes, 0, 1500)
@@ -763,7 +762,7 @@ NOTE_I2V = (
     "`video_wan22_14b_i2v_6seg_30s`와 같은 그래프이고, 구간별 프롬프트 6개를 손으로 적는 대신 "
     "`Shorts Prompts Fanout`이 1번 결과 **prompts.json에서 읽어** 채웁니다.\n\n"
     "**입력**\n"
-    "- `Shorts Prompts Fanout`의 `prompts_json`: 1번 결과 경로. `first_segment`로 시작 구간을 고를 수 있습니다 (7이면 7~12 구간)\n"
+    "- `Shorts Prompts Fanout`의 `prompts_file`: 1번 결과 prompts.json을 드롭다운에서 선택. `first_segment`로 시작 구간을 고를 수 있습니다 (7이면 7~12 구간)\n"
     "- `시작 이미지`: 합성한 참조 이미지 (2번 결과 reference.png 또는 직접 만든 이미지)\n"
     "- `공통 스타일` 노드(파란색): 모든 구간 뒤에 붙는 문장. Fanout의 `common` 출력을 여기 연결하면 1번이 뽑은 배경 설명이 대신 들어갑니다\n"
     "- width/height: 세로 영상이면 720 / 1280\n\n"
@@ -794,7 +793,7 @@ def build_i2v_bridge():
     outs = [outp(f"seg_{i + 1}", "STRING", None) for i in range(8)] + \
            [outp("common", "STRING", None), outp("negative", "STRING", None), outp("count", "INT", None), outp("summary", "STRING", None),
             outp("n_slots", "INT", None)]
-    fan = node(fid, "ShortsPromptsFanout", [-620, 40], [560, 420], [], outs, [SAMPLE_PROMPTS, 1, "{segment}", ""],
+    fan = node(fid, "ShortsPromptsFanout", [-620, 40], [560, 440], [], outs, ["", "", 1, "{segment}", ""],
                title="Shorts Prompts Fanout - prompts.json → 구간 1~6 프롬프트")
     for k, cid in enumerate(I2V_CONCAT_NODES):
         cn = next(n for n in nodes if n["id"] == cid)

@@ -53,6 +53,7 @@
 
 `Shorts YouTube Download / Trim`의 `url`에 링크(또는 받아둔 파일 경로)를 넣고 Queue. `max_height`(기본 1080)까지 받아
 `ComfyUI-Easy-Install/output/<날짜>_<영상 제목>.mp4`로 저장하고, 결과 경로를 `PreviewAny`에 표시합니다. 같은 영상은 날짜가 달라도 다시 받지 않습니다.
+제목은 앞의 `[4K]` 같은 태그를 떼고 첫 특수문자(`&`, `|`, `#`, 이모지 등) 앞까지만 씁니다 (최대 40자). 예: `leggings fashion model dance & photo shoot 街拍…` → `20260929_leggings fashion model dance.mp4`
 
 **구간만 쓰려면** `start`, `end`에 `1:20` / `1:50` (또는 초 단위 `80` / `110`)을 넣습니다. 한쪽만 넣어도 되고, 둘 다 비우면 전체 영상입니다.
 잘라낸 클립은 `<원본이름>_1m20s-1m50s.mp4`로 따로 저장되며 원본은 남습니다. 프레임 단위로 정확히 자르기 위해 H.264로 다시 인코딩합니다.
@@ -78,7 +79,8 @@ Queue 하면 구간 분석(QwenVL, 구간 수만큼) → 참조 이미지 합성
 
 ## 1단계: 1_Analyze_Prompts.json
 
-1. `Shorts Video Segments`의 `video_path`에 영상 파일 전체 경로 (0단계 결과 또는 받아둔 파일).
+1. `Shorts Video Segments`의 `video_file` 드롭다운에서 영상 선택. `output/`(0단계 결과)과 `input/`의 영상이 최신순으로 나오고, Upload 버튼으로 이 PC의 파일을 올릴 수도 있습니다.
+   목록에 없는 파일은 `video_path`에 전체 경로를 직접 적으면 그쪽이 우선합니다. 목록이 오래됐으면 화면에서 R 키(노드 정의 새로고침)를 누르세요.
 2. `split_mode`
    - `fixed`: `segment_seconds`(기본 5초)마다 자름. 마지막 조각이 `min_seconds`보다 짧으면 앞 구간에 합침.
    - `scene`: 장면 전환(컷)에서 자름. `segment_seconds`보다 긴 장면은 균등 분할, `min_seconds`보다 짧은 조각은 이웃과 합침.
@@ -107,7 +109,7 @@ prompts.json 구조:
 ## 2단계: 2_Compose_Reference.json
 
 1. `Load Image - 프로필`(필수), `배경`(선택), `소품`(선택) 업로드. 안 쓰는 노드는 Ctrl+B.
-2. `Shorts Reference Setup`의 `prompts_json`에 1단계 결과 경로. (prompts.json 없이 영상 경로를 넣어도 동작)
+2. `Shorts Reference Setup`의 `prompts_file` 드롭다운에서 1단계 결과 prompts.json 선택. (`prompts_json`에 경로를 직접 적어도 되고, 영상 경로를 넣어도 동작)
 3. Queue. Setup 노드가 Picture 1=프로필, Picture 2=배경(없으면 원본 첫 프레임), Picture 3=소품 순으로 정리하고 합성 지시문을 만듭니다.
    Qwen-Image-Edit-2511이 원본 영상 비율(`max_side` 1024)로 한 장을 생성 → `reference.png`가 prompts.json 옆에 저장되고 `ComfyUI/input`에도 복사됩니다.
 4. 옵션
@@ -117,7 +119,7 @@ prompts.json 구조:
 
 ## 3단계: 3_Replace_Person_WanAnimate2.json
 
-1. `Shorts Reference Loader`의 `prompts_json`에 1단계 결과 경로 입력 (3단계의 유일한 입력 칸). 원본 영상 경로는 JSON 안의 값을 자동으로 씁니다.
+1. `Shorts Reference Loader`의 `prompts_file` 드롭다운에서 1단계 결과 prompts.json 선택 (3단계의 유일한 입력 칸). 원본 영상 경로는 JSON 안의 값을 자동으로 씁니다.
 2. 같은 노드가 prompts.json 옆의 `reference.png`를 자동으로 읽어 참조 이미지로 씁니다.
    없으면 `Load Image - 프로필`의 사진을 그대로 참조로 씁니다 (배경은 프롬프트로만).
 3. Queue. 구간 수만큼 자동 반복:
@@ -136,7 +138,7 @@ prompts.json 구조:
 
 `video_wan22_14b_i2v_6seg_30s`와 같은 그래프에 `Shorts Prompts Fanout` 노드를 붙인 것입니다. 구간별 프롬프트 6개를 손으로 적는 대신 prompts.json에서 읽어 채웁니다.
 
-1. `Shorts Prompts Fanout`의 `prompts_json`에 1번 결과 경로. 구간이 6개보다 많으면 `first_segment`를 7, 13으로 바꿔 여러 번 돌립니다.
+1. `Shorts Prompts Fanout`의 `prompts_file` 드롭다운에서 1번 결과 prompts.json 선택. 구간이 6개보다 많으면 `first_segment`를 7, 13으로 바꿔 여러 번 돌립니다.
 2. `시작 이미지`에 합성한 참조 이미지(전신, 세로 영상이면 9:16). width/height는 세로면 720/1280.
 3. 파란 `공통 스타일` 노드는 모든 구간 뒤에 붙는 문장입니다. Fanout의 `common` 출력을 여기 연결하면 1번이 뽑은 배경 설명이 대신 들어갑니다.
 4. Queue. 구간 1~6이 앞 구간의 마지막 프레임에서 이어져 생성되고 `output/video/wan14b_30s/full_*.mp4`로 합쳐 저장됩니다.
@@ -153,7 +155,7 @@ prompts.json 구조:
 | 파일 | 바꿀 값 |
 |---|---|
 | 0_ | 노드 `"11"`의 `url` |
-| 1_ | 노드 `"1"`의 `video_path` |
+| 1_ | 노드 `"1"`의 `video_path` (또는 `video_file`에 `output/파일명.mp4`) |
 | 4_ALL | 노드 `"1"`의 `video_path`; 노드 `"21"`(프로필) / `"22"`(배경) / `"23"`(소품)의 `image` 파일명. 배경·소품을 안 쓰면 `"22"`, `"23"` 항목을 지우고 노드 `"20"`의 `background`/`props` 입력을 제거 |
 | 2_ | 노드 `"20"`의 `prompts_json`, 노드 `"21"`~`"23"`의 `image` |
 | 3_ | 노드 `"59"`의 `prompts_json`, 노드 `"52"`의 `image` |

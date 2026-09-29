@@ -24,7 +24,7 @@
         "Node name for S&R": "MarkdownNote"
       },
       "widgets_values": [
-        "# Shorts Remake 올인원: 영상 파일 + 프로필/배경/소품 사진 → 인물 교체 영상\n\n유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받고, 표시된 파일 경로를 여기 `video_path`에 넣습니다.\n위에서 아래로 세 구역이 한 번의 Queue로 이어서 실행됩니다.\n\n1. **분석** (왼쪽 위): `Shorts Video Segments`의 `video_path`에 영상 경로 → 5초/장면 구간마다 QwenVL 프롬프트 → prompts.json\n2. **참조 이미지 합성** (왼쪽 아래): `Load Image` 프로필(필수) · 배경(선택) · 소품(선택) → Qwen-Image-Edit-2511 → reference.png. prompts.json 경로는 1구역에서 자동으로 연결됩니다 (`Shorts Reference Setup`의 prompts_json 입력).\n3. **영상 생성** (오른쪽): Wan Animate 2가 원본 동작 그대로 참조 이미지를 움직여 구간별 clip_NN.mp4 → final.mp4\n\n**입력 3곳만 바꾸면 됩니다**: 영상 파일 경로, 프로필 사진, (선택) 배경/소품 사진. 배경 노드를 bypass(Ctrl+B)하면 원본 영상의 배경이 그대로 유지되고 사람만 바뀝니다.\n\n**출력**: 영상 옆 `<영상이름>_prompts/` 폴더 안에 prompts.json, reference.png, clip_NN.mp4, final.mp4. `Save Video`로 ComfyUI/output/video/ 에도 복사.\n\n**VRAM**: Qwen3-VL-8B(16GB) → Qwen-Image-Edit fp8(~22GB) → Wan Animate 2 int8(~20GB) 순으로 ComfyUI가 모델을 교체해 로드합니다. L40S 48GB 기준.\n\n**단계별로 확인하며 하려면** 1 → 2 → 3 워크플로우를 따로 실행하세요 (prompts.json / reference.png를 중간에 편집 가능)."
+        "# Shorts Remake 올인원: 영상 파일 + 프로필/배경/소품 사진 → 인물 교체 영상\n\n유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받고, 표시된 파일 경로를 여기 `video_path`에 넣습니다.\n위에서 아래로 세 구역이 한 번의 Queue로 이어서 실행됩니다.\n\n1. **분석** (왼쪽 위): `Shorts Video Segments`의 `video_file`에서 영상 선택 → 5초/장면 구간마다 QwenVL 프롬프트 → prompts.json\n2. **참조 이미지 합성** (왼쪽 아래): `Load Image` 프로필(필수) · 배경(선택) · 소품(선택) → Qwen-Image-Edit-2511 → reference.png. prompts.json 경로는 1구역에서 자동으로 연결됩니다 (`Shorts Reference Setup`의 prompts_json 입력).\n3. **영상 생성** (오른쪽): Wan Animate 2가 원본 동작 그대로 참조 이미지를 움직여 구간별 clip_NN.mp4 → final.mp4\n\n**입력 3곳만 바꾸면 됩니다**: 영상 파일 경로, 프로필 사진, (선택) 배경/소품 사진. 배경 노드를 bypass(Ctrl+B)하면 원본 영상의 배경이 그대로 유지되고 사람만 바뀝니다.\n\n**출력**: 영상 옆 `<영상이름>_prompts/` 폴더 안에 prompts.json, reference.png, clip_NN.mp4, final.mp4. `Save Video`로 ComfyUI/output/video/ 에도 복사.\n\n**VRAM**: Qwen3-VL-8B(16GB) → Qwen-Image-Edit fp8(~22GB) → Wan Animate 2 int8(~20GB) 순으로 ComfyUI가 모델을 교체해 로드합니다. L40S 48GB 기준.\n\n**단계별로 확인하며 하려면** 1 → 2 → 3 워크플로우를 따로 실행하세요 (prompts.json / reference.png를 중간에 편집 가능)."
       ],
       "title": "올인원 사용법",
       "color": "#322",
@@ -93,6 +93,8 @@
       },
       "widgets_values": [
         "",
+        "image",
+        "",
         "fixed",
         5.0,
         1.5,
@@ -100,7 +102,7 @@
         8,
         384
       ],
-      "title": "Shorts Video Segments - video_path에 영상 파일 경로, 5초 / 장면 단위로 나누기"
+      "title": "Shorts Video Segments - video_file에서 영상 선택, 5초 / 장면 단위로 나누기"
     },
     {
       "id": 2,
@@ -529,6 +531,7 @@
         "Node name for S&R": "ShortsReferenceSetup"
       },
       "widgets_values": [
+        "",
         "",
         "video_first_frame",
         1024,
@@ -1275,9 +1278,10 @@
       },
       "widgets_values": [
         "",
+        "",
         "reference.png"
       ],
-      "title": "Shorts Reference Loader - prompts.json 경로 입력 (3단계 시작점)"
+      "title": "Shorts Reference Loader - prompts_file에서 prompts.json 선택 (3단계 시작점)"
     },
     {
       "id": 58,
