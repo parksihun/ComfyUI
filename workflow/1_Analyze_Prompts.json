@@ -214,11 +214,11 @@
         1.2,
         16,
         "auto",
-        true,
+        false,
         1,
         "fixed"
       ],
-      "title": "QwenVL - 공통 프롬프트 + 네거티브"
+      "title": "QwenVL - 공통 프롬프트 + 네거티브 (끝나면 모델 해제)"
     },
     {
       "id": 4,

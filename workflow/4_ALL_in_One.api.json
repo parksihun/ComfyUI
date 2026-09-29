@@ -58,7 +58,7 @@
    "repetition_penalty": 1.2,
    "frame_count": 16,
    "video_frame_size": "auto",
-   "keep_model_loaded": true,
+   "keep_model_loaded": false,
    "seed": 1,
    "video": [
     "1",
@@ -67,7 +67,7 @@
   },
   "class_type": "AILab_QwenVL_Advanced",
   "_meta": {
-   "title": "QwenVL - 공통 프롬프트 + 네거티브"
+   "title": "QwenVL - 공통 프롬프트 + 네거티브 (끝나면 모델 해제)"
   }
  },
  "4": {
@@ -389,7 +389,7 @@
    "repetition_penalty": 1.2,
    "frame_count": 1,
    "video_frame_size": "auto",
-   "keep_model_loaded": true,
+   "keep_model_loaded": false,
    "seed": 1,
    "image": [
     "59",

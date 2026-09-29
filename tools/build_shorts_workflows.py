@@ -7,6 +7,7 @@
                                          reference.png (or profile) + prompts.json + source video
                                          -> Wan Animate 2 per segment -> clip_NN.mp4 -> final.mp4
   4_ALL_in_One.json                 stages 1 + 2 + 3 in one graph (video file + images in, final.mp4 out)
+  5_I2V_6seg_from_prompts.json      prompts.json -> Wan 2.2 i2v 6-segment graph (fan-out node fills the prompts)
 
 Stage 2 is flattened from the official video_wan_animate2.json template (loop nodes removed; per-segment
 execution comes from ShortsPromptsLoader list outputs). Stage 2 mirrors image_qwen_image_edit_2511.json.
@@ -92,12 +93,14 @@ _spec.loader.exec_module(shorts_nodes)
 REF_INSTRUCTION = shorts_nodes.DEFAULT_REF_INSTRUCTION
 
 
-def qwen_widgets(prompt, frame_count, max_tokens=512, model=QWEN_MODEL):
+def qwen_widgets(prompt, frame_count, max_tokens=512, model=QWEN_MODEL, keep_loaded=True):
+    # keep_loaded=False frees the 16 GB Qwen3-VL after the node; needed before Wan Animate 2 / Qwen-Image-Edit
+    # run in the same session (L40S 46 GB would otherwise run out of VRAM).
     # model_name, quantization, attention_mode, use_torch_compile, device, preset_prompt, custom_prompt,
     # max_tokens, temperature, top_p, num_beams, repetition_penalty, frame_count, video_frame_size,
     # keep_model_loaded, seed, control_after_generate
     return [model, "None (FP16)", "auto", False, "auto", "\U0001F4F9 Video Summary", prompt,
-            max_tokens, 0.3, 0.9, 1, 1.2, frame_count, "auto", True, 1, "fixed"]
+            max_tokens, 0.3, 0.9, 1, 1.2, frame_count, "auto", keep_loaded, 1, "fixed"]
 
 
 def node(nid, ntype, pos, size, inputs, outputs, widgets, title=None, extra=None):
@@ -208,7 +211,7 @@ def frag_analyze(with_youtube=False):
              [outp("RESPONSE", "STRING", [3])], qwen_widgets(SEG_PROMPT, 8), title="QwenVL - 구간별 프롬프트 (구간 수만큼 실행)"),
         node(3, "AILab_QwenVL_Advanced", [-540, 760], [460, 620],
              [inp("image", "IMAGE", None), inp("video", "IMAGE", 2)],
-             [outp("RESPONSE", "STRING", [4])], qwen_widgets(COMMON_PROMPT, 16), title="QwenVL - 공통 프롬프트 + 네거티브"),
+             [outp("RESPONSE", "STRING", [4])], qwen_widgets(COMMON_PROMPT, 16, keep_loaded=False), title="QwenVL - 공통 프롬프트 + 네거티브 (끝나면 모델 해제)"),
         node(4, "ShortsPromptsCollector", [-40, 80], [460, 300],
              [inp("segment_responses", "STRING", 3), inp("common_response", "STRING", 4), inp("segments_json", "STRING", 5)],
              [outp("summary", "STRING", [6]), outp("prompts_json", "STRING", None)],
@@ -434,7 +437,7 @@ def frag_replace():
              title="Shorts Reference Loader - prompts.json 경로 입력 (3단계 시작점)"),
         node(58, "AILab_QwenVL_Advanced", [x0, y0 + 640], [460, 620],
              [inp("image", "IMAGE", 2002), inp("video", "IMAGE", None)],
-             [outp("RESPONSE", "STRING", [2003])], qwen_widgets(CHAR_PROMPT, 1, 256),
+             [outp("RESPONSE", "STRING", [2003])], qwen_widgets(CHAR_PROMPT, 1, 256, keep_loaded=False),
              title="QwenVL - 참조 인물 외형 묘사 (Character Description)"),
         node(51, "ShortsPromptsLoader", [x0 + 520, y0], [480, 420],
              [inp("character_description", "STRING", 2003), inp("prompts_json", "STRING", 2023, True)],
@@ -633,8 +636,9 @@ def export_api(wf):
         elif wv:
             names = widget_names_for(n["type"])
             vals = list(wv)
-            if len(vals) != len(names):
+            if len(vals) > len(names):
                 raise ValueError(f"node {nid} {n['type']}: {len(vals)} widget values but {len(names)} names {names}")
+            # fewer values than names: workflow saved with an older node version; the missing (optional) widgets keep their defaults
             for name, v in zip(names, vals):
                 if name is not None:
                     inputs[name] = v
@@ -739,5 +743,72 @@ def build_all():
     write_all(wf, "4_ALL_in_One.json")
 
 
+# --------------------------------------------------------------------------- #
+# Stage 5: prompts.json -> hand-built Wan 2.2 i2v 6-segment workflow (no motion transfer, much faster)
+# --------------------------------------------------------------------------- #
+I2V_SOURCE = "video_wan22_14b_i2v_6seg_30s.json"
+I2V_SEGMENT_PROMPT_NODES = [15, 25, 36, 47, 58, 69]   # PrimitiveStringMultiline '구간 N 프롬프트' -> replaced by the fan-out
+I2V_CONCAT_NODES = [16, 26, 37, 48, 59, 70]           # StringConcatenate: string_a <- segment prompt
+
+NOTE_I2V = (
+    "## 5번: 분석 프롬프트 → Wan 2.2 I2V 6구간 (30초)\n\n"
+    "`video_wan22_14b_i2v_6seg_30s`와 같은 그래프이고, 구간별 프롬프트 6개를 손으로 적는 대신 "
+    "`Shorts Prompts Fanout`이 1번 결과 **prompts.json에서 읽어** 채웁니다.\n\n"
+    "**입력**\n"
+    "- `Shorts Prompts Fanout`의 `prompts_json`: 1번 결과 경로. `first_segment`로 시작 구간을 고를 수 있습니다 (7이면 7~12 구간)\n"
+    "- `시작 이미지`: 합성한 참조 이미지 (2번 결과 reference.png 또는 직접 만든 이미지)\n"
+    "- `공통 스타일` 노드(파란색): 모든 구간 뒤에 붙는 문장. Fanout의 `common` 출력을 여기 연결하면 1번이 뽑은 배경 설명이 대신 들어갑니다\n"
+    "- width/height: 세로 영상이면 720 / 1280\n\n"
+    "**3번(Wan Animate 2)과의 차이**: 원본 동작을 그대로 옮기지 않고 프롬프트 설명대로 움직입니다. "
+    "대신 구간이 앞 구간의 마지막 프레임에서 이어져 매끄럽고, 클립당 시간이 훨씬 짧습니다 (lightx2v 4-step).\n"
+    "prompts.json 구간이 6개보다 많으면 `first_segment`를 7, 13 으로 바꿔 두 번 더 돌리면 됩니다."
+)
+
+
+def build_i2v_bridge():
+    src = os.path.join(OUT_DIRS[0], I2V_SOURCE)
+    if not os.path.isfile(src):
+        print("skip 5_I2V (source missing):", src)
+        return
+    with io.open(src, encoding="utf-8") as f:
+        wf = json.load(f)
+    drop = set(I2V_SEGMENT_PROMPT_NODES)
+    links = {l[0]: l for l in wf["links"]}
+    # links from the dropped prompt nodes into the concat nodes
+    old_links = {l[0] for l in links.values() if l[1] in drop}
+    nodes = [n for n in wf["nodes"] if n["id"] not in drop]
+    fid = wf["last_node_id"] + 1
+    lid = wf["last_link_id"]
+    outs = [outp(f"seg_{i + 1}", "STRING", None) for i in range(8)] + \
+           [outp("common", "STRING", None), outp("negative", "STRING", None), outp("count", "INT", None), outp("summary", "STRING", None)]
+    fan = node(fid, "ShortsPromptsFanout", [-620, 40], [560, 420], [], outs, [SAMPLE_PROMPTS, 1, "{segment}", ""],
+               title="Shorts Prompts Fanout - prompts.json → 구간 1~6 프롬프트")
+    for k, cid in enumerate(I2V_CONCAT_NODES):
+        cn = next(n for n in nodes if n["id"] == cid)
+        lid += 1
+        for i in cn["inputs"]:
+            if i["name"] == "string_a":
+                i["link"] = lid
+        links[lid] = [lid, fid, k, cid, 0, "STRING"]
+        fan["outputs"][k]["links"] = [lid]
+    links = {k: v for k, v in links.items() if k not in old_links}
+    nodes.append(fan)
+    nodes.append(note(fid + 1, [-620, 500], [560, 520], NOTE_I2V, "사용법 (5번 I2V 6구간)", ("#223", "#335")))
+    for n in nodes:
+        for o in n.get("outputs", []):
+            if o.get("links"):
+                o["links"] = [x for x in o["links"] if x in links]
+    wf["nodes"] = nodes
+    wf["links"] = list(links.values())
+    wf["last_node_id"] = fid + 1
+    wf["last_link_id"] = lid
+    wf["id"] = "shorts-5-i2v-6seg-from-prompts"
+    for i, n in enumerate(nodes):
+        n["order"] = i
+    write_all(wf, "5_I2V_6seg_from_prompts.json")
+
+
+
 if __name__ == "__main__":
     build_all()
+    build_i2v_bridge()

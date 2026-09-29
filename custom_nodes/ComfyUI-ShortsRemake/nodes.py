@@ -13,6 +13,7 @@ Nodes
 - Shorts Reference Setup  : profile + background + props images -> Qwen-Image-Edit inputs + instruction + canvas size
 - Shorts Reference Save   : composed reference -> <prompts dir>/reference.png (+ copy to ComfyUI/input)
 - Shorts Reference Loader : prompts.json path -> reference IMAGE (reference.png / linked / fallback) + prompts_json passthrough
+- Shorts Prompts Fanout   : prompts.json -> seg_1..seg_8 STRING outputs (for graphs with one text box per segment)
 
 List mechanics: outputs flagged in OUTPUT_IS_LIST make every downstream node run once
 per segment, so a normal single-clip generation graph becomes a per-segment loop.
@@ -1097,6 +1098,69 @@ class ShortsReferenceLoader:
         raise FileNotFoundError(f"[ShortsRemake] no reference image: {path} (connect a fallback image)")
 
 
+# --------------------------------------------------------------------------- #
+# 6. prompts.json -> fixed string outputs (for hand-built multi-segment graphs, e.g. Wan 2.2 i2v 6-seg)
+# --------------------------------------------------------------------------- #
+FANOUT_SLOTS = 8
+
+
+class ShortsPromptsFanout:
+    """Reads prompts.json and exposes segment prompts as separate STRING outputs so they can be wired
+    into a workflow that has one text box per segment (no list execution involved)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompts_json": ("STRING", {"default": "", "placeholder": "C:/.../video_prompts/prompts.json"}),
+                "first_segment": ("INT", {"default": 1, "min": 1, "max": 999,
+                                          "tooltip": "prompts.json segment index that goes to seg_1 (e.g. 7 to render segments 7..14)."}),
+                "template": ("STRING", {"default": "{segment}", "multiline": True,
+                                        "tooltip": "Per-segment text. Placeholders: {segment} {motion} {camera} {common} {index}"}),
+                "empty_text": ("STRING", {"default": "", "tooltip": "Used for seg_N outputs beyond the last segment."}),
+            }
+        }
+
+    RETURN_TYPES = tuple(["STRING"] * FANOUT_SLOTS + ["STRING", "STRING", "INT", "STRING"])
+    RETURN_NAMES = tuple([f"seg_{i + 1}" for i in range(FANOUT_SLOTS)] + ["common", "negative", "count", "summary"])
+    FUNCTION = "fanout"
+    CATEGORY = "ShortsRemake"
+
+    @classmethod
+    def IS_CHANGED(cls, prompts_json, **kw):
+        return _file_sig(os.path.expanduser((prompts_json or "").strip().strip('"')))
+
+    def fanout(self, prompts_json, first_segment, template, empty_text):
+        pj = os.path.expanduser((prompts_json or "").strip().strip('"'))
+        if not os.path.isfile(pj):
+            raise FileNotFoundError(f"[ShortsRemake] prompts.json not found: {pj}")
+        with open(pj, encoding="utf-8") as f:
+            pr = json.load(f)
+        segs = pr.get("segments", [])
+        common = (pr.get("common_prompt") or "").strip()
+        negative = (pr.get("negative_prompt") or DEFAULT_NEGATIVE).strip()
+        by_index = {int(sg.get("index", i + 1)): sg for i, sg in enumerate(segs)}
+        outs, lines = [], []
+        for k in range(FANOUT_SLOTS):
+            idx = int(first_segment) + k
+            sg = by_index.get(idx)
+            if sg is None:
+                outs.append(empty_text or "")
+                continue
+            fields = {"segment": (sg.get("positive_prompt") or "").strip(), "motion": (sg.get("motion") or "").strip(),
+                      "camera": (sg.get("camera") or "").strip(), "common": common, "index": idx}
+            try:
+                text = (template or "{segment}").format(**fields)
+            except (KeyError, IndexError, ValueError):
+                text = fields["segment"]
+            text = re.sub(r"\s+", " ", text).strip()
+            outs.append(text)
+            lines.append(f"[seg_{k + 1} = clip {idx} {sg.get('label', '')}] {text}")
+        summary = "\n".join(lines) if lines else "(no segments)"
+        print(f"[ShortsRemake] fanout: {len(lines)} of {FANOUT_SLOTS} slots filled from {len(segs)} segments (first={first_segment})")
+        return tuple(outs + [common, negative, len(segs), summary])
+
+
 NODE_CLASS_MAPPINGS = {
     "ShortsVideoSegments": ShortsVideoSegments,
     "ShortsPromptsCollector": ShortsPromptsCollector,
@@ -1107,6 +1171,7 @@ NODE_CLASS_MAPPINGS = {
     "ShortsReferenceSetup": ShortsReferenceSetup,
     "ShortsReferenceSave": ShortsReferenceSave,
     "ShortsReferenceLoader": ShortsReferenceLoader,
+    "ShortsPromptsFanout": ShortsPromptsFanout,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsVideoSegments": "Shorts Video Segments",
@@ -1118,4 +1183,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsReferenceSetup": "Shorts Reference Setup (profile+background+props)",
     "ShortsReferenceSave": "Shorts Reference Save",
     "ShortsReferenceLoader": "Shorts Reference Loader",
+    "ShortsPromptsFanout": "Shorts Prompts Fanout (seg_1..8)",
 }
