@@ -2,7 +2,7 @@
   "id": "shorts-1-analyze",
   "revision": 0,
   "last_node_id": 10,
-  "last_link_id": 6,
+  "last_link_id": 8,
   "nodes": [
     {
       "id": 10,
@@ -24,7 +24,7 @@
         "Node name for S&R": "MarkdownNote"
       },
       "widgets_values": [
-        "## 1단계: 영상 분석 → 프롬프트 추출\n\n**입력**: `Shorts Video Segments` 노드의 `video_file` 드롭다운에서 영상 선택 (output/, input/ 폴더의 영상이 최신순으로 나옴. Upload 버튼으로 이 PC의 파일을 올릴 수도 있음). 목록에 없으면 `video_path`에 전체 경로를 직접 입력.\n유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받으면 경로가 `output/<id>.mp4`(또는 `_h264.mp4`)로 표시됩니다.\n\n**동작**\n1. `Shorts Video Segments`가 영상을 구간으로 나누고 구간마다 `frames_per_segment`장을 뽑습니다.\n   - `split_mode` = fixed : `segment_seconds`(기본 5초) 고정 길이\n   - `split_mode` = scene : 장면 전환(컷)에서 자름. `segment_seconds`보다 긴 장면은 균등 분할, `min_seconds`보다 짧은 조각은 이웃과 합침. `scene_threshold`를 낮추면 컷을 더 민감하게 잡음\n2. 위쪽 QwenVL이 **구간마다 한 번씩** 실행되어 구간 프롬프트(JSON)를 씁니다.\n3. 아래쪽 QwenVL이 구간별 대표 프레임을 한꺼번에 보고 **공통 프롬프트 · 네거티브**를 씁니다.\n4. `Shorts Prompts Collector`가 결과를 모아 저장합니다.\n\n**출력** (`out_dir` 비우면 영상 옆 `<영상이름>_prompts/`)\n- `prompts.json` : common_prompt, negative_prompt, segments[].positive_prompt / motion / camera / scene_ko\n- `comfyui_prompts.txt` : 사람이 보는 정리본\n\n**다음 단계**: `2_Compose_Reference`(프로필+배경+소품 → reference.png) → `3_Replace_Person_WanAnimate2`(영상 생성). 두 워크플로우의 `prompts_json`에 이 파일 경로를 넣습니다.\n\nGPU 서버: Qwen3-VL-8B-Instruct(FP16, ~16GB). 이 PC(CPU)에서 확인할 때는 QwenVL 노드를 `QwenVL Advanced (GGUF)`, device=cpu로 바꿔 쓰세요."
+        "## 1단계: 영상 분석 → 프롬프트 추출\n\n**입력**: `Shorts Video Segments` 노드의 `video_file` 드롭다운에서 영상 선택 (output/, input/ 폴더의 영상이 최신순으로 나옴. Upload 버튼으로 이 PC의 파일을 올릴 수도 있음). 목록에 없으면 `video_path`에 전체 경로를 직접 입력.\n유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받으면 경로가 `output/<id>.mp4`(또는 `_h264.mp4`)로 표시됩니다.\n\n**동작**\n1. `Shorts Video Segments`가 영상을 구간으로 나누고 구간마다 `frames_per_segment`장을 뽑습니다.\n   - `split_mode` = fixed : `segment_seconds`(기본 5초) 고정 길이\n   - `split_mode` = scene : 장면 전환(컷)에서 자름. `segment_seconds`보다 긴 장면은 균등 분할, `min_seconds`보다 짧은 조각은 이웃과 합침. `scene_threshold`를 낮추면 컷을 더 민감하게 잡음\n2. 위쪽 QwenVL이 **구간마다 한 번씩** 실행되어 구간 프롬프트(JSON)를 씁니다.\n3. 아래쪽 QwenVL이 구간별 대표 프레임을 한꺼번에 보고 **공통 프롬프트 · 네거티브**를 씁니다.\n4. `Shorts Prompts Collector`가 결과를 모아 저장하고, `Shorts Free VRAM`이 Qwen3-VL(16GB)을 VRAM에서 내립니다. 그래서 재시작 없이 바로 3번/5번을 돌려도 메모리가 남습니다.\n\n**출력** (`out_dir` 비우면 영상 옆 `<영상이름>_prompts/`)\n- `prompts.json` : common_prompt, negative_prompt, segments[].positive_prompt / motion / camera / scene_ko\n- `comfyui_prompts.txt` : 사람이 보는 정리본\n\n**다음 단계**: `2_Compose_Reference`(프로필+배경+소품 → reference.png) → `3_Replace_Person_WanAnimate2`(영상 생성). 두 워크플로우의 `prompts_json`에 이 파일 경로를 넣습니다.\n\nGPU 서버: Qwen3-VL-8B-Instruct(FP16, ~16GB). 이 PC(CPU)에서 확인할 때는 QwenVL 노드를 `QwenVL Advanced (GGUF)`, device=cpu로 바꿔 쓰세요."
       ],
       "title": "사용법 (1단계 분석)",
       "color": "#432",
@@ -277,6 +277,44 @@
       ]
     },
     {
+      "id": 6,
+      "type": "ShortsFreeVRAM",
+      "pos": [
+        460,
+        80
+      ],
+      "size": [
+        360,
+        100
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "value",
+          "type": "*",
+          "link": 6
+        }
+      ],
+      "outputs": [
+        {
+          "name": "value",
+          "type": "*",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsFreeVRAM"
+      },
+      "widgets_values": [
+        true
+      ],
+      "title": "Shorts Free VRAM - Qwen3-VL 16GB 해제 (다음 단계 메모리 확보)"
+    },
+    {
       "id": 5,
       "type": "PreviewAny",
       "pos": [
@@ -288,13 +326,13 @@
         500
       ],
       "flags": {},
-      "order": 5,
+      "order": 6,
       "mode": 0,
       "inputs": [
         {
           "name": "source",
           "type": "*",
-          "link": 6
+          "link": 8
         }
       ],
       "outputs": [],
@@ -352,6 +390,14 @@
     [
       6,
       4,
+      0,
+      6,
+      0,
+      "STRING"
+    ],
+    [
+      8,
+      6,
       0,
       5,
       0,

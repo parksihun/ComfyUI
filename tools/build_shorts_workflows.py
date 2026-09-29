@@ -182,7 +182,8 @@ NOTE_ANALYZE = (
     "`min_seconds`보다 짧은 조각은 이웃과 합침. `scene_threshold`를 낮추면 컷을 더 민감하게 잡음\n"
     "2. 위쪽 QwenVL이 **구간마다 한 번씩** 실행되어 구간 프롬프트(JSON)를 씁니다.\n"
     "3. 아래쪽 QwenVL이 구간별 대표 프레임을 한꺼번에 보고 **공통 프롬프트 · 네거티브**를 씁니다.\n"
-    "4. `Shorts Prompts Collector`가 결과를 모아 저장합니다.\n\n"
+    "4. `Shorts Prompts Collector`가 결과를 모아 저장하고, `Shorts Free VRAM`이 Qwen3-VL(16GB)을 VRAM에서 내립니다. "
+    "그래서 재시작 없이 바로 3번/5번을 돌려도 메모리가 남습니다.\n\n"
     "**출력** (`out_dir` 비우면 영상 옆 `<영상이름>_prompts/`)\n"
     "- `prompts.json` : common_prompt, negative_prompt, segments[].positive_prompt / motion / camera / scene_ko\n"
     "- `comfyui_prompts.txt` : 사람이 보는 정리본\n\n"
@@ -193,8 +194,11 @@ NOTE_ANALYZE = (
 )
 
 
-def frag_analyze(with_youtube=False):
+def frag_analyze(with_youtube=False, free_from="summary"):
+    """free_from: which collector output passes through the Free-VRAM node (node 6) -
+    'summary' (stand-alone stage 1: before the preview) or 'prompts_json' (all-in-one: before stages 2/3)."""
     seg_inputs = [inp("video_path", "STRING", 7, True)] if with_youtube else []
+    via_summary = free_from == "summary"
     nodes = [
         note(10, [-1560, 80], [520, 560], NOTE_ANALYZE, "사용법 (1단계 분석)"),
         node(11, "ShortsYouTubeDownload", [-1000, 80], [420, 190], [],
@@ -215,9 +219,12 @@ def frag_analyze(with_youtube=False):
              [outp("RESPONSE", "STRING", [4])], qwen_widgets(COMMON_PROMPT, 16, keep_loaded=False), title="QwenVL - 공통 프롬프트 + 네거티브 (끝나면 모델 해제)"),
         node(4, "ShortsPromptsCollector", [-40, 80], [460, 300],
              [inp("segment_responses", "STRING", 3), inp("common_response", "STRING", 4), inp("segments_json", "STRING", 5)],
-             [outp("summary", "STRING", [6]), outp("prompts_json", "STRING", None)],
+             [outp("summary", "STRING", [6]), outp("prompts_json", "STRING", None if via_summary else [8])],
              ["", DEFAULT_NEGATIVE, 16]),
-        node(5, "PreviewAny", [-40, 440], [640, 500], [inp("source", "*", 6)], [], [None, None, False]),
+        node(6, "ShortsFreeVRAM", [460, 80], [360, 100],
+             [inp("value", "*", 6 if via_summary else 8)], [outp("value", "*", [8] if via_summary else None)], [True],
+             title="Shorts Free VRAM - Qwen3-VL 16GB 해제 (다음 단계 메모리 확보)"),
+        node(5, "PreviewAny", [-40, 440], [640, 500], [inp("source", "*", 8 if via_summary else 6)], [], [None, None, False]),
     ]
     links = {
         1: [1, 1, 0, 2, 1, "IMAGE"],
@@ -225,8 +232,13 @@ def frag_analyze(with_youtube=False):
         3: [3, 2, 0, 4, 0, "STRING"],
         4: [4, 3, 0, 4, 1, "STRING"],
         5: [5, 1, 6, 4, 2, "STRING"],
-        6: [6, 4, 0, 5, 0, "STRING"],
     }
+    if via_summary:
+        links[6] = [6, 4, 0, 6, 0, "STRING"]   # collector summary -> Free VRAM
+        links[8] = [8, 6, 0, 5, 0, "STRING"]   # Free VRAM -> preview
+    else:
+        links[6] = [6, 4, 0, 5, 0, "STRING"]   # collector summary -> preview
+        links[8] = [8, 4, 1, 6, 0, "STRING"]   # collector prompts_json -> Free VRAM (-> stages 2/3 via cross links)
     if with_youtube:
         links[7] = [7, 11, 0, 1, 0, "STRING"]
     else:
@@ -717,7 +729,7 @@ def build_all():
               "3_Replace_Person_WanAnimate2.json")
 
     # all-in-one: stage 1 at top-left, stage 1b below it, stage 2 to the right
-    a_nodes, a_links = frag_analyze()
+    a_nodes, a_links = frag_analyze(free_from="prompts_json")
     c_nodes, c_links = frag_compose()
     r_nodes, r_links = frag_replace()
     a_nodes = [n for n in a_nodes if n["id"] != 10]  # per-stage notes replaced by one overview note
@@ -736,8 +748,8 @@ def build_all():
     shift(r_nodes, 900, 0)
     overview = note(70, [-2200, 80], [600, 760], NOTE_ALL, "올인원 사용법", ("#322", "#533"))
     cross = [
-        [300, 4, 1, 20, 3, "STRING"],   # collector prompts_json -> reference setup
-        [301, 4, 1, 59, 2, "STRING"],   # collector prompts_json -> reference loader (stage-2 entry point)
+        [300, 6, 0, 20, 3, "STRING"],   # collector prompts_json (via Free VRAM) -> reference setup
+        [301, 6, 0, 59, 2, "STRING"],   # collector prompts_json (via Free VRAM) -> reference loader (stage-3 entry point)
         [302, 37, 1, 59, 0, "IMAGE"],   # saved reference image -> reference loader
     ]
     wf = assemble("shorts-all-remake", [([overview], {}), (a_nodes, a_links), (c_nodes, c_links), (r_nodes, r_links)],

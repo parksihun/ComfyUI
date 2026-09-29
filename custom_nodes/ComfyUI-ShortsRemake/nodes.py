@@ -15,6 +15,7 @@ Nodes
 - Shorts Reference Loader : prompts.json path -> reference IMAGE (reference.png / linked / fallback) + prompts_json passthrough
 - Shorts Prompts Fanout   : prompts.json -> seg_1..seg_8 STRING outputs (for graphs with one text box per segment)
 - Shorts Segments Collect : lazy seg_1..seg_8 IMAGE inputs; only the first `count` segments execute, frames concatenated
+- Shorts Free VRAM        : pass-through that unloads every QwenVL model instance (+ ComfyUI models) between stages
 
 List mechanics: outputs flagged in OUTPUT_IS_LIST make every downstream node run once
 per segment, so a normal single-clip generation graph becomes a per-segment loop.
@@ -1383,6 +1384,85 @@ class ShortsSegmentsCollect:
         return (merged, merged[-1:], len(segs))
 
 
+# --------------------------------------------------------------------------- #
+# 8. free VRAM between stages (QwenVL holds its 16 GB model per node instance)
+# --------------------------------------------------------------------------- #
+def _free_qwenvl_models() -> int:
+    """Call clear() on every live QwenVL node instance that still holds a model."""
+    import gc
+
+    n = 0
+    for obj in gc.get_objects():
+        try:
+            cls_name = type(obj).__name__
+            if "QwenVL" not in cls_name and not any("QwenVL" in b.__name__ for b in type(obj).__mro__[1:]):
+                continue
+            if getattr(obj, "model", None) is not None and callable(getattr(obj, "clear", None)):
+                obj.clear()
+                n += 1
+        except Exception:  # noqa: BLE001
+            continue
+    return n
+
+
+class ShortsFreeVRAM:
+    """Pass-through node: whatever comes in goes out unchanged, but on the way every QwenVL model and
+    (optionally) all ComfyUI-managed models are unloaded. Put it between stage 1 and the video stages."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "value": ("*", {"forceInput": True}),
+                "unload_comfy_models": ("BOOLEAN", {"default": True,
+                                                    "tooltip": "Also unload ComfyUI-managed models (Wan, Qwen-Image, text encoders)."}),
+            }
+        }
+
+    RETURN_TYPES = ("*",)
+    RETURN_NAMES = ("value",)
+    FUNCTION = "free"
+    CATEGORY = "ShortsRemake"
+    DESCRIPTION = "Unloads QwenVL (and optionally all ComfyUI) models, then passes its input through."
+
+    @classmethod
+    def IS_CHANGED(cls, value, unload_comfy_models):
+        return float("nan")  # always run
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, input_types):
+        return True  # accepts any input type
+
+    def free(self, value, unload_comfy_models=True):
+        import gc
+
+        before = None
+        try:
+            if torch.cuda.is_available():
+                before = torch.cuda.memory_allocated() / 1e9
+        except Exception:  # noqa: BLE001
+            pass
+        n = _free_qwenvl_models()
+        if unload_comfy_models:
+            try:
+                import comfy.model_management as mm
+                mm.unload_all_models()
+                mm.soft_empty_cache(True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[ShortsRemake] unload_all_models failed: {e}")
+        gc.collect()
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                after = torch.cuda.memory_allocated() / 1e9
+                print(f"[ShortsRemake] free VRAM: {n} QwenVL instance(s) cleared, allocated {before:.1f} GB -> {after:.1f} GB")
+            else:
+                print(f"[ShortsRemake] free VRAM: {n} QwenVL instance(s) cleared")
+        except Exception:  # noqa: BLE001
+            pass
+        return (value,)
+
+
 NODE_CLASS_MAPPINGS = {
     "ShortsVideoSegments": ShortsVideoSegments,
     "ShortsPromptsCollector": ShortsPromptsCollector,
@@ -1395,6 +1475,7 @@ NODE_CLASS_MAPPINGS = {
     "ShortsReferenceLoader": ShortsReferenceLoader,
     "ShortsPromptsFanout": ShortsPromptsFanout,
     "ShortsSegmentsCollect": ShortsSegmentsCollect,
+    "ShortsFreeVRAM": ShortsFreeVRAM,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsVideoSegments": "Shorts Video Segments",
@@ -1408,4 +1489,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsReferenceLoader": "Shorts Reference Loader",
     "ShortsPromptsFanout": "Shorts Prompts Fanout (seg_1..8)",
     "ShortsSegmentsCollect": "Shorts Segments Collect (lazy, stops after last segment)",
+    "ShortsFreeVRAM": "Shorts Free VRAM (unload QwenVL + models)",
 }

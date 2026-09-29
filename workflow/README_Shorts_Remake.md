@@ -86,6 +86,7 @@ Queue 하면 구간 분석(QwenVL, 구간 수만큼) → 참조 이미지 합성
    - `scene`: 장면 전환(컷)에서 자름. `segment_seconds`보다 긴 장면은 균등 분할, `min_seconds`보다 짧은 조각은 이웃과 합침.
      `scene_threshold`(기본 0.5)를 낮추면 컷을 더 민감하게 잡음.
 3. Queue. QwenVL이 구간 수만큼 자동 반복 실행되고, 마지막에 구간별 대표 프레임을 모아 공통 프롬프트와 네거티브를 씁니다.
+   끝나면 `Shorts Free VRAM` 노드가 Qwen3-VL(노드마다 16GB씩 두 개)을 VRAM에서 내리므로, 재시작 없이 바로 3번이나 5번을 돌릴 수 있습니다.
 4. 결과: `<영상 폴더>/<영상이름>_prompts/prompts.json`, `comfyui_prompts.txt` (`out_dir`로 변경 가능)
 
 prompts.json 구조:

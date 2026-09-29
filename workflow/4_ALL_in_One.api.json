@@ -91,6 +91,19 @@
   },
   "class_type": "ShortsPromptsCollector"
  },
+ "6": {
+  "inputs": {
+   "unload_comfy_models": true,
+   "value": [
+    "4",
+    1
+   ]
+  },
+  "class_type": "ShortsFreeVRAM",
+  "_meta": {
+   "title": "Shorts Free VRAM - Qwen3-VL 16GB 해제 (다음 단계 메모리 확보)"
+  }
+ },
  "5": {
   "inputs": {
    "source": [
@@ -113,8 +126,8 @@
   "inputs": {
    "prompts_file": "",
    "prompts_json": [
-    "4",
-    1
+    "6",
+    0
    ],
    "background_mode": "video_first_frame",
    "max_side": 1024,
@@ -358,8 +371,8 @@
   "inputs": {
    "prompts_file": "",
    "prompts_json": [
-    "4",
-    1
+    "6",
+    0
    ],
    "filename": "reference.png",
    "reference": [
