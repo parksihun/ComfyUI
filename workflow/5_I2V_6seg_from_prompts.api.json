@@ -99,24 +99,6 @@
    "title": "시작 이미지"
   }
  },
- "10": {
-  "inputs": {
-   "value": 1280
-  },
-  "class_type": "PrimitiveInt",
-  "_meta": {
-   "title": "width (16의 배수)"
-  }
- },
- "11": {
-  "inputs": {
-   "value": 704
-  },
-  "class_type": "PrimitiveInt",
-  "_meta": {
-   "title": "height (16의 배수)"
-  }
- },
  "12": {
   "inputs": {
    "value": 81
@@ -184,12 +166,12 @@
  "18": {
   "inputs": {
    "width": [
-    "10",
+    "91",
     0
    ],
    "height": [
-    "11",
-    0
+    "91",
+    1
    ],
    "length": [
     "12",
@@ -344,12 +326,12 @@
  "28": {
   "inputs": {
    "width": [
-    "10",
+    "91",
     0
    ],
    "height": [
-    "11",
-    0
+    "91",
+    1
    ],
    "length": [
     "12",
@@ -504,12 +486,12 @@
  "39": {
   "inputs": {
    "width": [
-    "10",
+    "91",
     0
    ],
    "height": [
-    "11",
-    0
+    "91",
+    1
    ],
    "length": [
     "12",
@@ -664,12 +646,12 @@
  "50": {
   "inputs": {
    "width": [
-    "10",
+    "91",
     0
    ],
    "height": [
-    "11",
-    0
+    "91",
+    1
    ],
    "length": [
     "12",
@@ -824,12 +806,12 @@
  "61": {
   "inputs": {
    "width": [
-    "10",
+    "91",
     0
    ],
    "height": [
-    "11",
-    0
+    "91",
+    1
    ],
    "length": [
     "12",
@@ -984,12 +966,12 @@
  "72": {
   "inputs": {
    "width": [
-    "10",
+    "91",
     0
    ],
    "height": [
-    "11",
-    0
+    "91",
+    1
    ],
    "length": [
     "12",
@@ -1180,6 +1162,20 @@
   "class_type": "SaveImage",
   "_meta": {
    "title": "마지막 프레임 저장 (다음 회차 시작 이미지)"
+  }
+ },
+ "91": {
+  "inputs": {
+   "max_side": 1280,
+   "divisible_by": 16,
+   "image": [
+    "9",
+    0
+   ]
+  },
+  "class_type": "ShortsSizeFromImage",
+  "_meta": {
+   "title": "Shorts Size From Image - 시작 이미지 비율대로 width/height (긴 변 1280)"
   }
  }
 }

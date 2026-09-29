@@ -16,6 +16,7 @@ Nodes
 - Shorts Prompts Fanout   : prompts.json -> seg_1..seg_8 STRING outputs (for graphs with one text box per segment)
 - Shorts Segments Collect : lazy seg_1..seg_8 IMAGE inputs; only the first `count` segments execute, frames concatenated
 - Shorts Free VRAM        : pass-through that unloads every QwenVL model instance (+ ComfyUI models) between stages
+- Shorts Size From Image  : width/height (multiples of 16) in the aspect ratio of an image, long side = max_side
 
 List mechanics: outputs flagged in OUTPUT_IS_LIST make every downstream node run once
 per segment, so a normal single-clip generation graph becomes a per-segment loop.
@@ -1463,6 +1464,40 @@ class ShortsFreeVRAM:
         return (value,)
 
 
+# --------------------------------------------------------------------------- #
+# 9. generation size from an image's aspect ratio
+# --------------------------------------------------------------------------- #
+class ShortsSizeFromImage:
+    """width/height for the video generator in the same aspect ratio as the given image
+    (long side = max_side, both multiples of divisible_by). 1080x1920 -> 720x1280, 1920x1080 -> 1280x720."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "max_side": ("INT", {"default": 1280, "min": 256, "max": 4096, "step": 16,
+                                     "tooltip": "Length of the longer side. Wan 2.2 14B: 1280 (720p) or 832/960 for speed."}),
+                "divisible_by": ("INT", {"default": 16, "min": 8, "max": 64, "step": 8}),
+            }
+        }
+
+    RETURN_TYPES = ("INT", "INT", "IMAGE", "STRING")
+    RETURN_NAMES = ("width", "height", "image", "info")
+    FUNCTION = "size"
+    CATEGORY = "ShortsRemake"
+
+    def size(self, image, max_side, divisible_by):
+        h, w = int(image.shape[1]), int(image.shape[2])
+        sc = max_side / max(w, h)
+        d = max(8, int(divisible_by))
+        W = max(d, int(round(w * sc / d)) * d)
+        H = max(d, int(round(h * sc / d)) * d)
+        info = f"{w}x{h} -> {W}x{H} ({'portrait' if H > W else 'landscape' if W > H else 'square'})"
+        print(f"[ShortsRemake] size from image: {info}")
+        return (W, H, image, info)
+
+
 NODE_CLASS_MAPPINGS = {
     "ShortsVideoSegments": ShortsVideoSegments,
     "ShortsPromptsCollector": ShortsPromptsCollector,
@@ -1476,6 +1511,7 @@ NODE_CLASS_MAPPINGS = {
     "ShortsPromptsFanout": ShortsPromptsFanout,
     "ShortsSegmentsCollect": ShortsSegmentsCollect,
     "ShortsFreeVRAM": ShortsFreeVRAM,
+    "ShortsSizeFromImage": ShortsSizeFromImage,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsVideoSegments": "Shorts Video Segments",
@@ -1490,4 +1526,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsPromptsFanout": "Shorts Prompts Fanout (seg_1..8)",
     "ShortsSegmentsCollect": "Shorts Segments Collect (lazy, stops after last segment)",
     "ShortsFreeVRAM": "Shorts Free VRAM (unload QwenVL + models)",
+    "ShortsSizeFromImage": "Shorts Size From Image (width/height by aspect)",
 }

@@ -768,6 +768,8 @@ I2V_DROP_NODES = [22, 23, 32, 33, 43, 44, 54, 55, 65, 66, 76, 77,   # per-segmen
                   35, 46, 57, 68, 78,                              # '첫 프레임 제외' ImageFromBatch (collector drops the frame itself)
                   79, 80, 81, 82, 83]                              # ImageBatch chain -> replaced by the lazy collector
 I2V_FINAL_CREATE = 84                                 # CreateVideo of the full video: images <- collector
+I2V_START_IMAGE = 9                                   # LoadImage '시작 이미지'
+I2V_WIDTH_NODE, I2V_HEIGHT_NODE = 10, 11              # PrimitiveInt width / height -> replaced by ShortsSizeFromImage
 
 NOTE_I2V = (
     "## 5번: 분석 프롬프트 → Wan 2.2 I2V 6구간 (30초)\n\n"
@@ -777,7 +779,8 @@ NOTE_I2V = (
     "- `Shorts Prompts Fanout`의 `prompts_file`: 1번 결과 prompts.json을 드롭다운에서 선택. `first_segment`로 시작 구간을 고를 수 있습니다 (7이면 7~12 구간)\n"
     "- `시작 이미지`: 합성한 참조 이미지 (2번 결과 reference.png 또는 직접 만든 이미지)\n"
     "- `공통 스타일` 노드(파란색): 모든 구간 뒤에 붙는 문장. Fanout의 `common` 출력을 여기 연결하면 1번이 뽑은 배경 설명이 대신 들어갑니다\n"
-    "- width/height: 세로 영상이면 720 / 1280\n\n"
+    "- width/height는 `Shorts Size From Image`가 시작 이미지 비율대로 자동 계산합니다 (긴 변 `max_side`=1280, 16의 배수). "
+    "세로 사진이면 720x1280, 가로면 1280x720. 빠르게 보려면 `max_side`를 960이나 832로\n\n"
     "**3번(Wan Animate 2)과의 차이**: 원본 동작을 그대로 옮기지 않고 프롬프트 설명대로 움직입니다. "
     "대신 구간이 앞 구간의 마지막 프레임에서 이어져 매끄럽고, 클립당 시간이 훨씬 짧습니다 (lightx2v 4-step).\n"
     "**구간이 6개보다 적으면** (30초 미만 영상) `Shorts Segments Collect`가 있는 구간까지만 실행하고 끝냅니다. "
@@ -855,13 +858,32 @@ def build_i2v_bridge():
                       title="마지막 프레임 저장 (다음 회차 시작 이미지)"))
     fin_save = next(n for n in nodes if n["type"] == "SaveVideo")
     fin_save["title"] = "전체 저장 (있는 구간까지)"
+
+    # ---- width/height follow the start image's aspect ratio ----
+    wn = next(n for n in nodes if n["id"] == I2V_WIDTH_NODE)
+    hn = next(n for n in nodes if n["id"] == I2V_HEIGHT_NODE)
+    w_links = list(wn["outputs"][0].get("links") or [])
+    h_links = list(hn["outputs"][0].get("links") or [])
+    nodes = [n for n in nodes if n["id"] not in (I2V_WIDTH_NODE, I2V_HEIGHT_NODE)]
+    zid = fid + 4
+    lid += 1
+    start = next(n for n in nodes if n["id"] == I2V_START_IMAGE)
+    start["outputs"][0]["links"] = list(start["outputs"][0].get("links") or []) + [lid]
+    links[lid] = [lid, I2V_START_IMAGE, 0, zid, 0, "IMAGE"]
+    for l in w_links:
+        links[l][1], links[l][2] = zid, 0
+    for l in h_links:
+        links[l][1], links[l][2] = zid, 1
+    nodes.append(node(zid, "ShortsSizeFromImage", [0, 910], [360, 130], [inp("image", "IMAGE", lid)],
+                      [outp("width", "INT", w_links), outp("height", "INT", h_links), outp("image", "IMAGE", None), outp("info", "STRING", None)],
+                      [1280, 16], title="Shorts Size From Image - 시작 이미지 비율대로 width/height (긴 변 1280)"))
     for n in nodes:
         for o in n.get("outputs", []):
             if o.get("links"):
                 o["links"] = [x for x in o["links"] if x in links]
     wf["nodes"] = nodes
     wf["links"] = list(links.values())
-    wf["last_node_id"] = fid + 3
+    wf["last_node_id"] = fid + 4
     wf["last_link_id"] = lid
     wf["id"] = "shorts-5-i2v-6seg-from-prompts"
     for i, n in enumerate(nodes):
