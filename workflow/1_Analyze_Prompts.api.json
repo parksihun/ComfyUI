@@ -1,9 +1,9 @@
 {
  "1": {
   "inputs": {
-   "video_path": "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking.mp4",
+   "video_path": "",
    "split_mode": "fixed",
-   "segment_seconds": 5,
+   "segment_seconds": 5.0,
    "min_seconds": 1.5,
    "scene_threshold": 0.5,
    "frames_per_segment": 8,
@@ -11,7 +11,7 @@
   },
   "class_type": "ShortsVideoSegments",
   "_meta": {
-   "title": "Shorts Video Segments"
+   "title": "Shorts Video Segments - video_path에 영상 파일 경로, 5초 / 장면 단위로 나누기"
   }
  },
  "2": {
@@ -88,10 +88,7 @@
     6
    ]
   },
-  "class_type": "ShortsPromptsCollector",
-  "_meta": {
-   "title": "Shorts Prompts Collector"
-  }
+  "class_type": "ShortsPromptsCollector"
  },
  "5": {
   "inputs": {
@@ -100,9 +97,6 @@
     0
    ]
   },
-  "class_type": "PreviewAny",
-  "_meta": {
-   "title": "미리보기 아무거나"
-  }
+  "class_type": "PreviewAny"
  }
 }

@@ -1,0 +1,29 @@
+{
+ "11": {
+  "inputs": {
+   "url": "https://www.youtube.com/watch?v=...",
+   "start": "",
+   "end": "",
+   "out_dir": "",
+   "max_height": 1080,
+   "filename": "",
+   "force_redownload": false
+  },
+  "class_type": "ShortsYouTubeDownload",
+  "_meta": {
+   "title": "Shorts YouTube Download / Trim - 링크(또는 파일) + 구간"
+  }
+ },
+ "12": {
+  "inputs": {
+   "source": [
+    "11",
+    0
+   ]
+  },
+  "class_type": "PreviewAny",
+  "_meta": {
+   "title": "저장된 영상 경로 (복사해서 다음 단계에 입력)"
+  }
+ }
+}

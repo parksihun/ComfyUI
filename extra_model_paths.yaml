@@ -1,0 +1,45 @@
+# C:\00_forensic\ComfyUI-Easy-Install\extra_model_paths.yaml
+#
+# 모델을 ComfyUI\models 대신 ComfyUI-Easy-Install\model 에서 읽습니다.
+# is_default: true  ->  Manager 로 내려받는 모델도 이 경로에 저장됩니다.
+#
+# 경로는 역슬래시(\) 대신 슬래시(/) 를 쓰세요.
+
+forensic:
+    base_path: C:/00_forensic/ComfyUI-Easy-Install/model/
+    is_default: true
+
+    checkpoints: checkpoints
+    diffusion_models: |
+        diffusion_models
+        unet
+    vae: vae
+    loras: loras
+    clip: clip
+    text_encoders: text_encoders
+    latent_upscale_models: latent_upscale_models
+    clip_vision: clip_vision
+    controlnet: controlnet
+    embeddings: embeddings
+    upscale_models: upscale_models
+    style_models: style_models
+    gligen: gligen
+    hypernetworks: hypernetworks
+    photomaker: photomaker
+    configs: configs
+
+# ------------------------------------------------------------------
+# 기존 ComfyUI\models 폴더도 함께 쓰고 싶다면 아래 주석을 해제하세요.
+# 두 경로의 모델이 모두 목록에 나타납니다.
+# ------------------------------------------------------------------
+# legacy:
+#     base_path: C:/00_forensic/ComfyUI-Easy-Install/ComfyUI/models/
+#     checkpoints: checkpoints
+#     diffusion_models: diffusion_models
+#     vae: vae
+#     loras: loras
+#     clip: clip
+#     clip_vision: clip_vision
+#     controlnet: controlnet
+#     embeddings: embeddings
+#     upscale_models: upscale_models

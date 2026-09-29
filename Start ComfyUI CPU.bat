@@ -11,7 +11,7 @@ if "%INUSE%"=="1" (
     echo [93mPress any key to exit...[0m&&pause>nul&&exit
 )
 
-.\python_embeded\python.exe -I -W ignore::FutureWarning ComfyUI\main.py --windows-standalone-build --cpu
+.\python_embeded\python.exe -I -W ignore::FutureWarning ComfyUI\main.py --windows-standalone-build --cpu --input-directory "%~dp0input" --output-directory "%~dp0output" --temp-directory "%~dp0." --extra-model-paths-config "%~dp0extra_model_paths.yaml"
 
 echo.
 echo [92m:: Press any key to exit ::[0m&Pause>nul

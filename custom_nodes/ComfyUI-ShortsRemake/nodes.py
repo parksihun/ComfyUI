@@ -9,6 +9,10 @@ Nodes
 - Shorts Prompts Loader   : read prompts.json -> per-clip prompt / frame range lists for generation
 - Shorts Clip Saver       : save one generated VIDEO as clip_NN.mp4 next to prompts.json
 - Shorts Concat           : concatenate clip_NN.mp4 -> final.mp4 (ffmpeg)
+- Shorts YouTube Download : YouTube URL (or local file) -> mp4, optional start..end clip cut (ffmpeg)
+- Shorts Reference Setup  : profile + background + props images -> Qwen-Image-Edit inputs + instruction + canvas size
+- Shorts Reference Save   : composed reference -> <prompts dir>/reference.png (+ copy to ComfyUI/input)
+- Shorts Reference Loader : prompts.json path -> reference IMAGE (reference.png / linked / fallback) + prompts_json passthrough
 
 List mechanics: outputs flagged in OUTPUT_IS_LIST make every downstream node run once
 per segment, so a normal single-clip generation graph becomes a per-segment loop.
@@ -608,12 +612,414 @@ class ShortsConcat:
         return {"ui": {"text": [final]}, "result": (final, VideoFromFile(final))}
 
 
+# --------------------------------------------------------------------------- #
+# 0. YouTube (or any yt-dlp URL) -> local mp4
+# --------------------------------------------------------------------------- #
+def _sanitize_name(name: str) -> str:
+    name = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", name or "").strip(" ._")
+    return name[:80] or "video"
+
+
+def _ytdlp_ffmpeg_location() -> str:
+    """yt-dlp accepts a file path; it detects 'ffmpeg' in the basename (imageio's binary is ffmpeg-win-...exe)."""
+    exe = _ffmpeg_exe()
+    return exe if os.path.isfile(exe) else os.path.dirname(exe)
+
+
+def parse_timecode(text) -> float | None:
+    """'' -> None ; '80' / '80.5' -> seconds ; '1:20' / '1:20.5' / '1:02:03' -> seconds."""
+    t = str(text or "").strip()
+    if not t:
+        return None
+    parts = t.split(":")
+    if len(parts) > 3 or not all(p.strip() for p in parts):
+        raise ValueError(f"[ShortsRemake] bad time '{text}' (use seconds or m:ss or h:mm:ss)")
+    total = 0.0
+    for p in parts:
+        total = total * 60 + float(p)
+    return total
+
+
+def _fmt_tag(sec: float) -> str:
+    return f"{int(sec // 60)}m{sec % 60:04.1f}s".replace(".0s", "s")
+
+
+def trim_video(src: str, start, end, out_path: str) -> str:
+    """Frame-accurate cut (re-encode H.264/AAC). start/end in seconds, either may be None."""
+    cmd = [_ffmpeg_exe(), "-y", "-hide_banner", "-loglevel", "error"]
+    if start is not None:
+        cmd += ["-ss", f"{start:.3f}"]
+    if end is not None:
+        cmd += ["-to", f"{end:.3f}"]
+    cmd += ["-i", src, "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out_path]
+    cp = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if cp.returncode != 0 or not os.path.isfile(out_path):
+        raise RuntimeError(f"[ShortsRemake] ffmpeg trim failed: {cp.stderr.strip()[:800]}")
+    return out_path
+
+
+class ShortsYouTubeDownload:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "url": ("STRING", {"default": "", "multiline": False,
+                                   "placeholder": "https://www.youtube.com/watch?v=...  (or a local video path)"}),
+                "start": ("STRING", {"default": "", "placeholder": "empty = from the beginning   e.g. 1:20 or 80",
+                                     "tooltip": "Clip start. Seconds (80, 80.5) or m:ss / h:mm:ss. Leave both empty to keep the whole video."}),
+                "end": ("STRING", {"default": "", "placeholder": "empty = to the end   e.g. 1:50 or 110",
+                                   "tooltip": "Clip end. Seconds or m:ss / h:mm:ss."}),
+                "out_dir": ("STRING", {"default": "", "placeholder": "empty = ComfyUI/input/shorts_downloads"}),
+                "max_height": ("INT", {"default": 1080, "min": 144, "max": 4320, "step": 1,
+                                       "tooltip": "Highest video resolution to download (720/1080 is enough for analysis + pose driving)."}),
+                "filename": ("STRING", {"default": "", "placeholder": "empty = <video id>"}),
+                "force_redownload": ("BOOLEAN", {"default": False}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING", "STRING", "FLOAT", "STRING")
+    RETURN_NAMES = ("video_path", "title", "duration", "full_video_path")
+    FUNCTION = "download"
+    CATEGORY = "ShortsRemake"
+    DESCRIPTION = ("Downloads a YouTube (yt-dlp) URL as mp4, or takes a local video path, and optionally cuts the "
+                   "start..end clip out of it (frame accurate, re-encoded). Returns the clip path (or the full video when no range).")
+
+    @classmethod
+    def IS_CHANGED(cls, url, start, end, out_dir, max_height, filename, force_redownload):
+        if force_redownload:
+            return float("nan")
+        return f"{url}|{start}|{end}|{out_dir}|{max_height}|{filename}"
+
+    def _fetch(self, url, out_dir, max_height, filename, force_redownload):
+        """-> (full_video_path, title, duration)"""
+        if os.path.isfile(os.path.expanduser(url)):
+            p = os.path.abspath(os.path.expanduser(url))
+            dur, _, _, _ = _video_info(p)
+            return p, os.path.splitext(os.path.basename(p))[0], float(dur)
+
+        try:
+            import yt_dlp
+        except ImportError:
+            raise RuntimeError("[ShortsRemake] yt-dlp is not installed. Run: python_embeded\\python.exe -m pip install yt-dlp") from None
+
+        od = self._out_dir(out_dir)
+        stem = _sanitize_name(filename) if (filename or "").strip() else "%(id)s"
+        h = int(max_height)
+        opts = {
+            "format": (f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/"
+                       f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"),
+            "merge_output_format": "mp4",
+            "outtmpl": os.path.join(od, stem + ".%(ext)s"),
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "overwrites": bool(force_redownload),
+            "ffmpeg_location": _ytdlp_ffmpeg_location(),
+            "postprocessors": [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}],
+            "retries": 3,
+        }
+        print(f"[ShortsRemake] downloading {url} -> {od}")
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            if info.get("entries"):
+                info = info["entries"][0]
+            path = None
+            for rd_ in info.get("requested_downloads") or []:
+                if rd_.get("filepath") and os.path.isfile(rd_["filepath"]):
+                    path = rd_["filepath"]
+                    break
+            if path is None:
+                guess = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp4"
+                path = guess if os.path.isfile(guess) else ydl.prepare_filename(info)
+        if not os.path.isfile(path):
+            raise RuntimeError(f"[ShortsRemake] download finished but file not found: {path}")
+        path = os.path.abspath(path)
+        title = info.get("title") or os.path.splitext(os.path.basename(path))[0]
+        dur = float(info.get("duration") or 0.0)
+        if dur <= 0:
+            dur, _, _, _ = _video_info(path)
+        print(f"[ShortsRemake] downloaded '{title}' ({dur:.1f}s) -> {path}")
+        return path, title, dur
+
+    @staticmethod
+    def _out_dir(out_dir):
+        od = (out_dir or "").strip().strip('"')
+        if not od:
+            try:
+                import folder_paths
+                od = os.path.join(folder_paths.get_input_directory(), "shorts_downloads")
+            except Exception:  # noqa: BLE001
+                od = os.path.join(os.getcwd(), "shorts_downloads")
+        os.makedirs(od, exist_ok=True)
+        return od
+
+    def download(self, url, start, end, out_dir, max_height, filename, force_redownload):
+        url = (url or "").strip().strip('"')
+        if not url:
+            raise ValueError("[ShortsRemake] url is empty (YouTube URL or local video path)")
+        t0, t1 = parse_timecode(start), parse_timecode(end)
+        full, title, dur = self._fetch(url, out_dir, max_height, filename, force_redownload)
+        if t0 is None and t1 is None:
+            return (full, title, dur, full)
+
+        if t0 is not None and t1 is not None and t1 <= t0:
+            raise ValueError(f"[ShortsRemake] end ({end}) must be after start ({start})")
+        if dur > 0 and t0 is not None and t0 >= dur:
+            raise ValueError(f"[ShortsRemake] start ({start}) is beyond the video length ({dur:.1f}s)")
+        if dur > 0 and t1 is not None and t1 > dur:
+            t1 = dur
+        tag = f"{_fmt_tag(t0 or 0.0)}-{_fmt_tag(t1) if t1 is not None else 'end'}"
+        stem = os.path.splitext(os.path.basename(full))[0]
+        od = os.path.dirname(full) if os.path.isfile(url) and not (out_dir or "").strip() else self._out_dir(out_dir)
+        clip = os.path.join(od, f"{stem}_{tag}.mp4")
+        if os.path.isfile(clip) and not force_redownload:
+            print(f"[ShortsRemake] clip already exists {clip}")
+        else:
+            print(f"[ShortsRemake] trimming {t0 or 0:.2f}s -> {t1 if t1 is not None else dur:.2f}s -> {clip}")
+            trim_video(full, t0, t1, clip)
+        cdur, _, _, _ = _video_info(clip)
+        return (clip, f"{title} [{tag}]", float(cdur), full)
+
+
+# --------------------------------------------------------------------------- #
+# 1b. reference frame composition helpers (profile + background + props -> one image)
+# --------------------------------------------------------------------------- #
+DEFAULT_REF_INSTRUCTION = (
+    "Create one photorealistic image. Picture 1 shows the person to use: keep this person's face, hair, skin, body "
+    "shape and clothing exactly as shown in Picture 1. {background} {props} {framing} "
+    "One person only, sharp and well lit. No text, no captions, no watermark, no borders."
+)
+
+BG_CLAUSE_IMAGE = ("Place this person inside the scene shown in Picture {n}: keep that scene's layout, furniture, "
+                   "lighting, colors and perspective unchanged.")
+BG_CLAUSE_FRAME = ("Picture {n} is a frame from the original video. Put this person in exactly the position, pose, "
+                   "scale and framing of the person in Picture {n}, completely replacing that person, and keep the "
+                   "rest of Picture {n} (background, objects, lighting, camera angle) unchanged.")
+BG_CLAUSE_TEXT = "Background and setting: {common}"
+PROPS_CLAUSE = "The person holds or uses the objects shown in Picture {n}; keep those objects' look identical."
+FRAMING_CLAUSE = "Camera framing: {camera}. The person's pose: {motion}."
+
+
+def _load_image_file(path: str) -> torch.Tensor:
+    from PIL import Image, ImageOps
+
+    im = Image.open(path)
+    im = ImageOps.exif_transpose(im).convert("RGB")
+    arr = np.asarray(im).astype(np.float32) / 255.0
+    return torch.from_numpy(arr)[None, ...]
+
+
+def _save_image_tensor(img: torch.Tensor, path: str) -> None:
+    from PIL import Image
+
+    if img.ndim == 4:
+        img = img[0]
+    arr = (img.detach().cpu().clamp(0, 1).numpy() * 255.0).round().astype(np.uint8)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    Image.fromarray(arr).save(path, compress_level=4)
+
+
+def _resolve_prompts_and_video(prompts_json: str) -> tuple[dict, str, str]:
+    """prompts_json may be a prompts.json path OR a video path (then prompts are empty). -> (prompts, video_path, prompts_dir)"""
+    p = os.path.expanduser((prompts_json or "").strip().strip('"'))
+    if not p:
+        raise ValueError("[ShortsRemake] prompts_json is empty (prompts.json path or video path)")
+    if p.lower().endswith(".json"):
+        if not os.path.isfile(p):
+            raise FileNotFoundError(f"[ShortsRemake] prompts.json not found: {p}")
+        with open(p, encoding="utf-8") as f:
+            pr = json.load(f)
+        video = pr.get("video_file", "")
+        if not os.path.isfile(video):
+            cand = os.path.join(os.path.dirname(os.path.dirname(p)), os.path.basename(video))
+            if os.path.isfile(cand):
+                video = cand
+            else:
+                raise FileNotFoundError(f"[ShortsRemake] source video not found: {video}")
+        return pr, video, os.path.dirname(p)
+    if os.path.isfile(p):
+        vp = Path(p)
+        return {}, p, str(vp.parent / f"{vp.stem}_prompts")
+    raise FileNotFoundError(f"[ShortsRemake] not found: {p}")
+
+
+class ShortsReferenceSetup:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "profile": ("IMAGE", {"tooltip": "Picture 1: the person to put into the video."}),
+                "prompts_json": ("STRING", {"default": "", "placeholder": "C:/.../video_prompts/prompts.json  (or the video path)"}),
+                "background_mode": (["video_first_frame", "prompt_only"], {"default": "video_first_frame",
+                                     "tooltip": "When no background image is connected: use the original video's first frame (same scene, person replaced) or describe the background with the analysed prompt only."}),
+                "max_side": ("INT", {"default": 1024, "min": 512, "max": 2048, "step": 16,
+                                     "tooltip": "Composed reference size (video aspect ratio is kept)."}),
+                "divisible_by": ("INT", {"default": 16, "min": 8, "max": 64, "step": 8}),
+                "instruction": ("STRING", {"default": DEFAULT_REF_INSTRUCTION, "multiline": True,
+                                           "tooltip": "{background} {props} {framing} {common} placeholders are filled automatically."}),
+                "extra_instruction": ("STRING", {"default": "", "multiline": True,
+                                                 "placeholder": "optional, appended as-is (e.g. 'wearing a red jacket')"}),
+            },
+            "optional": {
+                "background": ("IMAGE", {"tooltip": "Optional: a background/scene image."}),
+                "props": ("IMAGE", {"tooltip": "Optional: an image of props/objects the person should hold or use."}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "IMAGE", "IMAGE", "STRING", "INT", "INT", "IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image1", "image2", "image3", "prompt", "width", "height", "first_frame", "prompts_dir", "video_path")
+    FUNCTION = "setup"
+    CATEGORY = "ShortsRemake"
+    DESCRIPTION = ("Arranges profile / background / props images for TextEncodeQwenImageEditPlus (image1..3), writes the "
+                   "composition instruction and gives the video-shaped canvas size. Missing images are passed as None.")
+
+    @classmethod
+    def IS_CHANGED(cls, prompts_json, **kw):
+        return _file_sig(os.path.expanduser((prompts_json or "").strip().strip('"')))
+
+    def setup(self, profile, prompts_json, background_mode, max_side, divisible_by, instruction, extra_instruction,
+              background=None, props=None):
+        pr, video, pdir = _resolve_prompts_and_video(prompts_json)
+        w = int(pr.get("width") or 0)
+        h = int(pr.get("height") or 0)
+        if not w or not h:
+            _, _, w, h = _video_info(video)
+        first = _read_frames_at(video, [0.05], max(max_side, 1024))
+        s = min(1.0, max_side / max(w, h))
+        d = max(8, int(divisible_by))
+        W = max(d, int(round(w * s / d)) * d)
+        H = max(d, int(round(h * s / d)) * d)
+
+        seg0 = (pr.get("segments") or [{}])[0]
+        common = (pr.get("common_prompt") or "").strip()
+        camera = (seg0.get("camera") or "").strip() or "same framing as the original video"
+        motion = (seg0.get("motion") or "").strip() or "natural, relaxed pose facing the camera"
+
+        images = [profile]
+        clauses = {"background": "", "props": "", "framing": FRAMING_CLAUSE.format(camera=camera, motion=motion),
+                   "common": common}
+        if background is not None:
+            images.append(background)
+            clauses["background"] = BG_CLAUSE_IMAGE.format(n=len(images))
+        elif background_mode == "video_first_frame":
+            images.append(first)
+            clauses["background"] = BG_CLAUSE_FRAME.format(n=len(images))
+        elif common:
+            clauses["background"] = BG_CLAUSE_TEXT.format(common=common)
+        if props is not None:
+            images.append(props)
+            clauses["props"] = PROPS_CLAUSE.format(n=len(images))
+        while len(images) < 3:
+            images.append(None)
+
+        try:
+            text = (instruction or DEFAULT_REF_INSTRUCTION).format(**clauses)
+        except (KeyError, IndexError, ValueError):
+            text = DEFAULT_REF_INSTRUCTION.format(**clauses)
+        if (extra_instruction or "").strip():
+            text += " " + extra_instruction.strip()
+        text = re.sub(r"\s+", " ", text).strip()
+        used = ["profile",
+                "background" if background is not None else ("video frame" if images[1] is not None else "-"),
+                "props" if props is not None else "-"]
+        print(f"[ShortsRemake] reference canvas {W}x{H}, pictures: {used}")
+        return (images[0], images[1], images[2], text, W, H, first, pdir, video)
+
+
+class ShortsReferenceSave:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "prompts_dir": ("STRING", {"default": "", "forceInput": True}),
+                "filename": ("STRING", {"default": "reference.png"}),
+                "copy_to_input": ("BOOLEAN", {"default": True, "tooltip": "Also copy into ComfyUI/input so Load Image can pick it."}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING", "IMAGE")
+    RETURN_NAMES = ("reference_path", "image")
+    OUTPUT_NODE = True
+    FUNCTION = "save"
+    CATEGORY = "ShortsRemake"
+
+    def save(self, image, prompts_dir, filename, copy_to_input):
+        od = (prompts_dir or "").strip() or os.getcwd()
+        name = (filename or "reference.png").strip() or "reference.png"
+        if not name.lower().endswith(".png"):
+            name += ".png"
+        path = os.path.join(od, name)
+        _save_image_tensor(image, path)
+        msg = path
+        if copy_to_input:
+            try:
+                import folder_paths
+                dst = os.path.join(folder_paths.get_input_directory(), f"{os.path.basename(od.rstrip('/\\'))}_{name}")
+                shutil.copyfile(path, dst)
+                msg += f"\n(copied to input/{os.path.basename(dst)})"
+            except Exception as e:  # noqa: BLE001
+                print(f"[ShortsRemake] copy to input failed: {e}")
+        print(f"[ShortsRemake] reference saved {path}")
+        return {"ui": {"text": [msg]}, "result": (path, image[:1])}
+
+
+class ShortsReferenceLoader:
+    """Entry point of stage 2: takes the prompts.json path, hands it on to ShortsPromptsLoader and picks the
+    reference image. (It must not depend on ShortsPromptsLoader: the character-description QwenVL sits between
+    this node and the loader, which would otherwise form a cycle.)"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompts_json": ("STRING", {"default": "", "placeholder": "C:/.../video_prompts/prompts.json"}),
+                "filename": ("STRING", {"default": "reference.png"}),
+            },
+            "optional": {
+                "reference": ("IMAGE", {"tooltip": "Direct link from the composition step (highest priority)."}),
+                "fallback": ("IMAGE", {"tooltip": "Used when no composed reference exists (e.g. the plain profile photo)."}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "prompts_json", "source")
+    FUNCTION = "load"
+    CATEGORY = "ShortsRemake"
+    DESCRIPTION = "Picks the reference image: linked reference > <prompts.json folder>/reference.png > fallback image. Passes prompts_json through."
+
+    @classmethod
+    def IS_CHANGED(cls, prompts_json, filename, **kw):
+        pj = os.path.expanduser((prompts_json or "").strip().strip('"'))
+        return _file_sig(pj) + "|" + _file_sig(os.path.join(os.path.dirname(pj), (filename or "reference.png").strip()))
+
+    def load(self, prompts_json, filename, reference=None, fallback=None):
+        pj = os.path.expanduser((prompts_json or "").strip().strip('"'))
+        if not os.path.isfile(pj):
+            raise FileNotFoundError(f"[ShortsRemake] prompts.json not found: {pj}")
+        if reference is not None:
+            return (reference[:1], pj, "linked reference")
+        path = os.path.join(os.path.dirname(pj), (filename or "reference.png").strip())
+        if os.path.isfile(path):
+            print(f"[ShortsRemake] reference image {path}")
+            return (_load_image_file(path), pj, path)
+        if fallback is not None:
+            print("[ShortsRemake] no composed reference, using fallback image")
+            return (fallback[:1], pj, "fallback image")
+        raise FileNotFoundError(f"[ShortsRemake] no reference image: {path} (connect a fallback image)")
+
+
 NODE_CLASS_MAPPINGS = {
     "ShortsVideoSegments": ShortsVideoSegments,
     "ShortsPromptsCollector": ShortsPromptsCollector,
     "ShortsPromptsLoader": ShortsPromptsLoader,
     "ShortsClipSaver": ShortsClipSaver,
     "ShortsConcat": ShortsConcat,
+    "ShortsYouTubeDownload": ShortsYouTubeDownload,
+    "ShortsReferenceSetup": ShortsReferenceSetup,
+    "ShortsReferenceSave": ShortsReferenceSave,
+    "ShortsReferenceLoader": ShortsReferenceLoader,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsVideoSegments": "Shorts Video Segments",
@@ -621,4 +1027,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsPromptsLoader": "Shorts Prompts Loader",
     "ShortsClipSaver": "Shorts Clip Saver",
     "ShortsConcat": "Shorts Concat",
+    "ShortsYouTubeDownload": "Shorts YouTube Download / Trim",
+    "ShortsReferenceSetup": "Shorts Reference Setup (profile+background+props)",
+    "ShortsReferenceSave": "Shorts Reference Save",
+    "ShortsReferenceLoader": "Shorts Reference Loader",
 }

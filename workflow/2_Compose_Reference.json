@@ -1,0 +1,1147 @@
+{
+  "id": "shorts-1b-compose-reference",
+  "revision": 0,
+  "last_node_id": 39,
+  "last_link_id": 147,
+  "nodes": [
+    {
+      "id": 39,
+      "type": "MarkdownNote",
+      "pos": [
+        -1560,
+        0
+      ],
+      "size": [
+        560,
+        700
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "MarkdownNote"
+      },
+      "widgets_values": [
+        "## 2단계: 프로필 + 배경 + 소품 → 참조 이미지 (Qwen-Image-Edit-2511)\n\n영상에 넣을 **사람 · 배경 · 소품**을 한 장의 참조 이미지(reference.png)로 합칩니다. 3단계 Wan Animate 2는 이 이미지를 원본 영상의 동작대로 움직입니다.\n\n**입력**\n- `Load Image - 프로필` (필수): 바꿔 넣을 사람 사진 (상반신/전신)\n- `Load Image - 배경` (선택): 배경/장소 사진. **없으면 원본 영상의 첫 프레임을 배경으로 써서 사람만 바뀝니다.** 쓰지 않을 때는 노드를 선택하고 Ctrl+B (bypass)\n- `Load Image - 소품` (선택): 들고 있을 물건/소품 사진. 쓰지 않을 때는 Ctrl+B\n- `Shorts Reference Setup`의 `prompts_json`: 1단계 결과 prompts.json 경로 (영상 파일 경로를 넣어도 됩니다)\n\n**동작**\n1. Setup 노드가 Picture 1=프로필, Picture 2=배경(또는 원본 첫 프레임), Picture 3=소품 순으로 정리하고 합성 지시문(`instruction`)을 채웁니다. 원하는 문구는 `extra_instruction`에 추가 (예: wearing a red jacket)\n2. Qwen-Image-Edit-2511이 원본 영상과 같은 비율(`max_side` 1024)로 한 장을 만듭니다.\n3. `Shorts Reference Save`가 `<prompts 폴더>/reference.png`로 저장하고 ComfyUI/input에도 복사합니다. 3단계 `Shorts Reference Loader`가 이 파일을 자동으로 읽습니다.\n\n**모델** (ComfyUI 공식 템플릿 image_qwen_image_edit_2511과 동일)\n- diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors\n- text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors\n- vae/qwen_image_vae.safetensors\n- (선택) loras/Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors : 켜면 KSampler steps 4, cfg 1로 바꾸세요 (기본은 40 steps, cfg 3)\n\n**팁**: 결과가 마음에 안 들면 KSampler seed를 바꿔 다시 생성. 사람이 너무 작게 나오면 `extra_instruction`에 'medium shot, upper body fills the frame' 등을 추가. 결과가 원본 프레임과 너무 달라지면 프로필 사진을 배경 없는 정면 사진으로."
+      ],
+      "title": "사용법 (2단계 참조 이미지)",
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 21,
+      "type": "LoadImage",
+      "pos": [
+        -960,
+        0
+      ],
+      "size": [
+        320,
+        380
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            101
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "profile.png",
+        "image"
+      ],
+      "title": "Load Image - 프로필 (바꿔 넣을 인물, 필수)"
+    },
+    {
+      "id": 22,
+      "type": "LoadImage",
+      "pos": [
+        -960,
+        420
+      ],
+      "size": [
+        320,
+        380
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 4,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            102
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "background.png",
+        "image"
+      ],
+      "title": "Load Image - 배경 (선택, 안 쓰면 Ctrl+B)"
+    },
+    {
+      "id": 23,
+      "type": "LoadImage",
+      "pos": [
+        -960,
+        840
+      ],
+      "size": [
+        320,
+        380
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 4,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            103
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "props.png",
+        "image"
+      ],
+      "title": "Load Image - 소품 (선택, 안 쓰면 Ctrl+B)"
+    },
+    {
+      "id": 20,
+      "type": "ShortsReferenceSetup",
+      "pos": [
+        -580,
+        0
+      ],
+      "size": [
+        520,
+        520
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "profile",
+          "type": "IMAGE",
+          "link": 101
+        },
+        {
+          "name": "background",
+          "type": "IMAGE",
+          "link": 102
+        },
+        {
+          "name": "props",
+          "type": "IMAGE",
+          "link": 103
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image1",
+          "type": "IMAGE",
+          "links": [
+            110,
+            113
+          ]
+        },
+        {
+          "name": "image2",
+          "type": "IMAGE",
+          "links": [
+            111,
+            114
+          ]
+        },
+        {
+          "name": "image3",
+          "type": "IMAGE",
+          "links": [
+            112,
+            115
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            116
+          ]
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "links": [
+            117
+          ]
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": [
+            118
+          ]
+        },
+        {
+          "name": "first_frame",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "prompts_dir",
+          "type": "STRING",
+          "links": [
+            130
+          ]
+        },
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsReferenceSetup"
+      },
+      "widgets_values": [
+        "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+        "video_first_frame",
+        1024,
+        16,
+        "Create one photorealistic image. Picture 1 shows the person to use: keep this person's face, hair, skin, body shape and clothing exactly as shown in Picture 1. {background} {props} {framing} One person only, sharp and well lit. No text, no captions, no watermark, no borders.",
+        ""
+      ],
+      "title": "Shorts Reference Setup - 프로필+배경+소품 정리"
+    },
+    {
+      "id": 24,
+      "type": "UNETLoader",
+      "pos": [
+        -580,
+        580
+      ],
+      "size": [
+        400,
+        82
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            120
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "qwen_image_edit_2511_fp8mixed.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 25,
+      "type": "CLIPLoader",
+      "pos": [
+        -580,
+        700
+      ],
+      "size": [
+        400,
+        106
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            121,
+            122
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        "qwen_image",
+        "default"
+      ]
+    },
+    {
+      "id": 26,
+      "type": "VAELoader",
+      "pos": [
+        -580,
+        850
+      ],
+      "size": [
+        400,
+        58
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            123,
+            124,
+            125
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "qwen_image_vae.safetensors"
+      ]
+    },
+    {
+      "id": 27,
+      "type": "ModelSamplingAuraFlow",
+      "pos": [
+        -140,
+        580
+      ],
+      "size": [
+        320,
+        58
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 120
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            126
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ModelSamplingAuraFlow"
+      },
+      "widgets_values": [
+        3.1,
+        "flow"
+      ]
+    },
+    {
+      "id": 28,
+      "type": "CFGNorm",
+      "pos": [
+        -140,
+        680
+      ],
+      "size": [
+        320,
+        82
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 126
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            127
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CFGNorm"
+      },
+      "widgets_values": [
+        1,
+        false
+      ]
+    },
+    {
+      "id": 29,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -140,
+        800
+      ],
+      "size": [
+        320,
+        82
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 127
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            128
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+        1.0
+      ],
+      "title": "Lightning 4-step LoRA (기본 bypass, 켜면 steps 4 / cfg 1)"
+    },
+    {
+      "id": 30,
+      "type": "TextEncodeQwenImageEditPlus",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        440,
+        220
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 121
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 123
+        },
+        {
+          "name": "image1",
+          "type": "IMAGE",
+          "link": 110
+        },
+        {
+          "name": "image2",
+          "type": "IMAGE",
+          "link": 111
+        },
+        {
+          "name": "image3",
+          "type": "IMAGE",
+          "link": 112
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "link": 116,
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            140
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TextEncodeQwenImageEditPlus"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "title": "Qwen Edit Encode - Positive (지시문은 Setup에서)"
+    },
+    {
+      "id": 31,
+      "type": "TextEncodeQwenImageEditPlus",
+      "pos": [
+        0,
+        280
+      ],
+      "size": [
+        440,
+        220
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 122
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 124
+        },
+        {
+          "name": "image1",
+          "type": "IMAGE",
+          "link": 113
+        },
+        {
+          "name": "image2",
+          "type": "IMAGE",
+          "link": 114
+        },
+        {
+          "name": "image3",
+          "type": "IMAGE",
+          "link": 115
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            141
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TextEncodeQwenImageEditPlus"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "title": "Qwen Edit Encode - Negative"
+    },
+    {
+      "id": 32,
+      "type": "FluxKontextMultiReferenceLatentMethod",
+      "pos": [
+        480,
+        0
+      ],
+      "size": [
+        340,
+        58
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 140
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            142
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxKontextMultiReferenceLatentMethod"
+      },
+      "widgets_values": [
+        "index_timestep_zero"
+      ]
+    },
+    {
+      "id": 33,
+      "type": "FluxKontextMultiReferenceLatentMethod",
+      "pos": [
+        480,
+        280
+      ],
+      "size": [
+        340,
+        58
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 141
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            143
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxKontextMultiReferenceLatentMethod"
+      },
+      "widgets_values": [
+        "index_timestep_zero"
+      ]
+    },
+    {
+      "id": 34,
+      "type": "EmptySD3LatentImage",
+      "pos": [
+        480,
+        400
+      ],
+      "size": [
+        340,
+        106
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "link": 117,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 118,
+          "widget": {
+            "name": "height"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            144
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptySD3LatentImage"
+      },
+      "widgets_values": [
+        1024,
+        1024,
+        1
+      ],
+      "title": "Empty Latent - 원본 영상 비율"
+    },
+    {
+      "id": 35,
+      "type": "KSampler",
+      "pos": [
+        480,
+        560
+      ],
+      "size": [
+        340,
+        262
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 128
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 142
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 143
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 144
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            145
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        42,
+        "fixed",
+        40,
+        3,
+        "euler",
+        "simple",
+        1
+      ],
+      "title": "KSampler (steps 40 / cfg 3, LoRA 켜면 4 / 1)"
+    },
+    {
+      "id": 36,
+      "type": "VAEDecode",
+      "pos": [
+        860,
+        560
+      ],
+      "size": [
+        210,
+        46
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 145
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 125
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            146
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 37,
+      "type": "ShortsReferenceSave",
+      "pos": [
+        860,
+        660
+      ],
+      "size": [
+        340,
+        130
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 146
+        },
+        {
+          "name": "prompts_dir",
+          "type": "STRING",
+          "link": 130
+        }
+      ],
+      "outputs": [
+        {
+          "name": "reference_path",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            147
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsReferenceSave"
+      },
+      "widgets_values": [
+        "reference.png",
+        true
+      ],
+      "title": "Shorts Reference Save - reference.png"
+    },
+    {
+      "id": 38,
+      "type": "PreviewImage",
+      "pos": [
+        860,
+        0
+      ],
+      "size": [
+        400,
+        500
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 147
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "title": "합성된 참조 이미지"
+    }
+  ],
+  "links": [
+    [
+      101,
+      21,
+      0,
+      20,
+      0,
+      "IMAGE"
+    ],
+    [
+      102,
+      22,
+      0,
+      20,
+      1,
+      "IMAGE"
+    ],
+    [
+      103,
+      23,
+      0,
+      20,
+      2,
+      "IMAGE"
+    ],
+    [
+      110,
+      20,
+      0,
+      30,
+      2,
+      "IMAGE"
+    ],
+    [
+      111,
+      20,
+      1,
+      30,
+      3,
+      "IMAGE"
+    ],
+    [
+      112,
+      20,
+      2,
+      30,
+      4,
+      "IMAGE"
+    ],
+    [
+      113,
+      20,
+      0,
+      31,
+      2,
+      "IMAGE"
+    ],
+    [
+      114,
+      20,
+      1,
+      31,
+      3,
+      "IMAGE"
+    ],
+    [
+      115,
+      20,
+      2,
+      31,
+      4,
+      "IMAGE"
+    ],
+    [
+      116,
+      20,
+      3,
+      30,
+      5,
+      "STRING"
+    ],
+    [
+      117,
+      20,
+      4,
+      34,
+      0,
+      "INT"
+    ],
+    [
+      118,
+      20,
+      5,
+      34,
+      1,
+      "INT"
+    ],
+    [
+      120,
+      24,
+      0,
+      27,
+      0,
+      "MODEL"
+    ],
+    [
+      121,
+      25,
+      0,
+      30,
+      0,
+      "CLIP"
+    ],
+    [
+      122,
+      25,
+      0,
+      31,
+      0,
+      "CLIP"
+    ],
+    [
+      123,
+      26,
+      0,
+      30,
+      1,
+      "VAE"
+    ],
+    [
+      124,
+      26,
+      0,
+      31,
+      1,
+      "VAE"
+    ],
+    [
+      125,
+      26,
+      0,
+      36,
+      1,
+      "VAE"
+    ],
+    [
+      126,
+      27,
+      0,
+      28,
+      0,
+      "MODEL"
+    ],
+    [
+      127,
+      28,
+      0,
+      29,
+      0,
+      "MODEL"
+    ],
+    [
+      128,
+      29,
+      0,
+      35,
+      0,
+      "MODEL"
+    ],
+    [
+      130,
+      20,
+      7,
+      37,
+      1,
+      "STRING"
+    ],
+    [
+      140,
+      30,
+      0,
+      32,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      141,
+      31,
+      0,
+      33,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      142,
+      32,
+      0,
+      35,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      143,
+      33,
+      0,
+      35,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      144,
+      34,
+      0,
+      35,
+      3,
+      "LATENT"
+    ],
+    [
+      145,
+      35,
+      0,
+      36,
+      0,
+      "LATENT"
+    ],
+    [
+      146,
+      36,
+      0,
+      37,
+      0,
+      "IMAGE"
+    ],
+    [
+      147,
+      37,
+      1,
+      38,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.45,
+      "offset": [
+        1650,
+        100
+      ]
+    }
+  },
+  "version": 0.4
+}

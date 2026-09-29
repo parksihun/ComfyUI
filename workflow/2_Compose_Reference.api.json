@@ -1,0 +1,243 @@
+{
+ "21": {
+  "inputs": {
+   "image": "profile.png"
+  },
+  "class_type": "LoadImage",
+  "_meta": {
+   "title": "Load Image - 프로필 (바꿔 넣을 인물, 필수)"
+  }
+ },
+ "20": {
+  "inputs": {
+   "prompts_json": "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+   "background_mode": "video_first_frame",
+   "max_side": 1024,
+   "divisible_by": 16,
+   "instruction": "Create one photorealistic image. Picture 1 shows the person to use: keep this person's face, hair, skin, body shape and clothing exactly as shown in Picture 1. {background} {props} {framing} One person only, sharp and well lit. No text, no captions, no watermark, no borders.",
+   "extra_instruction": "",
+   "profile": [
+    "21",
+    0
+   ]
+  },
+  "class_type": "ShortsReferenceSetup",
+  "_meta": {
+   "title": "Shorts Reference Setup - 프로필+배경+소품 정리"
+  }
+ },
+ "24": {
+  "inputs": {
+   "unet_name": "qwen_image_edit_2511_fp8mixed.safetensors",
+   "weight_dtype": "default"
+  },
+  "class_type": "UNETLoader"
+ },
+ "25": {
+  "inputs": {
+   "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+   "type": "qwen_image",
+   "device": "default"
+  },
+  "class_type": "CLIPLoader"
+ },
+ "26": {
+  "inputs": {
+   "vae_name": "qwen_image_vae.safetensors"
+  },
+  "class_type": "VAELoader"
+ },
+ "27": {
+  "inputs": {
+   "shift": 3.1,
+   "sampling": "flow",
+   "model": [
+    "24",
+    0
+   ]
+  },
+  "class_type": "ModelSamplingAuraFlow"
+ },
+ "28": {
+  "inputs": {
+   "strength": 1,
+   "pre_cfg": false,
+   "model": [
+    "27",
+    0
+   ]
+  },
+  "class_type": "CFGNorm"
+ },
+ "30": {
+  "inputs": {
+   "prompt": [
+    "20",
+    3
+   ],
+   "clip": [
+    "25",
+    0
+   ],
+   "vae": [
+    "26",
+    0
+   ],
+   "image1": [
+    "20",
+    0
+   ],
+   "image2": [
+    "20",
+    1
+   ],
+   "image3": [
+    "20",
+    2
+   ]
+  },
+  "class_type": "TextEncodeQwenImageEditPlus",
+  "_meta": {
+   "title": "Qwen Edit Encode - Positive (지시문은 Setup에서)"
+  }
+ },
+ "31": {
+  "inputs": {
+   "prompt": "",
+   "clip": [
+    "25",
+    0
+   ],
+   "vae": [
+    "26",
+    0
+   ],
+   "image1": [
+    "20",
+    0
+   ],
+   "image2": [
+    "20",
+    1
+   ],
+   "image3": [
+    "20",
+    2
+   ]
+  },
+  "class_type": "TextEncodeQwenImageEditPlus",
+  "_meta": {
+   "title": "Qwen Edit Encode - Negative"
+  }
+ },
+ "32": {
+  "inputs": {
+   "reference_latents_method": "index_timestep_zero",
+   "conditioning": [
+    "30",
+    0
+   ]
+  },
+  "class_type": "FluxKontextMultiReferenceLatentMethod"
+ },
+ "33": {
+  "inputs": {
+   "reference_latents_method": "index_timestep_zero",
+   "conditioning": [
+    "31",
+    0
+   ]
+  },
+  "class_type": "FluxKontextMultiReferenceLatentMethod"
+ },
+ "34": {
+  "inputs": {
+   "width": [
+    "20",
+    4
+   ],
+   "height": [
+    "20",
+    5
+   ],
+   "batch_size": 1
+  },
+  "class_type": "EmptySD3LatentImage",
+  "_meta": {
+   "title": "Empty Latent - 원본 영상 비율"
+  }
+ },
+ "35": {
+  "inputs": {
+   "seed": 42,
+   "steps": 40,
+   "cfg": 3,
+   "sampler_name": "euler",
+   "scheduler": "simple",
+   "denoise": 1,
+   "model": [
+    "28",
+    0
+   ],
+   "positive": [
+    "32",
+    0
+   ],
+   "negative": [
+    "33",
+    0
+   ],
+   "latent_image": [
+    "34",
+    0
+   ]
+  },
+  "class_type": "KSampler",
+  "_meta": {
+   "title": "KSampler (steps 40 / cfg 3, LoRA 켜면 4 / 1)"
+  }
+ },
+ "36": {
+  "inputs": {
+   "samples": [
+    "35",
+    0
+   ],
+   "vae": [
+    "26",
+    0
+   ]
+  },
+  "class_type": "VAEDecode"
+ },
+ "37": {
+  "inputs": {
+   "filename": "reference.png",
+   "copy_to_input": true,
+   "image": [
+    "36",
+    0
+   ],
+   "prompts_dir": [
+    "20",
+    7
+   ]
+  },
+  "class_type": "ShortsReferenceSave",
+  "_meta": {
+   "title": "Shorts Reference Save - reference.png"
+  }
+ },
+ "38": {
+  "inputs": {
+   "images": [
+    "37",
+    1
+   ]
+  },
+  "class_type": "PreviewImage",
+  "_meta": {
+   "title": "합성된 참조 이미지"
+  }
+ }
+}

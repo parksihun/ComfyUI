@@ -6,6 +6,9 @@
 !README.md
 !setup.bat
 !Start ComfyUI CPU.bat
+!Download_Models_Shorts.bat
+!Start_ComfyUI_L40S.bat
+!extra_model_paths.yaml
 
 !workflow/
 !workflow/**

@@ -1,0 +1,524 @@
+{
+ "52": {
+  "inputs": {
+   "image": "profile.png"
+  },
+  "class_type": "LoadImage",
+  "_meta": {
+   "title": "Load Image - 프로필 (reference.png 없을 때 대신 사용)"
+  }
+ },
+ "59": {
+  "inputs": {
+   "prompts_json": "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+   "filename": "reference.png",
+   "fallback": [
+    "52",
+    0
+   ]
+  },
+  "class_type": "ShortsReferenceLoader",
+  "_meta": {
+   "title": "Shorts Reference Loader - prompts.json 경로 입력 (3단계 시작점)"
+  }
+ },
+ "58": {
+  "inputs": {
+   "model_name": "Qwen3-VL-8B-Instruct",
+   "quantization": "None (FP16)",
+   "attention_mode": "auto",
+   "use_torch_compile": false,
+   "device": "auto",
+   "preset_prompt": "📹 Video Summary",
+   "custom_prompt": "Describe the main person in this image for an AI video generation prompt. English, one paragraph of 40-70 words: gender, apparent age range, hair (color, length, style), face features, skin tone, clothing and accessories, body type, and any object the person is holding. Looks only: no background description, no motion, no emotions, no name. Output the paragraph only.",
+   "max_tokens": 256,
+   "temperature": 0.3,
+   "top_p": 0.9,
+   "num_beams": 1,
+   "repetition_penalty": 1.2,
+   "frame_count": 1,
+   "video_frame_size": "auto",
+   "keep_model_loaded": true,
+   "seed": 1,
+   "image": [
+    "59",
+    0
+   ]
+  },
+  "class_type": "AILab_QwenVL_Advanced",
+  "_meta": {
+   "title": "QwenVL - 참조 인물 외형 묘사 (Character Description)"
+  }
+ },
+ "51": {
+  "inputs": {
+   "prompts_json": [
+    "59",
+    1
+   ],
+   "fps": 16,
+   "frame_step": 4,
+   "max_side": 832,
+   "divisible_by": 16,
+   "clips": "",
+   "prompt_template": "Character Description: {character}\nBackground description: {common} {segment}",
+   "character_description": [
+    "58",
+    0
+   ]
+  },
+  "class_type": "ShortsPromptsLoader",
+  "_meta": {
+   "title": "Shorts Prompts Loader - prompts.json → 구간 리스트"
+  }
+ },
+ "53": {
+  "inputs": {
+   "video": [
+    "51",
+    7
+   ],
+   "force_rate": 16,
+   "custom_width": 0,
+   "custom_height": 0,
+   "frame_load_cap": [
+    "51",
+    4
+   ],
+   "skip_first_frames": [
+    "51",
+    3
+   ],
+   "select_every_nth": 1,
+   "format": "None"
+  },
+  "class_type": "VHS_LoadVideoPath",
+  "_meta": {
+   "title": "Load Video (Path) - 원본 구간 프레임 (드라이빙)"
+  }
+ },
+ "54": {
+  "inputs": {
+   "prefix": "clip",
+   "video": [
+    "245",
+    0
+   ],
+   "segment_index": [
+    "51",
+    2
+   ],
+   "out_dir": [
+    "51",
+    12
+   ]
+  },
+  "class_type": "ShortsClipSaver"
+ },
+ "55": {
+  "inputs": {
+   "fps": 16.0,
+   "filename": "final.mp4",
+   "reencode": true,
+   "clip_path": [
+    "54",
+    0
+   ],
+   "out_dir": [
+    "51",
+    12
+   ]
+  },
+  "class_type": "ShortsConcat"
+ },
+ "56": {
+  "inputs": {
+   "filename_prefix": "video/shorts_final",
+   "format": "auto",
+   "format.codec": "auto",
+   "codec": "auto",
+   "video": [
+    "55",
+    1
+   ]
+  },
+  "class_type": "SaveVideo",
+  "_meta": {
+   "title": "Save Video - final.mp4 미리보기/복사본"
+  }
+ },
+ "578": {
+  "inputs": {
+   "unet_name": "wan_animate_2_int8_convrot.safetensors",
+   "weight_dtype": "default"
+  },
+  "class_type": "UNETLoader"
+ },
+ "579": {
+  "inputs": {
+   "lora_name": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+   "strength_model": 1,
+   "model": [
+    "578",
+    0
+   ]
+  },
+  "class_type": "LoraLoaderModelOnly"
+ },
+ "580": {
+  "inputs": {
+   "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+   "type": "wan",
+   "device": "default"
+  },
+  "class_type": "CLIPLoader"
+ },
+ "583": {
+  "inputs": {
+   "clip_name": "clip_vision_h.safetensors"
+  },
+  "class_type": "CLIPVisionLoader"
+ },
+ "584": {
+  "inputs": {
+   "vae_name": "Wan2_1_VAE_bf16.safetensors"
+  },
+  "class_type": "VAELoader"
+ },
+ "590": {
+  "inputs": {
+   "resize_type": "scale dimensions",
+   "resize_type.width": [
+    "596",
+    0
+   ],
+   "resize_type.height": [
+    "596",
+    1
+   ],
+   "resize_type.crop": "center",
+   "scale_method": "area",
+   "input": [
+    "59",
+    0
+   ]
+  },
+  "class_type": "ResizeImageMaskNode"
+ },
+ "596": {
+  "inputs": {
+   "image": [
+    "600",
+    0
+   ]
+  },
+  "class_type": "GetImageSize"
+ },
+ "599": {
+  "inputs": {
+   "batch_index": 0,
+   "length": 1,
+   "image": [
+    "600",
+    0
+   ]
+  },
+  "class_type": "ImageFromBatch"
+ },
+ "600": {
+  "inputs": {
+   "resize_type": "scale dimensions",
+   "resize_type.width": [
+    "51",
+    9
+   ],
+   "resize_type.height": [
+    "51",
+    10
+   ],
+   "resize_type.crop": "center",
+   "scale_method": "area",
+   "input": [
+    "53",
+    0
+   ]
+  },
+  "class_type": "ResizeImageMaskNode"
+ },
+ "581": {
+  "inputs": {
+   "text": [
+    "51",
+    5
+   ],
+   "clip": [
+    "580",
+    0
+   ]
+  },
+  "class_type": "CLIPTextEncode",
+  "_meta": {
+   "title": "CLIP Text Encode (Negative Prompt)"
+  }
+ },
+ "582": {
+  "inputs": {
+   "text": [
+    "51",
+    0
+   ],
+   "clip": [
+    "580",
+    0
+   ]
+  },
+  "class_type": "CLIPTextEncode",
+  "_meta": {
+   "title": "CLIP Text Encode (Positive Prompt)"
+  }
+ },
+ "585": {
+  "inputs": {
+   "text": [
+    "51",
+    1
+   ],
+   "clip": [
+    "580",
+    0
+   ]
+  },
+  "class_type": "CLIPTextEncode"
+ },
+ "589": {
+  "inputs": {
+   "crop": "none",
+   "clip_vision": [
+    "583",
+    0
+   ],
+   "image": [
+    "590",
+    0
+   ]
+  },
+  "class_type": "CLIPVisionEncode"
+ },
+ "598": {
+  "inputs": {
+   "crop": "none",
+   "clip_vision": [
+    "583",
+    0
+   ],
+   "image": [
+    "599",
+    0
+   ]
+  },
+  "class_type": "CLIPVisionEncode"
+ },
+ "586": {
+  "inputs": {
+   "context_length": 21,
+   "context_overlap": 8,
+   "context_schedule": "standard_static",
+   "context_stride": 1,
+   "closed_loop": false,
+   "fuse_method": "pyramid",
+   "dim": 2,
+   "freenoise": true,
+   "cond_retain_index_list": "0",
+   "split_conds_to_windows": false,
+   "latent_retain_index_list": "",
+   "causal_window_fix": true,
+   "model": [
+    "579",
+    0
+   ]
+  },
+  "class_type": "ContextWindowsManual"
+ },
+ "587": {
+  "inputs": {
+   "width": [
+    "596",
+    0
+   ],
+   "height": [
+    "596",
+    1
+   ],
+   "length": [
+    "51",
+    4
+   ],
+   "batch_size": 1,
+   "video_frame_offset": 0,
+   "pose_strength": 1,
+   "pose_start_percent": 0,
+   "pose_end_percent": 1,
+   "reference_image_strength": 1,
+   "positive": [
+    "582",
+    0
+   ],
+   "negative": [
+    "581",
+    0
+   ],
+   "vae": [
+    "584",
+    0
+   ],
+   "reference_image": [
+    "590",
+    0
+   ],
+   "pose_video": [
+    "600",
+    0
+   ],
+   "clip_vision_output": [
+    "589",
+    0
+   ],
+   "positive_pose": [
+    "585",
+    0
+   ],
+   "clip_vision_output_pose": [
+    "598",
+    0
+   ]
+  },
+  "class_type": "WanAnimate2ToVideo"
+ },
+ "588": {
+  "inputs": {
+   "switch": false,
+   "on_false": [
+    "579",
+    0
+   ],
+   "on_true": [
+    "586",
+    0
+   ]
+  },
+  "class_type": "ComfySwitchNode"
+ },
+ "594": {
+  "inputs": {
+   "device": "gpu",
+   "dtype": "int8",
+   "model": [
+    "588",
+    0
+   ]
+  },
+  "class_type": "WanAnimate2Cache"
+ },
+ "591": {
+  "inputs": {
+   "scheduler": "simple",
+   "steps": 6,
+   "denoise": 1,
+   "model": [
+    "594",
+    0
+   ]
+  },
+  "class_type": "BasicScheduler"
+ },
+ "592": {
+  "inputs": {
+   "shift": 5,
+   "model": [
+    "594",
+    0
+   ]
+  },
+  "class_type": "ModelSamplingSD3"
+ },
+ "593": {
+  "inputs": {
+   "sampler_name": "lcm"
+  },
+  "class_type": "KSamplerSelect"
+ },
+ "597": {
+  "inputs": {
+   "add_noise": true,
+   "noise_seed": 42,
+   "cfg": 1,
+   "model": [
+    "592",
+    0
+   ],
+   "positive": [
+    "587",
+    0
+   ],
+   "negative": [
+    "587",
+    1
+   ],
+   "sampler": [
+    "593",
+    0
+   ],
+   "sigmas": [
+    "591",
+    0
+   ],
+   "latent_image": [
+    "587",
+    2
+   ]
+  },
+  "class_type": "SamplerCustom"
+ },
+ "601": {
+  "inputs": {
+   "samples": [
+    "602",
+    0
+   ],
+   "vae": [
+    "584",
+    0
+   ]
+  },
+  "class_type": "VAEDecode"
+ },
+ "602": {
+  "inputs": {
+   "trim_amount": [
+    "587",
+    3
+   ],
+   "samples": [
+    "597",
+    0
+   ]
+  },
+  "class_type": "TrimVideoLatent"
+ },
+ "245": {
+  "inputs": {
+   "fps": [
+    "51",
+    8
+   ],
+   "bit_depth": "auto",
+   "color_space": "sRGB",
+   "codec": "none",
+   "images": [
+    "601",
+    0
+   ]
+  },
+  "class_type": "CreateVideo"
+ }
+}

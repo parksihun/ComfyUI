@@ -1,0 +1,4060 @@
+{
+  "id": "shorts-all-remake",
+  "revision": 0,
+  "last_node_id": 602,
+  "last_link_id": 2033,
+  "nodes": [
+    {
+      "id": 70,
+      "type": "MarkdownNote",
+      "pos": [
+        -2200,
+        80
+      ],
+      "size": [
+        600,
+        760
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "MarkdownNote"
+      },
+      "widgets_values": [
+        "# Shorts Remake 올인원: 영상 파일 + 프로필/배경/소품 사진 → 인물 교체 영상\n\n유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받고, 표시된 파일 경로를 여기 `video_path`에 넣습니다.\n위에서 아래로 세 구역이 한 번의 Queue로 이어서 실행됩니다.\n\n1. **분석** (왼쪽 위): `Shorts Video Segments`의 `video_path`에 영상 경로 → 5초/장면 구간마다 QwenVL 프롬프트 → prompts.json\n2. **참조 이미지 합성** (왼쪽 아래): `Load Image` 프로필(필수) · 배경(선택) · 소품(선택) → Qwen-Image-Edit-2511 → reference.png. prompts.json 경로는 1구역에서 자동으로 연결됩니다 (`Shorts Reference Setup`의 prompts_json 입력).\n3. **영상 생성** (오른쪽): Wan Animate 2가 원본 동작 그대로 참조 이미지를 움직여 구간별 clip_NN.mp4 → final.mp4\n\n**입력 3곳만 바꾸면 됩니다**: 영상 파일 경로, 프로필 사진, (선택) 배경/소품 사진. 배경 노드를 bypass(Ctrl+B)하면 원본 영상의 배경이 그대로 유지되고 사람만 바뀝니다.\n\n**출력**: 영상 옆 `<영상이름>_prompts/` 폴더 안에 prompts.json, reference.png, clip_NN.mp4, final.mp4. `Save Video`로 ComfyUI/output/video/ 에도 복사.\n\n**VRAM**: Qwen3-VL-8B(16GB) → Qwen-Image-Edit fp8(~22GB) → Wan Animate 2 int8(~20GB) 순으로 ComfyUI가 모델을 교체해 로드합니다. L40S 48GB 기준.\n\n**단계별로 확인하며 하려면** 1 → 2 → 3 워크플로우를 따로 실행하세요 (prompts.json / reference.png를 중간에 편집 가능)."
+      ],
+      "title": "올인원 사용법",
+      "color": "#322",
+      "bgcolor": "#533"
+    },
+    {
+      "id": 1,
+      "type": "ShortsVideoSegments",
+      "pos": [
+        -1000,
+        330
+      ],
+      "size": [
+        420,
+        250
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "segment_frames",
+          "type": "IMAGE",
+          "links": [
+            1
+          ]
+        },
+        {
+          "name": "segment_index",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "segment_label",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "overview_frames",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        },
+        {
+          "name": "count",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "segments_json",
+          "type": "STRING",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsVideoSegments"
+      },
+      "widgets_values": [
+        "",
+        "fixed",
+        5.0,
+        1.5,
+        0.5,
+        8,
+        384
+      ],
+      "title": "Shorts Video Segments - video_path에 영상 파일 경로, 5초 / 장면 단위로 나누기"
+    },
+    {
+      "id": 2,
+      "type": "AILab_QwenVL_Advanced",
+      "pos": [
+        -540,
+        80
+      ],
+      "size": [
+        460,
+        620
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "video",
+          "type": "IMAGE",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "RESPONSE",
+          "type": "STRING",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AILab_QwenVL_Advanced"
+      },
+      "widgets_values": [
+        "Qwen3-VL-8B-Instruct",
+        "None (FP16)",
+        "auto",
+        false,
+        "auto",
+        "📹 Video Summary",
+        "These frames are ONE consecutive segment of a video, in time order (first frame = segment start, last = segment end). You write prompts for an AI video generator (Wan) that will re-create this segment with a DIFFERENT person, so never describe the person's identity, face, hair, skin, age or clothing.\nReturn ONLY a JSON object, no markdown, with exactly these keys:\n\"scene_ko\": Korean, 1-2 sentences, what is visible and what happens in this segment.\n\"positive_prompt\": English, 50-90 words, natural sentences: environment and background, the person's actions and body motion from first to last frame, camera framing and movement, lighting, colors. No text, logos or captions.\n\"camera\": English, one short line describing the camera framing and movement.\n\"motion\": English, one short line describing only the person's motion (for a pose prompt), e.g. \"a person talking to the camera, nodding and gesturing with one hand\".\nAll values except scene_ko MUST be written in English.",
+        512,
+        0.3,
+        0.9,
+        1,
+        1.2,
+        8,
+        "auto",
+        true,
+        1,
+        "fixed"
+      ],
+      "title": "QwenVL - 구간별 프롬프트 (구간 수만큼 실행)"
+    },
+    {
+      "id": 3,
+      "type": "AILab_QwenVL_Advanced",
+      "pos": [
+        -540,
+        760
+      ],
+      "size": [
+        460,
+        620
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "video",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "RESPONSE",
+          "type": "STRING",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AILab_QwenVL_Advanced"
+      },
+      "widgets_values": [
+        "Qwen3-VL-8B-Instruct",
+        "None (FP16)",
+        "auto",
+        false,
+        "auto",
+        "📹 Video Summary",
+        "Each frame is taken from a different consecutive segment of the SAME video. Return ONLY a JSON object, no markdown, with exactly these keys:\n\"summary_ko\": Korean, 1-2 sentences summarizing the whole video.\n\"common_prompt\": English, 30-60 words describing what stays the same across the whole video: setting, environment, lighting, color palette, camera style, visual style. Describe looks only, no motion, and do NOT describe the person's identity, face, hair or clothing.\n\"person_in_video\": English, 1-2 sentences describing the main person's appearance (reference only).\n\"negative_prompt\": English, comma-separated list of visual artifacts to avoid for this kind of footage.\nAll values except summary_ko MUST be written in English.",
+        512,
+        0.3,
+        0.9,
+        1,
+        1.2,
+        16,
+        "auto",
+        true,
+        1,
+        "fixed"
+      ],
+      "title": "QwenVL - 공통 프롬프트 + 네거티브"
+    },
+    {
+      "id": 4,
+      "type": "ShortsPromptsCollector",
+      "pos": [
+        -40,
+        80
+      ],
+      "size": [
+        460,
+        300
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "segment_responses",
+          "type": "STRING",
+          "link": 3
+        },
+        {
+          "name": "common_response",
+          "type": "STRING",
+          "link": 4
+        },
+        {
+          "name": "segments_json",
+          "type": "STRING",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "summary",
+          "type": "STRING",
+          "links": [
+            6
+          ]
+        },
+        {
+          "name": "prompts_json",
+          "type": "STRING",
+          "links": [
+            300,
+            301
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsPromptsCollector"
+      },
+      "widgets_values": [
+        "",
+        "blurry, low quality, worst quality, jpeg artifacts, watermark, text, logo, subtitles, deformed, extra limbs, extra fingers, bad anatomy, distorted face, flicker, jitter, static image, frozen frame, duplicated subject, overexposed, oversaturated",
+        16
+      ]
+    },
+    {
+      "id": 5,
+      "type": "PreviewAny",
+      "pos": [
+        -40,
+        440
+      ],
+      "size": [
+        640,
+        500
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 6
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        false
+      ]
+    },
+    {
+      "id": 21,
+      "type": "LoadImage",
+      "pos": [
+        -960,
+        1500
+      ],
+      "size": [
+        320,
+        380
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            101
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "profile.png",
+        "image"
+      ],
+      "title": "Load Image - 프로필 (바꿔 넣을 인물, 필수)"
+    },
+    {
+      "id": 22,
+      "type": "LoadImage",
+      "pos": [
+        -960,
+        1920
+      ],
+      "size": [
+        320,
+        380
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 4,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            102
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "background.png",
+        "image"
+      ],
+      "title": "Load Image - 배경 (선택, 안 쓰면 Ctrl+B)"
+    },
+    {
+      "id": 23,
+      "type": "LoadImage",
+      "pos": [
+        -960,
+        2340
+      ],
+      "size": [
+        320,
+        380
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 4,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            103
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "props.png",
+        "image"
+      ],
+      "title": "Load Image - 소품 (선택, 안 쓰면 Ctrl+B)"
+    },
+    {
+      "id": 20,
+      "type": "ShortsReferenceSetup",
+      "pos": [
+        -580,
+        1500
+      ],
+      "size": [
+        520,
+        520
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "profile",
+          "type": "IMAGE",
+          "link": 101
+        },
+        {
+          "name": "background",
+          "type": "IMAGE",
+          "link": 102
+        },
+        {
+          "name": "props",
+          "type": "IMAGE",
+          "link": 103
+        },
+        {
+          "name": "prompts_json",
+          "type": "STRING",
+          "link": 300,
+          "widget": {
+            "name": "prompts_json"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image1",
+          "type": "IMAGE",
+          "links": [
+            110,
+            113
+          ]
+        },
+        {
+          "name": "image2",
+          "type": "IMAGE",
+          "links": [
+            111,
+            114
+          ]
+        },
+        {
+          "name": "image3",
+          "type": "IMAGE",
+          "links": [
+            112,
+            115
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            116
+          ]
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "links": [
+            117
+          ]
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": [
+            118
+          ]
+        },
+        {
+          "name": "first_frame",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "prompts_dir",
+          "type": "STRING",
+          "links": [
+            130
+          ]
+        },
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsReferenceSetup"
+      },
+      "widgets_values": [
+        "",
+        "video_first_frame",
+        1024,
+        16,
+        "Create one photorealistic image. Picture 1 shows the person to use: keep this person's face, hair, skin, body shape and clothing exactly as shown in Picture 1. {background} {props} {framing} One person only, sharp and well lit. No text, no captions, no watermark, no borders.",
+        ""
+      ],
+      "title": "Shorts Reference Setup - 프로필+배경+소품 정리"
+    },
+    {
+      "id": 24,
+      "type": "UNETLoader",
+      "pos": [
+        -580,
+        2080
+      ],
+      "size": [
+        400,
+        82
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            120
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "qwen_image_edit_2511_fp8mixed.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 25,
+      "type": "CLIPLoader",
+      "pos": [
+        -580,
+        2200
+      ],
+      "size": [
+        400,
+        106
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            121,
+            122
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        "qwen_image",
+        "default"
+      ]
+    },
+    {
+      "id": 26,
+      "type": "VAELoader",
+      "pos": [
+        -580,
+        2350
+      ],
+      "size": [
+        400,
+        58
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            123,
+            124,
+            125
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "qwen_image_vae.safetensors"
+      ]
+    },
+    {
+      "id": 27,
+      "type": "ModelSamplingAuraFlow",
+      "pos": [
+        -140,
+        2080
+      ],
+      "size": [
+        320,
+        58
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 120
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            126
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ModelSamplingAuraFlow"
+      },
+      "widgets_values": [
+        3.1,
+        "flow"
+      ]
+    },
+    {
+      "id": 28,
+      "type": "CFGNorm",
+      "pos": [
+        -140,
+        2180
+      ],
+      "size": [
+        320,
+        82
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 126
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            127
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CFGNorm"
+      },
+      "widgets_values": [
+        1,
+        false
+      ]
+    },
+    {
+      "id": 29,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        -140,
+        2300
+      ],
+      "size": [
+        320,
+        82
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 127
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            128
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+        1.0
+      ],
+      "title": "Lightning 4-step LoRA (기본 bypass, 켜면 steps 4 / cfg 1)"
+    },
+    {
+      "id": 30,
+      "type": "TextEncodeQwenImageEditPlus",
+      "pos": [
+        0,
+        1500
+      ],
+      "size": [
+        440,
+        220
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 121
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 123
+        },
+        {
+          "name": "image1",
+          "type": "IMAGE",
+          "link": 110
+        },
+        {
+          "name": "image2",
+          "type": "IMAGE",
+          "link": 111
+        },
+        {
+          "name": "image3",
+          "type": "IMAGE",
+          "link": 112
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "link": 116,
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            140
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TextEncodeQwenImageEditPlus"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "title": "Qwen Edit Encode - Positive (지시문은 Setup에서)"
+    },
+    {
+      "id": 31,
+      "type": "TextEncodeQwenImageEditPlus",
+      "pos": [
+        0,
+        1780
+      ],
+      "size": [
+        440,
+        220
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 122
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 124
+        },
+        {
+          "name": "image1",
+          "type": "IMAGE",
+          "link": 113
+        },
+        {
+          "name": "image2",
+          "type": "IMAGE",
+          "link": 114
+        },
+        {
+          "name": "image3",
+          "type": "IMAGE",
+          "link": 115
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            141
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TextEncodeQwenImageEditPlus"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "title": "Qwen Edit Encode - Negative"
+    },
+    {
+      "id": 32,
+      "type": "FluxKontextMultiReferenceLatentMethod",
+      "pos": [
+        480,
+        1500
+      ],
+      "size": [
+        340,
+        58
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 140
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            142
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxKontextMultiReferenceLatentMethod"
+      },
+      "widgets_values": [
+        "index_timestep_zero"
+      ]
+    },
+    {
+      "id": 33,
+      "type": "FluxKontextMultiReferenceLatentMethod",
+      "pos": [
+        480,
+        1780
+      ],
+      "size": [
+        340,
+        58
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 141
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            143
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxKontextMultiReferenceLatentMethod"
+      },
+      "widgets_values": [
+        "index_timestep_zero"
+      ]
+    },
+    {
+      "id": 34,
+      "type": "EmptySD3LatentImage",
+      "pos": [
+        480,
+        1900
+      ],
+      "size": [
+        340,
+        106
+      ],
+      "flags": {},
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "link": 117,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 118,
+          "widget": {
+            "name": "height"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            144
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptySD3LatentImage"
+      },
+      "widgets_values": [
+        1024,
+        1024,
+        1
+      ],
+      "title": "Empty Latent - 원본 영상 비율"
+    },
+    {
+      "id": 35,
+      "type": "KSampler",
+      "pos": [
+        480,
+        2060
+      ],
+      "size": [
+        340,
+        262
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 128
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 142
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 143
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 144
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            145
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        42,
+        "fixed",
+        40,
+        3,
+        "euler",
+        "simple",
+        1
+      ],
+      "title": "KSampler (steps 40 / cfg 3, LoRA 켜면 4 / 1)"
+    },
+    {
+      "id": 36,
+      "type": "VAEDecode",
+      "pos": [
+        860,
+        2060
+      ],
+      "size": [
+        210,
+        46
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 145
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 125
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            146
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 37,
+      "type": "ShortsReferenceSave",
+      "pos": [
+        860,
+        2160
+      ],
+      "size": [
+        340,
+        130
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 146
+        },
+        {
+          "name": "prompts_dir",
+          "type": "STRING",
+          "link": 130
+        }
+      ],
+      "outputs": [
+        {
+          "name": "reference_path",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            147,
+            302
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsReferenceSave"
+      },
+      "widgets_values": [
+        "reference.png",
+        true
+      ],
+      "title": "Shorts Reference Save - reference.png"
+    },
+    {
+      "id": 38,
+      "type": "PreviewImage",
+      "pos": [
+        860,
+        1500
+      ],
+      "size": [
+        400,
+        500
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 147
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "title": "합성된 참조 이미지"
+    },
+    {
+      "id": 52,
+      "type": "LoadImage",
+      "pos": [
+        1520.0,
+        0.0
+      ],
+      "size": [
+        320,
+        400
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2000
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "profile.png",
+        "image"
+      ],
+      "title": "Load Image - 프로필 (합성 실패 시 대체용, 평소엔 미사용)"
+    },
+    {
+      "id": 59,
+      "type": "ShortsReferenceLoader",
+      "pos": [
+        1520.0,
+        460.0
+      ],
+      "size": [
+        360,
+        150
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "reference",
+          "type": "IMAGE",
+          "link": 302
+        },
+        {
+          "name": "fallback",
+          "type": "IMAGE",
+          "link": 2000
+        },
+        {
+          "name": "prompts_json",
+          "type": "STRING",
+          "link": 301,
+          "widget": {
+            "name": "prompts_json"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            2001,
+            2002
+          ]
+        },
+        {
+          "name": "prompts_json",
+          "type": "STRING",
+          "links": [
+            2023
+          ]
+        },
+        {
+          "name": "source",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsReferenceLoader"
+      },
+      "widgets_values": [
+        "",
+        "reference.png"
+      ],
+      "title": "Shorts Reference Loader - prompts.json 경로 입력 (3단계 시작점)"
+    },
+    {
+      "id": 58,
+      "type": "AILab_QwenVL_Advanced",
+      "pos": [
+        1520.0,
+        640.0
+      ],
+      "size": [
+        460,
+        620
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 2002
+        },
+        {
+          "name": "video",
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "RESPONSE",
+          "type": "STRING",
+          "links": [
+            2003
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AILab_QwenVL_Advanced"
+      },
+      "widgets_values": [
+        "Qwen3-VL-8B-Instruct",
+        "None (FP16)",
+        "auto",
+        false,
+        "auto",
+        "📹 Video Summary",
+        "Describe the main person in this image for an AI video generation prompt. English, one paragraph of 40-70 words: gender, apparent age range, hair (color, length, style), face features, skin tone, clothing and accessories, body type, and any object the person is holding. Looks only: no background description, no motion, no emotions, no name. Output the paragraph only.",
+        256,
+        0.3,
+        0.9,
+        1,
+        1.2,
+        1,
+        "auto",
+        true,
+        1,
+        "fixed"
+      ],
+      "title": "QwenVL - 참조 인물 외형 묘사 (Character Description)"
+    },
+    {
+      "id": 51,
+      "type": "ShortsPromptsLoader",
+      "pos": [
+        2040.0,
+        0.0
+      ],
+      "size": [
+        480,
+        420
+      ],
+      "flags": {},
+      "order": 28,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "character_description",
+          "type": "STRING",
+          "link": 2003
+        },
+        {
+          "name": "prompts_json",
+          "type": "STRING",
+          "link": 2023,
+          "widget": {
+            "name": "prompts_json"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "STRING",
+          "links": [
+            2010
+          ]
+        },
+        {
+          "name": "pose_prompt",
+          "type": "STRING",
+          "links": [
+            2012
+          ]
+        },
+        {
+          "name": "segment_index",
+          "type": "INT",
+          "links": [
+            2020
+          ]
+        },
+        {
+          "name": "skip_frames",
+          "type": "INT",
+          "links": [
+            2005
+          ]
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": [
+            2006,
+            2013
+          ]
+        },
+        {
+          "name": "negative",
+          "type": "STRING",
+          "links": [
+            2011
+          ]
+        },
+        {
+          "name": "common",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "links": [
+            2004
+          ]
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "links": [
+            2016
+          ]
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "links": [
+            2014
+          ]
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": [
+            2015
+          ]
+        },
+        {
+          "name": "count",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "prompts_dir",
+          "type": "STRING",
+          "links": [
+            2021,
+            2031
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsPromptsLoader"
+      },
+      "widgets_values": [
+        "",
+        16,
+        4,
+        832,
+        16,
+        "",
+        "Character Description: {character}\nBackground description: {common} {segment}"
+      ],
+      "title": "Shorts Prompts Loader - prompts.json → 구간 리스트"
+    },
+    {
+      "id": 53,
+      "type": "VHS_LoadVideoPath",
+      "pos": [
+        2040.0,
+        480.0
+      ],
+      "size": [
+        420,
+        340
+      ],
+      "flags": {},
+      "order": 29,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "meta_batch",
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": null
+        },
+        {
+          "name": "video",
+          "type": "STRING",
+          "link": 2004,
+          "widget": {
+            "name": "video"
+          }
+        },
+        {
+          "name": "frame_load_cap",
+          "type": "INT",
+          "link": 2006,
+          "widget": {
+            "name": "frame_load_cap"
+          }
+        },
+        {
+          "name": "skip_first_frames",
+          "type": "INT",
+          "link": 2005,
+          "widget": {
+            "name": "skip_first_frames"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2007
+          ]
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VHS_LoadVideoPath"
+      },
+      "widgets_values": {
+        "video": "",
+        "force_rate": 16,
+        "custom_width": 0,
+        "custom_height": 0,
+        "frame_load_cap": 0,
+        "skip_first_frames": 0,
+        "select_every_nth": 1,
+        "format": "None"
+      },
+      "title": "Load Video (Path) - 원본 구간 프레임 (드라이빙)"
+    },
+    {
+      "id": 54,
+      "type": "ShortsClipSaver",
+      "pos": [
+        8798.695092931215,
+        0.0
+      ],
+      "size": [
+        340,
+        140
+      ],
+      "flags": {},
+      "order": 30,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 2030
+        },
+        {
+          "name": "segment_index",
+          "type": "INT",
+          "link": 2020
+        },
+        {
+          "name": "out_dir",
+          "type": "STRING",
+          "link": 2021
+        }
+      ],
+      "outputs": [
+        {
+          "name": "clip_path",
+          "type": "STRING",
+          "links": [
+            2032
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsClipSaver"
+      },
+      "widgets_values": [
+        "clip"
+      ]
+    },
+    {
+      "id": 55,
+      "type": "ShortsConcat",
+      "pos": [
+        8798.695092931215,
+        200.0
+      ],
+      "size": [
+        340,
+        180
+      ],
+      "flags": {},
+      "order": 31,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip_path",
+          "type": "STRING",
+          "link": 2032
+        },
+        {
+          "name": "out_dir",
+          "type": "STRING",
+          "link": 2031
+        }
+      ],
+      "outputs": [
+        {
+          "name": "final_path",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": [
+            2033
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsConcat"
+      },
+      "widgets_values": [
+        16.0,
+        "final.mp4",
+        true
+      ]
+    },
+    {
+      "id": 56,
+      "type": "SaveVideo",
+      "pos": [
+        8798.695092931215,
+        440.0
+      ],
+      "size": [
+        340,
+        320
+      ],
+      "flags": {},
+      "order": 32,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 2033
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "video/shorts_final",
+        "auto",
+        "auto",
+        "auto"
+      ],
+      "title": "Save Video - final.mp4 미리보기/복사본"
+    },
+    {
+      "id": 578,
+      "type": "UNETLoader",
+      "pos": [
+        2670.0,
+        140.0
+      ],
+      "size": [
+        660,
+        130
+      ],
+      "flags": {},
+      "order": 33,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "unet_name",
+          "name": "unet_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "unet_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            865
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader",
+        "models": [
+          {
+            "name": "wan_animate_2_int8_convrot.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/diffusion_models/wan_animate_2_int8_convrot.safetensors",
+            "directory": "diffusion_models"
+          }
+        ]
+      },
+      "widgets_values": [
+        "wan_animate_2_int8_convrot.safetensors",
+        "default"
+      ],
+      "widgets_values_named": {
+        "unet_name": "wan_animate_2_int8_convrot.safetensors",
+        "weight_dtype": "default"
+      }
+    },
+    {
+      "id": 579,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        2670.0,
+        340.0
+      ],
+      "size": [
+        660,
+        120
+      ],
+      "flags": {},
+      "order": 34,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 865
+        },
+        {
+          "localized_name": "lora_name",
+          "name": "lora_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            869,
+            906
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoaderModelOnly",
+        "models": [
+          {
+            "name": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+            "directory": "loras"
+          }
+        ]
+      },
+      "widgets_values": [
+        "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 580,
+      "type": "CLIPLoader",
+      "pos": [
+        2670.0,
+        540.0
+      ],
+      "size": [
+        660,
+        140
+      ],
+      "flags": {},
+      "order": 35,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip_name",
+          "name": "clip_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "clip_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CLIP",
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            866,
+            867,
+            868
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader",
+        "models": [
+          {
+            "name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+            "directory": "text_encoders"
+          }
+        ]
+      },
+      "widgets_values": [
+        "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+        "wan",
+        "default"
+      ],
+      "widgets_values_named": {
+        "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+        "type": "wan",
+        "device": "default"
+      }
+    },
+    {
+      "id": 583,
+      "type": "CLIPVisionLoader",
+      "pos": [
+        2670.0,
+        760.0
+      ],
+      "size": [
+        660,
+        90
+      ],
+      "flags": {},
+      "order": 36,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip_name",
+          "name": "clip_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "clip_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CLIP_VISION",
+          "name": "CLIP_VISION",
+          "type": "CLIP_VISION",
+          "links": [
+            880,
+            894
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPVisionLoader",
+        "models": [
+          {
+            "name": "clip_vision_h.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/clip_vision/clip_vision_h.safetensors",
+            "directory": "clip_vision"
+          }
+        ]
+      },
+      "widgets_values": [
+        "clip_vision_h.safetensors"
+      ],
+      "widgets_values_named": {
+        "clip_name": "clip_vision_h.safetensors"
+      }
+    },
+    {
+      "id": 584,
+      "type": "VAELoader",
+      "pos": [
+        2670.0,
+        930.0
+      ],
+      "size": [
+        660,
+        90
+      ],
+      "flags": {},
+      "order": 37,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "vae_name",
+          "name": "vae_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "VAE",
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            872,
+            899
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "models": [
+          {
+            "name": "Wan2_1_VAE_bf16.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/vae/Wan2_1_VAE_bf16.safetensors",
+            "directory": "vae"
+          }
+        ]
+      },
+      "widgets_values": [
+        "Wan2_1_VAE_bf16.safetensors"
+      ],
+      "widgets_values_named": {
+        "vae_name": "Wan2_1_VAE_bf16.safetensors"
+      }
+    },
+    {
+      "id": 590,
+      "type": "ResizeImageMaskNode",
+      "pos": [
+        3325.0855522900806,
+        1388.7792945393912
+      ],
+      "size": [
+        270,
+        174
+      ],
+      "flags": {},
+      "order": 38,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "input",
+          "name": "input",
+          "type": "IMAGE,MASK",
+          "link": 2001
+        },
+        {
+          "localized_name": "width",
+          "name": "resize_type.width",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.width"
+          },
+          "link": 882
+        },
+        {
+          "localized_name": "height",
+          "name": "resize_type.height",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.height"
+          },
+          "link": 883
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "resized",
+          "name": "resized",
+          "type": "IMAGE,MASK",
+          "links": [
+            873,
+            881
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResizeImageMaskNode"
+      },
+      "widgets_values": [
+        "scale dimensions",
+        481,
+        854,
+        "center",
+        "area"
+      ],
+      "widgets_values_named": {
+        "resize_type": "scale dimensions",
+        "resize_type.width": 481,
+        "resize_type.height": 854,
+        "resize_type.crop": "center",
+        "scale_method": "area"
+      }
+    },
+    {
+      "id": 596,
+      "type": "GetImageSize",
+      "pos": [
+        3360.0,
+        1760.0
+      ],
+      "size": [
+        260,
+        140
+      ],
+      "flags": {},
+      "order": 39,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 887
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "links": [
+            878,
+            882
+          ]
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "links": [
+            879,
+            883
+          ]
+        },
+        {
+          "localized_name": "batch_size",
+          "name": "batch_size",
+          "type": "INT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "GetImageSize"
+      }
+    },
+    {
+      "id": 599,
+      "type": "ImageFromBatch",
+      "pos": [
+        3350.0,
+        2010.0
+      ],
+      "size": [
+        270,
+        90
+      ],
+      "flags": {},
+      "order": 40,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 896
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            895
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageFromBatch"
+      },
+      "widgets_values": [
+        0,
+        1
+      ],
+      "widgets_values_named": {
+        "batch_index": 0,
+        "length": 1
+      }
+    },
+    {
+      "id": 600,
+      "type": "ResizeImageMaskNode",
+      "pos": [
+        2990.0,
+        2010.0
+      ],
+      "size": [
+        270,
+        174
+      ],
+      "flags": {},
+      "order": 41,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "input",
+          "name": "input",
+          "type": "IMAGE,MASK",
+          "link": 2007
+        },
+        {
+          "localized_name": "width",
+          "name": "resize_type.width",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.width"
+          },
+          "link": 2014
+        },
+        {
+          "localized_name": "height",
+          "name": "resize_type.height",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.height"
+          },
+          "link": 2015
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "resized",
+          "name": "resized",
+          "type": "IMAGE",
+          "links": [
+            874,
+            887,
+            896
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResizeImageMaskNode"
+      },
+      "widgets_values": [
+        "scale dimensions",
+        482,
+        854,
+        "center",
+        "area"
+      ],
+      "widgets_values_named": {
+        "resize_type": "scale dimensions",
+        "resize_type.width": 482,
+        "resize_type.height": 854,
+        "resize_type.crop": "center",
+        "scale_method": "area"
+      }
+    },
+    {
+      "id": 581,
+      "type": "CLIPTextEncode",
+      "pos": [
+        3530.0,
+        550.0
+      ],
+      "size": [
+        490,
+        120
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 42,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 866
+        },
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 2011
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            871
+          ]
+        }
+      ],
+      "title": "CLIP Text Encode (Negative Prompt)",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+      ],
+      "widgets_values_named": {
+        "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+      },
+      "color": "#322",
+      "bgcolor": "#533"
+    },
+    {
+      "id": 582,
+      "type": "CLIPTextEncode",
+      "pos": [
+        3530.0,
+        160.0
+      ],
+      "size": [
+        480,
+        310
+      ],
+      "flags": {},
+      "order": 43,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 867
+        },
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 2010
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            870
+          ]
+        }
+      ],
+      "title": "CLIP Text Encode (Positive Prompt)",
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "Character Description: Cartoon character lost\nBackground description: The background is an empty white room"
+      ],
+      "widgets_values_named": {
+        "text": "Character Description: Cartoon character lost\nBackground description: The background is an empty white room"
+      },
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 585,
+      "type": "CLIPTextEncode",
+      "pos": [
+        3530.0,
+        750.0
+      ],
+      "size": [
+        490,
+        220
+      ],
+      "flags": {},
+      "order": 44,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 868
+        },
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 2012
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            876
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "widgets_values_named": {
+        "text": ""
+      },
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 589,
+      "type": "CLIPVisionEncode",
+      "pos": [
+        3737.4424950198595,
+        1376.2608458783634
+      ],
+      "size": [
+        290,
+        110
+      ],
+      "flags": {},
+      "order": 45,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip_vision",
+          "name": "clip_vision",
+          "type": "CLIP_VISION",
+          "link": 880
+        },
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 881
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CLIP_VISION_OUTPUT",
+          "name": "CLIP_VISION_OUTPUT",
+          "type": "CLIP_VISION_OUTPUT",
+          "links": [
+            875
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPVisionEncode"
+      },
+      "widgets_values": [
+        "none"
+      ],
+      "widgets_values_named": {
+        "crop": "none"
+      },
+      "color": "#233",
+      "bgcolor": "#355"
+    },
+    {
+      "id": 598,
+      "type": "CLIPVisionEncode",
+      "pos": [
+        3720.0,
+        2010.0
+      ],
+      "size": [
+        290,
+        110
+      ],
+      "flags": {},
+      "order": 46,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip_vision",
+          "name": "clip_vision",
+          "type": "CLIP_VISION",
+          "link": 894
+        },
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 895
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CLIP_VISION_OUTPUT",
+          "name": "CLIP_VISION_OUTPUT",
+          "type": "CLIP_VISION_OUTPUT",
+          "links": [
+            877
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPVisionEncode"
+      },
+      "widgets_values": [
+        "none"
+      ],
+      "widgets_values_named": {
+        "crop": "none"
+      },
+      "color": "#233",
+      "bgcolor": "#355"
+    },
+    {
+      "id": 586,
+      "type": "ContextWindowsManual",
+      "pos": [
+        4260.0,
+        0.0
+      ],
+      "size": [
+        300,
+        410
+      ],
+      "flags": {},
+      "order": 47,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 869
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            907
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ContextWindowsManual"
+      },
+      "widgets_values": [
+        21,
+        8,
+        "standard_static",
+        1,
+        false,
+        "pyramid",
+        2,
+        true,
+        "0",
+        false,
+        "",
+        true
+      ],
+      "widgets_values_named": {
+        "context_length": 21,
+        "context_overlap": 8,
+        "context_schedule": "standard_static",
+        "context_stride": 1,
+        "closed_loop": false,
+        "fuse_method": "pyramid",
+        "dim": 2,
+        "freenoise": true,
+        "cond_retain_index_list": "0",
+        "split_conds_to_windows": false,
+        "latent_retain_index_list": "",
+        "causal_window_fix": true
+      }
+    },
+    {
+      "id": 587,
+      "type": "WanAnimate2ToVideo",
+      "pos": [
+        4693.220023094716,
+        624.6535032367465
+      ],
+      "size": [
+        350,
+        494
+      ],
+      "flags": {},
+      "order": 48,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "positive",
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 870
+        },
+        {
+          "localized_name": "negative",
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 871
+        },
+        {
+          "localized_name": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 872
+        },
+        {
+          "localized_name": "reference_image",
+          "name": "reference_image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 873
+        },
+        {
+          "localized_name": "pose_video",
+          "name": "pose_video",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 874
+        },
+        {
+          "localized_name": "clip_vision_output",
+          "name": "clip_vision_output",
+          "shape": 7,
+          "type": "CLIP_VISION_OUTPUT",
+          "link": 875
+        },
+        {
+          "localized_name": "positive_pose",
+          "name": "positive_pose",
+          "shape": 7,
+          "type": "CONDITIONING",
+          "link": 876
+        },
+        {
+          "localized_name": "clip_vision_output_pose",
+          "name": "clip_vision_output_pose",
+          "shape": 7,
+          "type": "CLIP_VISION_OUTPUT",
+          "link": 877
+        },
+        {
+          "localized_name": "continue_motion",
+          "name": "continue_motion",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": 878
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": 879
+        },
+        {
+          "localized_name": "length",
+          "name": "length",
+          "type": "INT",
+          "widget": {
+            "name": "length"
+          },
+          "link": 2013
+        },
+        {
+          "localized_name": "video_frame_offset",
+          "name": "video_frame_offset",
+          "type": "INT",
+          "widget": {
+            "name": "video_frame_offset"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "pose_strength",
+          "name": "pose_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "pose_strength"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "pose_start_percent",
+          "name": "pose_start_percent",
+          "type": "FLOAT",
+          "widget": {
+            "name": "pose_start_percent"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "pose_end_percent",
+          "name": "pose_end_percent",
+          "type": "FLOAT",
+          "widget": {
+            "name": "pose_end_percent"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "reference_image_strength",
+          "name": "reference_image_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "reference_image_strength"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "positive",
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            889
+          ]
+        },
+        {
+          "localized_name": "negative",
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            890
+          ]
+        },
+        {
+          "localized_name": "latent",
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            893
+          ]
+        },
+        {
+          "localized_name": "trim_latent",
+          "name": "trim_latent",
+          "type": "INT",
+          "links": [
+            901
+          ]
+        },
+        {
+          "localized_name": "trim_image",
+          "name": "trim_image",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "localized_name": "video_frame_offset",
+          "name": "video_frame_offset",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "WanAnimate2ToVideo"
+      },
+      "widgets_values": [
+        832,
+        480,
+        81,
+        1,
+        0,
+        1,
+        0,
+        1,
+        1
+      ],
+      "widgets_values_named": {
+        "width": 832,
+        "height": 480,
+        "length": 81,
+        "batch_size": 1,
+        "video_frame_offset": 0,
+        "pose_strength": 1,
+        "pose_start_percent": 0,
+        "pose_end_percent": 1,
+        "reference_image_strength": 1
+      }
+    },
+    {
+      "id": 588,
+      "type": "ComfySwitchNode",
+      "pos": [
+        4700.0,
+        10.0
+      ],
+      "size": [
+        270,
+        110
+      ],
+      "flags": {},
+      "order": 49,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "on_false",
+          "name": "on_false",
+          "shape": 7,
+          "type": "MODEL",
+          "link": 906
+        },
+        {
+          "localized_name": "on_true",
+          "name": "on_true",
+          "shape": 7,
+          "type": "MODEL",
+          "link": 907
+        },
+        {
+          "localized_name": "switch",
+          "name": "switch",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "switch"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "output",
+          "name": "output",
+          "type": "MODEL",
+          "links": [
+            886
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ComfySwitchNode"
+      },
+      "widgets_values": [
+        false
+      ],
+      "widgets_values_named": {
+        "switch": false
+      }
+    },
+    {
+      "id": 594,
+      "type": "WanAnimate2Cache",
+      "pos": [
+        4690.0,
+        250.0
+      ],
+      "size": [
+        310,
+        120
+      ],
+      "flags": {},
+      "order": 50,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 886
+        },
+        {
+          "localized_name": "device",
+          "name": "device",
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "dtype",
+          "name": "dtype",
+          "type": "COMBO",
+          "widget": {
+            "name": "dtype"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            884,
+            885
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "WanAnimate2Cache"
+      },
+      "widgets_values": [
+        "gpu",
+        "int8"
+      ],
+      "widgets_values_named": {
+        "device": "gpu",
+        "dtype": "int8"
+      }
+    },
+    {
+      "id": 591,
+      "type": "BasicScheduler",
+      "pos": [
+        5310.0,
+        540.0
+      ],
+      "size": [
+        310,
+        120
+      ],
+      "flags": {},
+      "order": 51,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 884
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "SIGMAS",
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            892
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicScheduler"
+      },
+      "widgets_values": [
+        "simple",
+        6,
+        1
+      ],
+      "widgets_values_named": {
+        "scheduler": "simple",
+        "steps": 6,
+        "denoise": 1
+      }
+    },
+    {
+      "id": 592,
+      "type": "ModelSamplingSD3",
+      "pos": [
+        5310.0,
+        240.0
+      ],
+      "size": [
+        310,
+        80
+      ],
+      "flags": {},
+      "order": 52,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 885
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            888
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ModelSamplingSD3"
+      },
+      "widgets_values": [
+        5
+      ],
+      "widgets_values_named": {
+        "shift": 5
+      }
+    },
+    {
+      "id": 593,
+      "type": "KSamplerSelect",
+      "pos": [
+        5310.0,
+        380.0
+      ],
+      "size": [
+        310,
+        90
+      ],
+      "flags": {},
+      "order": 53,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "localized_name": "SAMPLER",
+          "name": "SAMPLER",
+          "type": "SAMPLER",
+          "links": [
+            891
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSamplerSelect"
+      },
+      "widgets_values": [
+        "lcm"
+      ],
+      "widgets_values_named": {
+        "sampler_name": "lcm"
+      }
+    },
+    {
+      "id": 597,
+      "type": "SamplerCustom",
+      "pos": [
+        5793.322909124576,
+        237.78081817199927
+      ],
+      "size": [
+        310,
+        670
+      ],
+      "flags": {},
+      "order": 54,
+      "mode": 0,
+      "showAdvanced": true,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 888
+        },
+        {
+          "localized_name": "positive",
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 889
+        },
+        {
+          "localized_name": "negative",
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 890
+        },
+        {
+          "localized_name": "sampler",
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 891
+        },
+        {
+          "localized_name": "sigmas",
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 892
+        },
+        {
+          "localized_name": "latent_image",
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 893
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "output",
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            900
+          ]
+        },
+        {
+          "localized_name": "denoised_output",
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SamplerCustom"
+      },
+      "widgets_values": [
+        true,
+        42,
+        "fixed",
+        1
+      ],
+      "widgets_values_named": {
+        "add_noise": true,
+        "noise_seed": 582699151003550,
+        "control_after_generate": "randomize",
+        "cfg": 1
+      }
+    },
+    {
+      "id": 601,
+      "type": "VAEDecode",
+      "pos": [
+        6460.0,
+        410.0
+      ],
+      "size": [
+        270,
+        60
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 55,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "samples",
+          "name": "samples",
+          "type": "LATENT",
+          "link": 898
+        },
+        {
+          "localized_name": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 899
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2017
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 602,
+      "type": "TrimVideoLatent",
+      "pos": [
+        6460.0,
+        290.0
+      ],
+      "size": [
+        270,
+        70
+      ],
+      "flags": {
+        "collapsed": false
+      },
+      "order": 56,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "samples",
+          "name": "samples",
+          "type": "LATENT",
+          "link": 900
+        },
+        {
+          "localized_name": "trim_amount",
+          "name": "trim_amount",
+          "type": "INT",
+          "widget": {
+            "name": "trim_amount"
+          },
+          "link": 901
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            898
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TrimVideoLatent"
+      },
+      "widgets_values": [
+        0
+      ],
+      "widgets_values_named": {
+        "trim_amount": 0
+      }
+    },
+    {
+      "id": 245,
+      "type": "CreateVideo",
+      "pos": [
+        8278.695092931215,
+        2814.3481997475174
+      ],
+      "size": [
+        270,
+        162
+      ],
+      "flags": {},
+      "order": 57,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 2017
+        },
+        {
+          "localized_name": "audio",
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "localized_name": "fps",
+          "name": "fps",
+          "type": "FLOAT",
+          "widget": {
+            "name": "fps"
+          },
+          "link": 2016
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "VIDEO",
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            2030
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        30,
+        "auto",
+        "sRGB",
+        "none"
+      ],
+      "widgets_values_named": {
+        "fps": 30,
+        "bit_depth": "auto",
+        "color_space": "sRGB",
+        "codec": "none"
+      }
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      1,
+      "IMAGE"
+    ],
+    [
+      2,
+      1,
+      3,
+      3,
+      1,
+      "IMAGE"
+    ],
+    [
+      3,
+      2,
+      0,
+      4,
+      0,
+      "STRING"
+    ],
+    [
+      4,
+      3,
+      0,
+      4,
+      1,
+      "STRING"
+    ],
+    [
+      5,
+      1,
+      6,
+      4,
+      2,
+      "STRING"
+    ],
+    [
+      6,
+      4,
+      0,
+      5,
+      0,
+      "STRING"
+    ],
+    [
+      101,
+      21,
+      0,
+      20,
+      0,
+      "IMAGE"
+    ],
+    [
+      102,
+      22,
+      0,
+      20,
+      1,
+      "IMAGE"
+    ],
+    [
+      103,
+      23,
+      0,
+      20,
+      2,
+      "IMAGE"
+    ],
+    [
+      110,
+      20,
+      0,
+      30,
+      2,
+      "IMAGE"
+    ],
+    [
+      111,
+      20,
+      1,
+      30,
+      3,
+      "IMAGE"
+    ],
+    [
+      112,
+      20,
+      2,
+      30,
+      4,
+      "IMAGE"
+    ],
+    [
+      113,
+      20,
+      0,
+      31,
+      2,
+      "IMAGE"
+    ],
+    [
+      114,
+      20,
+      1,
+      31,
+      3,
+      "IMAGE"
+    ],
+    [
+      115,
+      20,
+      2,
+      31,
+      4,
+      "IMAGE"
+    ],
+    [
+      116,
+      20,
+      3,
+      30,
+      5,
+      "STRING"
+    ],
+    [
+      117,
+      20,
+      4,
+      34,
+      0,
+      "INT"
+    ],
+    [
+      118,
+      20,
+      5,
+      34,
+      1,
+      "INT"
+    ],
+    [
+      120,
+      24,
+      0,
+      27,
+      0,
+      "MODEL"
+    ],
+    [
+      121,
+      25,
+      0,
+      30,
+      0,
+      "CLIP"
+    ],
+    [
+      122,
+      25,
+      0,
+      31,
+      0,
+      "CLIP"
+    ],
+    [
+      123,
+      26,
+      0,
+      30,
+      1,
+      "VAE"
+    ],
+    [
+      124,
+      26,
+      0,
+      31,
+      1,
+      "VAE"
+    ],
+    [
+      125,
+      26,
+      0,
+      36,
+      1,
+      "VAE"
+    ],
+    [
+      126,
+      27,
+      0,
+      28,
+      0,
+      "MODEL"
+    ],
+    [
+      127,
+      28,
+      0,
+      29,
+      0,
+      "MODEL"
+    ],
+    [
+      128,
+      29,
+      0,
+      35,
+      0,
+      "MODEL"
+    ],
+    [
+      130,
+      20,
+      7,
+      37,
+      1,
+      "STRING"
+    ],
+    [
+      140,
+      30,
+      0,
+      32,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      141,
+      31,
+      0,
+      33,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      142,
+      32,
+      0,
+      35,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      143,
+      33,
+      0,
+      35,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      144,
+      34,
+      0,
+      35,
+      3,
+      "LATENT"
+    ],
+    [
+      145,
+      35,
+      0,
+      36,
+      0,
+      "LATENT"
+    ],
+    [
+      146,
+      36,
+      0,
+      37,
+      0,
+      "IMAGE"
+    ],
+    [
+      147,
+      37,
+      1,
+      38,
+      0,
+      "IMAGE"
+    ],
+    [
+      865,
+      578,
+      0,
+      579,
+      0,
+      "MODEL"
+    ],
+    [
+      882,
+      596,
+      0,
+      590,
+      1,
+      "INT"
+    ],
+    [
+      883,
+      596,
+      1,
+      590,
+      2,
+      "INT"
+    ],
+    [
+      887,
+      600,
+      0,
+      596,
+      0,
+      "IMAGE"
+    ],
+    [
+      896,
+      600,
+      0,
+      599,
+      0,
+      "IMAGE"
+    ],
+    [
+      866,
+      580,
+      0,
+      581,
+      0,
+      "CLIP"
+    ],
+    [
+      867,
+      580,
+      0,
+      582,
+      0,
+      "CLIP"
+    ],
+    [
+      868,
+      580,
+      0,
+      585,
+      0,
+      "CLIP"
+    ],
+    [
+      880,
+      583,
+      0,
+      589,
+      0,
+      "CLIP_VISION"
+    ],
+    [
+      881,
+      590,
+      0,
+      589,
+      1,
+      "IMAGE"
+    ],
+    [
+      894,
+      583,
+      0,
+      598,
+      0,
+      "CLIP_VISION"
+    ],
+    [
+      895,
+      599,
+      0,
+      598,
+      1,
+      "IMAGE"
+    ],
+    [
+      869,
+      579,
+      0,
+      586,
+      0,
+      "MODEL"
+    ],
+    [
+      870,
+      582,
+      0,
+      587,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      871,
+      581,
+      0,
+      587,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      872,
+      584,
+      0,
+      587,
+      2,
+      "VAE"
+    ],
+    [
+      873,
+      590,
+      0,
+      587,
+      3,
+      "IMAGE"
+    ],
+    [
+      874,
+      600,
+      0,
+      587,
+      4,
+      "IMAGE"
+    ],
+    [
+      875,
+      589,
+      0,
+      587,
+      5,
+      "CLIP_VISION_OUTPUT"
+    ],
+    [
+      876,
+      585,
+      0,
+      587,
+      6,
+      "CONDITIONING"
+    ],
+    [
+      877,
+      598,
+      0,
+      587,
+      7,
+      "CLIP_VISION_OUTPUT"
+    ],
+    [
+      878,
+      596,
+      0,
+      587,
+      9,
+      "INT"
+    ],
+    [
+      879,
+      596,
+      1,
+      587,
+      10,
+      "INT"
+    ],
+    [
+      906,
+      579,
+      0,
+      588,
+      0,
+      "MODEL"
+    ],
+    [
+      907,
+      586,
+      0,
+      588,
+      1,
+      "MODEL"
+    ],
+    [
+      886,
+      588,
+      0,
+      594,
+      0,
+      "MODEL"
+    ],
+    [
+      884,
+      594,
+      0,
+      591,
+      0,
+      "MODEL"
+    ],
+    [
+      885,
+      594,
+      0,
+      592,
+      0,
+      "MODEL"
+    ],
+    [
+      888,
+      592,
+      0,
+      597,
+      0,
+      "MODEL"
+    ],
+    [
+      889,
+      587,
+      0,
+      597,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      890,
+      587,
+      1,
+      597,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      891,
+      593,
+      0,
+      597,
+      3,
+      "SAMPLER"
+    ],
+    [
+      892,
+      591,
+      0,
+      597,
+      4,
+      "SIGMAS"
+    ],
+    [
+      893,
+      587,
+      2,
+      597,
+      5,
+      "LATENT"
+    ],
+    [
+      898,
+      602,
+      0,
+      601,
+      0,
+      "LATENT"
+    ],
+    [
+      899,
+      584,
+      0,
+      601,
+      1,
+      "VAE"
+    ],
+    [
+      900,
+      597,
+      0,
+      602,
+      0,
+      "LATENT"
+    ],
+    [
+      901,
+      587,
+      3,
+      602,
+      1,
+      "INT"
+    ],
+    [
+      2000,
+      52,
+      0,
+      59,
+      2,
+      "IMAGE"
+    ],
+    [
+      2001,
+      59,
+      0,
+      590,
+      0,
+      "IMAGE"
+    ],
+    [
+      2002,
+      59,
+      0,
+      58,
+      0,
+      "IMAGE"
+    ],
+    [
+      2003,
+      58,
+      0,
+      51,
+      0,
+      "STRING"
+    ],
+    [
+      2004,
+      51,
+      7,
+      53,
+      2,
+      "STRING"
+    ],
+    [
+      2005,
+      51,
+      3,
+      53,
+      4,
+      "INT"
+    ],
+    [
+      2006,
+      51,
+      4,
+      53,
+      3,
+      "INT"
+    ],
+    [
+      2007,
+      53,
+      0,
+      600,
+      0,
+      "IMAGE"
+    ],
+    [
+      2010,
+      51,
+      0,
+      582,
+      1,
+      "STRING"
+    ],
+    [
+      2011,
+      51,
+      5,
+      581,
+      1,
+      "STRING"
+    ],
+    [
+      2012,
+      51,
+      1,
+      585,
+      1,
+      "STRING"
+    ],
+    [
+      2013,
+      51,
+      4,
+      587,
+      11,
+      "INT"
+    ],
+    [
+      2014,
+      51,
+      9,
+      600,
+      1,
+      "INT"
+    ],
+    [
+      2015,
+      51,
+      10,
+      600,
+      2,
+      "INT"
+    ],
+    [
+      2016,
+      51,
+      8,
+      245,
+      2,
+      "FLOAT"
+    ],
+    [
+      2017,
+      601,
+      0,
+      245,
+      0,
+      "IMAGE"
+    ],
+    [
+      2020,
+      51,
+      2,
+      54,
+      1,
+      "INT"
+    ],
+    [
+      2021,
+      51,
+      12,
+      54,
+      2,
+      "STRING"
+    ],
+    [
+      2023,
+      59,
+      1,
+      51,
+      1,
+      "STRING"
+    ],
+    [
+      2030,
+      245,
+      0,
+      54,
+      0,
+      "VIDEO"
+    ],
+    [
+      2031,
+      51,
+      12,
+      55,
+      1,
+      "STRING"
+    ],
+    [
+      2032,
+      54,
+      0,
+      55,
+      0,
+      "STRING"
+    ],
+    [
+      2033,
+      55,
+      1,
+      56,
+      0,
+      "VIDEO"
+    ],
+    [
+      300,
+      4,
+      1,
+      20,
+      3,
+      "STRING"
+    ],
+    [
+      301,
+      4,
+      1,
+      59,
+      2,
+      "STRING"
+    ],
+    [
+      302,
+      37,
+      1,
+      59,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.3,
+      "offset": [
+        2300,
+        60
+      ]
+    }
+  },
+  "version": 0.4
+}

@@ -5,15 +5,15 @@
   "last_link_id": 2033,
   "nodes": [
     {
-      "id": 7,
+      "id": 57,
       "type": "MarkdownNote",
       "pos": [
-        152.7591771740981,
-        4798.587604260989
+        0.0,
+        0.0
       ],
       "size": [
         560,
-        640
+        700
       ],
       "flags": {},
       "order": 0,
@@ -24,18 +24,18 @@
         "Node name for S&R": "MarkdownNote"
       },
       "widgets_values": [
-        "## 2단계: 프로필 이미지로 인물 교체 (Wan Animate 2)\n\n**입력**\n- `Load Image`: 바꿔 넣을 사람의 프로필 사진 (상반신/전신, 배경 무관)\n- `Shorts Prompts Loader`의 `prompts_json`: 1단계에서 만든 prompts.json 경로\n- 원본 영상 경로는 prompts.json 안의 video_file을 자동으로 씁니다\n\n**동작** (구간 수만큼 자동 반복)\n1. Loader가 구간별 프롬프트 / 시작 프레임 / 프레임 수를 리스트로 내보냅니다.\n2. `Load Video (Path)`가 구간에 해당하는 원본 프레임(16fps)만 읽어 드라이빙 영상으로 씁니다.\n3. QwenVL이 프로필 사진의 외형을 영어로 묘사 → `Character Description:` 으로 프롬프트 앞에 붙습니다.\n4. Wan Animate 2가 원본의 동작 + 프로필 인물 + 구간 프롬프트(배경)로 클립을 생성합니다.\n5. `Shorts Clip Saver`가 clip_NN.mp4로 저장, `Shorts Concat`이 final.mp4로 합칩니다 (prompts.json 옆 폴더).\n\n**모델** (ComfyUI 공식 템플릿 video_wan_animate2와 동일, Comfy-Org/Wan-Animate-2)\n- diffusion_models/wan_animate_2_int8_convrot.safetensors\n- loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors\n- text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors\n- clip_vision/clip_vision_h.safetensors\n- vae/Wan2_1_VAE_bf16.safetensors\n\n**팁**\n- 해상도: Loader `max_side` 832 (원본 비율 유지, 16의 배수). L40S에서 832x480 5초 클립 약 1~2분.\n- 일부 구간만: Loader `clips`에 `1,3-4` 처럼 입력.\n- 배경을 원본과 비슷하게: 1단계 common_prompt/segment prompt가 배경을 담당합니다. 직접 수정하려면 prompts.json 편집.\n- 프롬프트 형식은 Loader `prompt_template`에서 바꿀 수 있습니다."
+        "## 3단계: 참조 이미지로 인물 교체 영상 생성 (Wan Animate 2)\n\n**입력**\n- `Shorts Reference Loader`의 `prompts_json`: 1단계에서 만든 prompts.json 경로 (여기 한 곳만). 원본 영상 경로는 그 안의 video_file을 자동으로 씁니다\n- 참조 이미지: 같은 노드가 prompts.json 옆의 **reference.png**(2단계 결과)를 자동으로 읽습니다. 없으면 `Load Image - 프로필`의 사진을 그대로 씁니다 (사람만 참조, 배경은 프롬프트로)\n\n**동작** (구간 수만큼 자동 반복)\n1. Loader가 구간별 프롬프트 / 시작 프레임 / 프레임 수를 리스트로 내보냅니다.\n2. `Load Video (Path)`가 구간에 해당하는 원본 프레임(16fps)만 읽어 드라이빙 영상(동작)으로 씁니다.\n3. QwenVL이 참조 이미지 속 인물의 외형을 영어로 묘사 → `Character Description:` 으로 프롬프트 앞에 붙습니다.\n4. Wan Animate 2가 원본의 동작 + 참조 이미지(인물·배경·소품) + 구간 프롬프트로 클립을 생성합니다.\n5. `Shorts Clip Saver`가 clip_NN.mp4로 저장, `Shorts Concat`이 final.mp4로 합칩니다 (prompts.json 옆 폴더).\n\n**모델** (ComfyUI 공식 템플릿 video_wan_animate2와 동일, Comfy-Org/Wan-Animate-2)\n- diffusion_models/wan_animate_2_int8_convrot.safetensors\n- loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors\n- text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors\n- clip_vision/clip_vision_h.safetensors\n- vae/Wan2_1_VAE_bf16.safetensors\n\n**팁**\n- 해상도: Loader `max_side` 832 (원본 비율 유지, 16의 배수). L40S에서 832x480 5초 클립 약 1~2분.\n- 일부 구간만: Loader `clips`에 `1,3-4` 처럼 입력.\n- 배경이 참조 이미지와 달라지면 `WanAnimate2ToVideo`의 `reference_image_strength`를 1.2~1.5로 올려 보세요.\n- 프롬프트 형식은 Loader `prompt_template`에서 바꿀 수 있습니다."
       ],
-      "title": "사용법 (2단계 인물 교체)",
-      "color": "#223",
-      "bgcolor": "#335"
+      "title": "사용법 (3단계 인물 교체)",
+      "color": "#232",
+      "bgcolor": "#353"
     },
     {
-      "id": 2,
+      "id": 52,
       "type": "LoadImage",
       "pos": [
-        772.7591771740981,
-        4798.587604260989
+        620.0,
+        0.0
       ],
       "size": [
         320,
@@ -50,8 +50,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            2001,
-            2002
+            2000
           ]
         },
         {
@@ -67,21 +66,78 @@
         "profile.png",
         "image"
       ],
-      "title": "Load Image - 프로필 사진 (바꿔 넣을 인물)"
+      "title": "Load Image - 프로필 (reference.png 없을 때 대신 사용)"
     },
     {
-      "id": 8,
+      "id": 59,
+      "type": "ShortsReferenceLoader",
+      "pos": [
+        620.0,
+        460.0
+      ],
+      "size": [
+        360,
+        150
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "reference",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "fallback",
+          "type": "IMAGE",
+          "link": 2000
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            2001,
+            2002
+          ]
+        },
+        {
+          "name": "prompts_json",
+          "type": "STRING",
+          "links": [
+            2023
+          ]
+        },
+        {
+          "name": "source",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsReferenceLoader"
+      },
+      "widgets_values": [
+        "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+        "reference.png"
+      ],
+      "title": "Shorts Reference Loader - prompts.json 경로 입력 (3단계 시작점)"
+    },
+    {
+      "id": 58,
       "type": "AILab_QwenVL_Advanced",
       "pos": [
-        772.7591771740981,
-        5238.587604260989
+        620.0,
+        640.0
       ],
       "size": [
         460,
         620
       ],
       "flags": {},
-      "order": 2,
+      "order": 3,
       "mode": 0,
       "inputs": [
         {
@@ -114,7 +170,7 @@
         false,
         "auto",
         "📹 Video Summary",
-        "Describe this person's appearance for an AI video generation prompt. English, one paragraph of 40-70 words: gender, apparent age range, hair (color, length, style), face features, skin tone, clothing and accessories, body type. Looks only: no background, no motion, no emotions, no name. Output the paragraph only.",
+        "Describe the main person in this image for an AI video generation prompt. English, one paragraph of 40-70 words: gender, apparent age range, hair (color, length, style), face features, skin tone, clothing and accessories, body type, and any object the person is holding. Looks only: no background description, no motion, no emotions, no name. Output the paragraph only.",
         256,
         0.3,
         0.9,
@@ -126,27 +182,35 @@
         1,
         "fixed"
       ],
-      "title": "QwenVL - 프로필 외형 묘사 (Character Description)"
+      "title": "QwenVL - 참조 인물 외형 묘사 (Character Description)"
     },
     {
-      "id": 1,
+      "id": 51,
       "type": "ShortsPromptsLoader",
       "pos": [
-        1292.759177174098,
-        4798.587604260989
+        1140.0,
+        0.0
       ],
       "size": [
         480,
         420
       ],
       "flags": {},
-      "order": 3,
+      "order": 4,
       "mode": 0,
       "inputs": [
         {
           "name": "character_description",
           "type": "STRING",
           "link": 2003
+        },
+        {
+          "name": "prompts_json",
+          "type": "STRING",
+          "link": 2023,
+          "widget": {
+            "name": "prompts_json"
+          }
         }
       ],
       "outputs": [
@@ -244,28 +308,29 @@
         "Node name for S&R": "ShortsPromptsLoader"
       },
       "widgets_values": [
-        "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking_prompts\\prompts.json",
+        "",
         16,
         4,
         832,
         16,
         "",
         "Character Description: {character}\nBackground description: {common} {segment}"
-      ]
+      ],
+      "title": "Shorts Prompts Loader - prompts.json → 구간 리스트"
     },
     {
-      "id": 3,
+      "id": 53,
       "type": "VHS_LoadVideoPath",
       "pos": [
-        1292.759177174098,
-        5278.587604260989
+        1140.0,
+        480.0
       ],
       "size": [
         420,
         340
       ],
       "flags": {},
-      "order": 4,
+      "order": 5,
       "mode": 0,
       "inputs": [
         {
@@ -343,18 +408,18 @@
       "title": "Load Video (Path) - 원본 구간 프레임 (드라이빙)"
     },
     {
-      "id": 4,
+      "id": 54,
       "type": "ShortsClipSaver",
       "pos": [
-        8051.454270105314,
-        4798.587604260989
+        7898.695092931216,
+        0.0
       ],
       "size": [
         340,
         140
       ],
       "flags": {},
-      "order": 5,
+      "order": 6,
       "mode": 0,
       "inputs": [
         {
@@ -390,18 +455,18 @@
       ]
     },
     {
-      "id": 5,
+      "id": 55,
       "type": "ShortsConcat",
       "pos": [
-        8051.454270105314,
-        4998.587604260989
+        7898.695092931216,
+        200.0
       ],
       "size": [
         340,
         180
       ],
       "flags": {},
-      "order": 6,
+      "order": 7,
       "mode": 0,
       "inputs": [
         {
@@ -439,18 +504,18 @@
       ]
     },
     {
-      "id": 6,
+      "id": 56,
       "type": "SaveVideo",
       "pos": [
-        8051.454270105314,
-        5238.587604260989
+        7898.695092931216,
+        440.0
       ],
       "size": [
         340,
         320
       ],
       "flags": {},
-      "order": 7,
+      "order": 8,
       "mode": 0,
       "inputs": [
         {
@@ -475,15 +540,15 @@
       "id": 578,
       "type": "UNETLoader",
       "pos": [
-        1922.759177174098,
-        4938.587604260989
+        1770.0,
+        140.0
       ],
       "size": [
         660,
         130
       ],
       "flags": {},
-      "order": 8,
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
@@ -529,15 +594,15 @@
       "id": 579,
       "type": "LoraLoaderModelOnly",
       "pos": [
-        1922.759177174098,
-        5138.587604260989
+        1770.0,
+        340.0
       ],
       "size": [
         660,
         120
       ],
       "flags": {},
-      "order": 9,
+      "order": 10,
       "mode": 0,
       "inputs": [
         {
@@ -590,15 +655,15 @@
       "id": 580,
       "type": "CLIPLoader",
       "pos": [
-        1922.759177174098,
-        5338.587604260989
+        1770.0,
+        540.0
       ],
       "size": [
         660,
         140
       ],
       "flags": {},
-      "order": 10,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
@@ -648,15 +713,15 @@
       "id": 583,
       "type": "CLIPVisionLoader",
       "pos": [
-        1922.759177174098,
-        5558.587604260989
+        1770.0,
+        760.0
       ],
       "size": [
         660,
         90
       ],
       "flags": {},
-      "order": 11,
+      "order": 12,
       "mode": 0,
       "inputs": [
         {
@@ -701,15 +766,15 @@
       "id": 584,
       "type": "VAELoader",
       "pos": [
-        1922.759177174098,
-        5728.587604260989
+        1770.0,
+        930.0
       ],
       "size": [
         660,
         90
       ],
       "flags": {},
-      "order": 12,
+      "order": 13,
       "mode": 0,
       "inputs": [
         {
@@ -754,15 +819,15 @@
       "id": 590,
       "type": "ResizeImageMaskNode",
       "pos": [
-        2577.8447294641787,
-        6187.36689880038
+        2425.0855522900806,
+        1388.7792945393912
       ],
       "size": [
         270,
         174
       ],
       "flags": {},
-      "order": 13,
+      "order": 14,
       "mode": 0,
       "inputs": [
         {
@@ -823,15 +888,15 @@
       "id": 596,
       "type": "GetImageSize",
       "pos": [
-        2612.759177174098,
-        6558.587604260989
+        2460.0,
+        1760.0
       ],
       "size": [
         260,
         140
       ],
       "flags": {},
-      "order": 14,
+      "order": 15,
       "mode": 0,
       "inputs": [
         {
@@ -875,15 +940,15 @@
       "id": 599,
       "type": "ImageFromBatch",
       "pos": [
-        2602.759177174098,
-        6808.587604260989
+        2450.0,
+        2010.0
       ],
       "size": [
         270,
         90
       ],
       "flags": {},
-      "order": 15,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {
@@ -919,15 +984,15 @@
       "id": 600,
       "type": "ResizeImageMaskNode",
       "pos": [
-        2242.759177174098,
-        6808.587604260989
+        2090.0,
+        2010.0
       ],
       "size": [
         270,
         174
       ],
       "flags": {},
-      "order": 16,
+      "order": 17,
       "mode": 0,
       "inputs": [
         {
@@ -989,8 +1054,8 @@
       "id": 581,
       "type": "CLIPTextEncode",
       "pos": [
-        2782.759177174098,
-        5348.587604260989
+        2630.0,
+        550.0
       ],
       "size": [
         490,
@@ -999,7 +1064,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 17,
+      "order": 18,
       "mode": 0,
       "inputs": [
         {
@@ -1045,15 +1110,15 @@
       "id": 582,
       "type": "CLIPTextEncode",
       "pos": [
-        2782.759177174098,
-        4958.587604260989
+        2630.0,
+        160.0
       ],
       "size": [
         480,
         310
       ],
       "flags": {},
-      "order": 18,
+      "order": 19,
       "mode": 0,
       "inputs": [
         {
@@ -1099,15 +1164,15 @@
       "id": 585,
       "type": "CLIPTextEncode",
       "pos": [
-        2782.759177174098,
-        5548.587604260989
+        2630.0,
+        750.0
       ],
       "size": [
         490,
         220
       ],
       "flags": {},
-      "order": 19,
+      "order": 20,
       "mode": 0,
       "inputs": [
         {
@@ -1152,15 +1217,15 @@
       "id": 589,
       "type": "CLIPVisionEncode",
       "pos": [
-        2990.2016721939576,
-        6174.848450139352
+        2837.4424950198595,
+        1376.2608458783634
       ],
       "size": [
         290,
         110
       ],
       "flags": {},
-      "order": 20,
+      "order": 21,
       "mode": 0,
       "inputs": [
         {
@@ -1202,15 +1267,15 @@
       "id": 598,
       "type": "CLIPVisionEncode",
       "pos": [
-        2972.759177174098,
-        6808.587604260989
+        2820.0,
+        2010.0
       ],
       "size": [
         290,
         110
       ],
       "flags": {},
-      "order": 21,
+      "order": 22,
       "mode": 0,
       "inputs": [
         {
@@ -1252,15 +1317,15 @@
       "id": 586,
       "type": "ContextWindowsManual",
       "pos": [
-        3512.759177174098,
-        4798.587604260989
+        3360.0,
+        0.0
       ],
       "size": [
         300,
         410
       ],
       "flags": {},
-      "order": 22,
+      "order": 23,
       "mode": 0,
       "inputs": [
         {
@@ -1316,15 +1381,15 @@
       "id": 587,
       "type": "WanAnimate2ToVideo",
       "pos": [
-        3945.9792002688146,
-        5423.241107497735
+        3793.2200230947165,
+        624.6535032367465
       ],
       "size": [
         350,
         494
       ],
       "flags": {},
-      "order": 23,
+      "order": 24,
       "mode": 0,
       "inputs": [
         {
@@ -1536,15 +1601,15 @@
       "id": 588,
       "type": "ComfySwitchNode",
       "pos": [
-        3952.759177174098,
-        4808.587604260989
+        3800.0,
+        10.0
       ],
       "size": [
         270,
         110
       ],
       "flags": {},
-      "order": 24,
+      "order": 25,
       "mode": 0,
       "inputs": [
         {
@@ -1595,15 +1660,15 @@
       "id": 594,
       "type": "WanAnimate2Cache",
       "pos": [
-        3942.759177174098,
-        5048.587604260989
+        3790.0,
+        250.0
       ],
       "size": [
         310,
         120
       ],
       "flags": {},
-      "order": 25,
+      "order": 26,
       "mode": 0,
       "inputs": [
         {
@@ -1658,15 +1723,15 @@
       "id": 591,
       "type": "BasicScheduler",
       "pos": [
-        4562.759177174098,
-        5338.587604260989
+        4410.0,
+        540.0
       ],
       "size": [
         310,
         120
       ],
       "flags": {},
-      "order": 26,
+      "order": 27,
       "mode": 0,
       "inputs": [
         {
@@ -1704,15 +1769,15 @@
       "id": 592,
       "type": "ModelSamplingSD3",
       "pos": [
-        4562.759177174098,
-        5038.587604260989
+        4410.0,
+        240.0
       ],
       "size": [
         310,
         80
       ],
       "flags": {},
-      "order": 27,
+      "order": 28,
       "mode": 0,
       "inputs": [
         {
@@ -1746,15 +1811,15 @@
       "id": 593,
       "type": "KSamplerSelect",
       "pos": [
-        4562.759177174098,
-        5178.587604260989
+        4410.0,
+        380.0
       ],
       "size": [
         310,
         90
       ],
       "flags": {},
-      "order": 28,
+      "order": 29,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -1781,15 +1846,15 @@
       "id": 597,
       "type": "SamplerCustom",
       "pos": [
-        5046.082086298674,
-        5036.368422432988
+        4893.322909124576,
+        237.78081817199927
       ],
       "size": [
         310,
         670
       ],
       "flags": {},
-      "order": 29,
+      "order": 30,
       "mode": 0,
       "showAdvanced": true,
       "inputs": [
@@ -1866,8 +1931,8 @@
       "id": 601,
       "type": "VAEDecode",
       "pos": [
-        5712.759177174098,
-        5208.587604260989
+        5560.0,
+        410.0
       ],
       "size": [
         270,
@@ -1876,7 +1941,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 30,
+      "order": 31,
       "mode": 0,
       "inputs": [
         {
@@ -1910,8 +1975,8 @@
       "id": 602,
       "type": "TrimVideoLatent",
       "pos": [
-        5712.759177174098,
-        5088.587604260989
+        5560.0,
+        290.0
       ],
       "size": [
         270,
@@ -1920,7 +1985,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 31,
+      "order": 32,
       "mode": 0,
       "inputs": [
         {
@@ -1963,15 +2028,15 @@
       "id": 245,
       "type": "CreateVideo",
       "pos": [
-        7531.454270105314,
-        7612.935804008506
+        7378.695092931216,
+        2814.3481997475174
       ],
       "size": [
         270,
         162
       ],
       "flags": {},
-      "order": 32,
+      "order": 33,
       "mode": 0,
       "inputs": [
         {
@@ -2330,8 +2395,16 @@
       "INT"
     ],
     [
-      2001,
+      2000,
+      52,
+      0,
+      59,
       2,
+      "IMAGE"
+    ],
+    [
+      2001,
+      59,
       0,
       590,
       0,
@@ -2339,47 +2412,47 @@
     ],
     [
       2002,
-      2,
+      59,
       0,
-      8,
+      58,
       0,
       "IMAGE"
     ],
     [
       2003,
-      8,
+      58,
       0,
-      1,
+      51,
       0,
       "STRING"
     ],
     [
       2004,
-      1,
+      51,
       7,
-      3,
+      53,
       2,
       "STRING"
     ],
     [
       2005,
-      1,
+      51,
       3,
-      3,
+      53,
       4,
       "INT"
     ],
     [
       2006,
-      1,
+      51,
       4,
-      3,
+      53,
       3,
       "INT"
     ],
     [
       2007,
-      3,
+      53,
       0,
       600,
       0,
@@ -2387,7 +2460,7 @@
     ],
     [
       2010,
-      1,
+      51,
       0,
       582,
       1,
@@ -2395,7 +2468,7 @@
     ],
     [
       2011,
-      1,
+      51,
       5,
       581,
       1,
@@ -2403,7 +2476,7 @@
     ],
     [
       2012,
-      1,
+      51,
       1,
       585,
       1,
@@ -2411,7 +2484,7 @@
     ],
     [
       2013,
-      1,
+      51,
       4,
       587,
       11,
@@ -2419,7 +2492,7 @@
     ],
     [
       2014,
-      1,
+      51,
       9,
       600,
       1,
@@ -2427,7 +2500,7 @@
     ],
     [
       2015,
-      1,
+      51,
       10,
       600,
       2,
@@ -2435,7 +2508,7 @@
     ],
     [
       2016,
-      1,
+      51,
       8,
       245,
       2,
@@ -2451,49 +2524,57 @@
     ],
     [
       2020,
-      1,
+      51,
       2,
-      4,
+      54,
       1,
       "INT"
     ],
     [
       2021,
-      1,
+      51,
       12,
-      4,
+      54,
       2,
+      "STRING"
+    ],
+    [
+      2023,
+      59,
+      1,
+      51,
+      1,
       "STRING"
     ],
     [
       2030,
       245,
       0,
-      4,
+      54,
       0,
       "VIDEO"
     ],
     [
       2031,
-      1,
+      51,
       12,
-      5,
+      55,
       1,
       "STRING"
     ],
     [
       2032,
-      4,
+      54,
       0,
-      5,
+      55,
       0,
       "STRING"
     ],
     [
       2033,
-      5,
+      55,
       1,
-      6,
+      56,
       0,
       "VIDEO"
     ]
@@ -2504,8 +2585,8 @@
     "ds": {
       "scale": 0.45,
       "offset": [
-        -72.75917717409811,
-        -4738.587604260989
+        100,
+        100
       ]
     }
   },

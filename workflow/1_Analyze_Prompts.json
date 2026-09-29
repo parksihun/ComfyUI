@@ -13,7 +13,7 @@
       ],
       "size": [
         520,
-        520
+        560
       ],
       "flags": {},
       "order": 0,
@@ -24,7 +24,7 @@
         "Node name for S&R": "MarkdownNote"
       },
       "widgets_values": [
-        "## 1단계: 영상 분석 → 프롬프트 추출\n\n**입력**: `Shorts Video Segments` 노드의 `video_path`에 받아둔 영상 전체 경로.\n\n**동작**\n1. 영상을 구간으로 나누고 구간마다 `frames_per_segment`장을 뽑습니다.\n   - `split_mode` = fixed : `segment_seconds`(기본 5초) 고정 길이\n   - `split_mode` = scene : 장면 전환(컷) 지점에서 자름. `segment_seconds`보다 긴 장면은 균등 분할, `min_seconds`보다 짧은 조각은 이웃과 합침. `scene_threshold`를 낮추면 컷을 더 민감하게 잡음\n2. 위쪽 QwenVL이 **구간마다 한 번씩** 실행되어 구간 프롬프트(JSON)를 씁니다.\n3. 아래쪽 QwenVL이 구간별 대표 프레임을 한꺼번에 보고 **공통 프롬프트 · 네거티브**를 씁니다.\n4. `Shorts Prompts Collector`가 결과를 모아 저장합니다.\n\n**출력** (`out_dir` 비우면 영상 옆 `<영상이름>_prompts/`)\n- `prompts.json` : common_prompt, negative_prompt, segments[].positive_prompt / motion / camera / scene_ko\n- `comfyui_prompts.txt` : 사람이 보는 정리본\n\n**다음 단계**: `Shorts_2_Replace_Person_WanAnimate2` 워크플로우의 `prompts_json`에 이 파일 경로를 넣습니다.\n\nGPU 서버: Qwen3-VL-8B-Instruct(FP16, ~16GB). 더 정밀하게: Qwen3-VL-32B-Instruct-FP8.\n이 PC(CPU)에서 확인할 때는 QwenVL 노드를 `QwenVL Advanced (GGUF)`, device=cpu로 바꿔 쓰세요."
+        "## 1단계: 영상 분석 → 프롬프트 추출\n\n**입력**: `Shorts Video Segments` 노드의 `video_path`에 영상 파일 전체 경로.\n유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받으면 경로가 `ComfyUI/input/shorts_downloads/<id>.mp4`로 표시됩니다.\n\n**동작**\n1. `Shorts Video Segments`가 영상을 구간으로 나누고 구간마다 `frames_per_segment`장을 뽑습니다.\n   - `split_mode` = fixed : `segment_seconds`(기본 5초) 고정 길이\n   - `split_mode` = scene : 장면 전환(컷)에서 자름. `segment_seconds`보다 긴 장면은 균등 분할, `min_seconds`보다 짧은 조각은 이웃과 합침. `scene_threshold`를 낮추면 컷을 더 민감하게 잡음\n2. 위쪽 QwenVL이 **구간마다 한 번씩** 실행되어 구간 프롬프트(JSON)를 씁니다.\n3. 아래쪽 QwenVL이 구간별 대표 프레임을 한꺼번에 보고 **공통 프롬프트 · 네거티브**를 씁니다.\n4. `Shorts Prompts Collector`가 결과를 모아 저장합니다.\n\n**출력** (`out_dir` 비우면 영상 옆 `<영상이름>_prompts/`)\n- `prompts.json` : common_prompt, negative_prompt, segments[].positive_prompt / motion / camera / scene_ko\n- `comfyui_prompts.txt` : 사람이 보는 정리본\n\n**다음 단계**: `2_Compose_Reference`(프로필+배경+소품 → reference.png) → `3_Replace_Person_WanAnimate2`(영상 생성). 두 워크플로우의 `prompts_json`에 이 파일 경로를 넣습니다.\n\nGPU 서버: Qwen3-VL-8B-Instruct(FP16, ~16GB). 이 PC(CPU)에서 확인할 때는 QwenVL 노드를 `QwenVL Advanced (GGUF)`, device=cpu로 바꿔 쓰세요."
       ],
       "title": "사용법 (1단계 분석)",
       "color": "#432",
@@ -35,11 +35,11 @@
       "type": "ShortsVideoSegments",
       "pos": [
         -1000,
-        80
+        330
       ],
       "size": [
         420,
-        220
+        250
       ],
       "flags": {},
       "order": 1,
@@ -92,14 +92,15 @@
         "Node name for S&R": "ShortsVideoSegments"
       },
       "widgets_values": [
-        "C:\\00_forensic\\ComfyUI-Easy-Install\\ComfyUI\\input\\WomanTalking.mp4",
+        "",
         "fixed",
         5.0,
         1.5,
         0.5,
         8,
         384
-      ]
+      ],
+      "title": "Shorts Video Segments - video_path에 영상 파일 경로, 5초 / 장면 단위로 나누기"
     },
     {
       "id": 2,
