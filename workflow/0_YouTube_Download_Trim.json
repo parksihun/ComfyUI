@@ -1,1 +1,142 @@
-{"id":"shorts-0-youtube-download","revision":0,"last_node_id":13,"last_link_id":7,"nodes":[{"id":13,"type":"MarkdownNote","pos":[-1000,80],"size":[520,520],"flags":{},"order":0,"mode":0,"inputs":[],"outputs":[],"title":"사용법 (0단계 다운로드 + 구간)","properties":{"Node name for S&R":"MarkdownNote"},"widgets_values":["## 0단계: 유튜브 다운로드 + 구간 잘라내기\n\n`Shorts YouTube Download / Trim`의 `url`에 유튜브 링크(또는 이미 받아둔 파일 경로)를 넣고 Queue.\n\n**구간만 쓰려면** `start`, `end`에 시간을 넣습니다. `1:20` 처럼 분:초, 또는 `80` 처럼 초. 둘 다 비우면 전체 영상.\n- 한쪽만 넣어도 됩니다 (`start`만: 거기서 끝까지, `end`만: 처음부터 거기까지)\n- 잘라낸 파일은 `<원본이름>_1m20s-1m50s.mp4` 처럼 따로 저장되고 원본은 그대로 남습니다\n- 프레임 단위로 정확하게 자르기 위해 다시 인코딩합니다 (H.264, 화질 손실은 거의 없음)\n\n**다운로드 옵션**\n- `max_height`: 받을 최대 해상도 (1080 권장)\n- `out_dir` 비우면 `ComfyUI/input/shorts_downloads/` 에 `<영상id>.mp4` 로 저장\n- 같은 링크는 다시 받지 않고 받아둔 파일에서 구간만 다시 자릅니다. 다시 받으려면 `force_redownload` 켜기\n- 로그인/연령 제한 영상은 받을 수 없습니다\n\n결과 **파일 경로가 아래 미리보기에 표시**됩니다. 그 경로를 복사해\n`1_Analyze_Prompts` 또는 `4_ALL_in_One`의 `Shorts Video Segments` → `video_path`에 붙여 넣으세요."],"widgets_values_named":{"text":"## 0단계: 유튜브 다운로드 + 구간 잘라내기\n\n`Shorts YouTube Download / Trim`의 `url`에 유튜브 링크(또는 이미 받아둔 파일 경로)를 넣고 Queue.\n\n**구간만 쓰려면** `start`, `end`에 시간을 넣습니다. `1:20` 처럼 분:초, 또는 `80` 처럼 초. 둘 다 비우면 전체 영상.\n- 한쪽만 넣어도 됩니다 (`start`만: 거기서 끝까지, `end`만: 처음부터 거기까지)\n- 잘라낸 파일은 `<원본이름>_1m20s-1m50s.mp4` 처럼 따로 저장되고 원본은 그대로 남습니다\n- 프레임 단위로 정확하게 자르기 위해 다시 인코딩합니다 (H.264, 화질 손실은 거의 없음)\n\n**다운로드 옵션**\n- `max_height`: 받을 최대 해상도 (1080 권장)\n- `out_dir` 비우면 `ComfyUI/input/shorts_downloads/` 에 `<영상id>.mp4` 로 저장\n- 같은 링크는 다시 받지 않고 받아둔 파일에서 구간만 다시 자릅니다. 다시 받으려면 `force_redownload` 켜기\n- 로그인/연령 제한 영상은 받을 수 없습니다\n\n결과 **파일 경로가 아래 미리보기에 표시**됩니다. 그 경로를 복사해\n`1_Analyze_Prompts` 또는 `4_ALL_in_One`의 `Shorts Video Segments` → `video_path`에 붙여 넣으세요."},"color":"#432","bgcolor":"#653"},{"id":11,"type":"ShortsYouTubeDownload","pos":[-440,80],"size":[460,262],"flags":{},"order":1,"mode":0,"inputs":[{"localized_name":"url","name":"url","type":"STRING","widget":{"name":"url"},"link":null},{"localized_name":"start","name":"start","type":"STRING","widget":{"name":"start"},"link":null},{"localized_name":"end","name":"end","type":"STRING","widget":{"name":"end"},"link":null},{"localized_name":"out_dir","name":"out_dir","type":"STRING","widget":{"name":"out_dir"},"link":null},{"localized_name":"max_height","name":"max_height","type":"INT","widget":{"name":"max_height"},"link":null},{"localized_name":"filename","name":"filename","type":"STRING","widget":{"name":"filename"},"link":null},{"localized_name":"force_redownload","name":"force_redownload","type":"BOOLEAN","widget":{"name":"force_redownload"},"link":null}],"outputs":[{"localized_name":"video_path","name":"video_path","type":"STRING","links":[7]},{"localized_name":"title","name":"title","type":"STRING","links":null},{"localized_name":"duration","name":"duration","type":"FLOAT","links":null},{"localized_name":"full_video_path","name":"full_video_path","type":"STRING","links":null}],"title":"Shorts YouTube Download / Trim - 링크(또는 파일) + 구간","properties":{"Node name for S&R":"ShortsYouTubeDownload"},"widgets_values":["https://www.youtube.com/watch?v=MLC5k8--Elw","","","",1080,"",false],"widgets_values_named":{"url":"https://www.youtube.com/watch?v=MLC5k8--Elw","start":"","end":"","out_dir":"","max_height":1080,"filename":"","force_redownload":false}},{"id":12,"type":"PreviewAny","pos":[-260.6235912847481,435.40946656649135],"size":[460,160],"flags":{},"order":2,"mode":0,"inputs":[{"localized_name":"source","name":"source","type":"*","link":7}],"outputs":[{"localized_name":"STRING","name":"STRING","type":"STRING","links":null}],"title":"저장된 영상 경로 (복사해서 다음 단계에 입력)","properties":{"cnr_id":"comfy-core","ver":"0.37.0","Node name for S&R":"PreviewAny"},"widgets_values":[],"widgets_values_named":{}}],"links":[[7,11,0,12,0,"STRING"]],"groups":[],"config":{},"extra":{"ds":{"scale":1.0648000000000002,"offset":[1118.985802633948,120.92771078726605]}},"version":0.4}
+{
+  "id": "shorts-0-youtube-download",
+  "revision": 0,
+  "last_node_id": 13,
+  "last_link_id": 7,
+  "nodes": [
+    {
+      "id": 13,
+      "type": "MarkdownNote",
+      "pos": [
+        -1000,
+        80
+      ],
+      "size": [
+        520,
+        600
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "MarkdownNote"
+      },
+      "widgets_values": [
+        "## 0단계: 유튜브 다운로드 + 구간 잘라내기\n\n`Shorts YouTube Download / Trim`의 `url`에 유튜브 링크(또는 이미 받아둔 파일 경로)를 넣고 Queue.\n\n**구간만 쓰려면** `start`, `end`에 시간을 넣습니다. `1:20` 처럼 분:초, 또는 `80` 처럼 초. 둘 다 비우면 전체 영상.\n- 한쪽만 넣어도 됩니다 (`start`만: 거기서 끝까지, `end`만: 처음부터 거기까지)\n- 잘라낸 파일은 `<원본이름>_1m20s-1m50s.mp4` 처럼 따로 저장되고 원본은 그대로 남습니다\n- 프레임 단위로 정확하게 자르기 위해 다시 인코딩합니다 (H.264, 화질 손실은 거의 없음)\n\n**다운로드 옵션**\n- `max_height`: 받을 최대 해상도 (1080 권장)\n- `out_dir` 비우면 `ComfyUI/input/shorts_downloads/` 에 `<영상id>.mp4` 로 저장\n- 같은 링크는 다시 받지 않고 받아둔 파일에서 구간만 다시 자릅니다. 다시 받으려면 `force_redownload` 켜기\n- 로그인/연령 제한 영상은 받을 수 없습니다\n- `ensure_h264` (기본 켜짐): AV1/VP9 영상이면 H.264로 한 번 변환해 `<이름>_h264.mp4`를 씁니다. AV1은 프레임 읽기가 수십 배 느려서 1단계가 몇 분씩 멈춘 것처럼 보입니다. 이미 받아둔 파일도 여기 `url`에 경로를 넣으면 변환됩니다\n\n결과 **파일 경로가 아래 미리보기에 표시**됩니다. 그 경로를 복사해\n`1_Analyze_Prompts` 또는 `4_ALL_in_One`의 `Shorts Video Segments` → `video_path`에 붙여 넣으세요."
+      ],
+      "title": "사용법 (0단계 다운로드 + 구간)",
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 11,
+      "type": "ShortsYouTubeDownload",
+      "pos": [
+        -440,
+        80
+      ],
+      "size": [
+        460,
+        280
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "video_path",
+          "type": "STRING",
+          "links": [
+            7
+          ]
+        },
+        {
+          "name": "title",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "duration",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "full_video_path",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShortsYouTubeDownload"
+      },
+      "widgets_values": [
+        "https://www.youtube.com/watch?v=...",
+        "",
+        "",
+        "",
+        1080,
+        "",
+        false,
+        true
+      ],
+      "title": "Shorts YouTube Download / Trim - 링크(또는 파일) + 구간"
+    },
+    {
+      "id": 12,
+      "type": "PreviewAny",
+      "pos": [
+        -440,
+        410
+      ],
+      "size": [
+        460,
+        160
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 7
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        false
+      ],
+      "title": "저장된 영상 경로 (복사해서 다음 단계에 입력)"
+    }
+  ],
+  "links": [
+    [
+      7,
+      11,
+      0,
+      12,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.8,
+      "offset": [
+        1050,
+        60
+      ]
+    }
+  },
+  "version": 0.4
+}

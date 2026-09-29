@@ -9,7 +9,7 @@ Nodes
 - Shorts Prompts Loader   : read prompts.json -> per-clip prompt / frame range lists for generation
 - Shorts Clip Saver       : save one generated VIDEO as clip_NN.mp4 next to prompts.json
 - Shorts Concat           : concatenate clip_NN.mp4 -> final.mp4 (ffmpeg)
-- Shorts YouTube Download : YouTube URL (or local file) -> mp4, optional start..end clip cut (ffmpeg)
+- Shorts YouTube Download : YouTube URL (or local file) -> mp4 (H.264 preferred / re-encoded), optional start..end clip cut
 - Shorts Reference Setup  : profile + background + props images -> Qwen-Image-Edit inputs + instruction + canvas size
 - Shorts Reference Save   : composed reference -> <prompts dir>/reference.png (+ copy to ComfyUI/input)
 - Shorts Reference Loader : prompts.json path -> reference IMAGE (reference.png / linked / fallback) + prompts_json passthrough
@@ -176,28 +176,82 @@ def _video_info(path: str) -> tuple[float, float, int, int]:
     return duration, fps, w, h
 
 
-def _read_frames_at(path: str, times: list[float], max_side: int) -> torch.Tensor:
+def _video_codec(path: str) -> str:
+    """fourcc of the video stream, lower-case ('avc1', 'av01', 'vp09', 'hev1', ...)."""
     import cv2
 
     cap = cv2.VideoCapture(path)
-    frames = []
-    for t in times:
-        cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, t) * 1000.0)
-        ok, fr = cap.read()
-        if not ok:
-            if frames:
-                frames.append(frames[-1].copy())
-            continue
+    v = int(cap.get(cv2.CAP_PROP_FOURCC)) if cap.isOpened() else 0
+    cap.release()
+    try:
+        return v.to_bytes(4, "little").decode("ascii", "replace").strip("\x00 ").lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+H264_FOURCC = ("avc1", "h264", "x264", "avc3")
+SEEK_GAP = 4.0  # seconds: larger forward jumps seek, smaller ones decode forward (seeking is very slow on AV1/VP9)
+
+
+def _read_frames_at(path: str, times: list[float], max_side: int) -> torch.Tensor:
+    """Frames at the given timestamps (any order). One seek per big jump, otherwise sequential decode."""
+    import cv2
+
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise RuntimeError(f"[ShortsRemake] cannot open video: {path}")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    half = 0.5 / fps
+    n = len(times)
+    out: list = [None] * n
+    order = sorted(range(n), key=lambda i: float(times[i]))
+    cur_idx = -1  # index of the last grabbed frame
+    last_t = -1.0
+    last_fr = None
+
+    def frame_time() -> float:
+        t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+        return (t_ms / 1000.0) if t_ms and t_ms > 0 else (cur_idx / fps)
+
+    def convert(fr):
         fr = cv2.cvtColor(fr, cv2.COLOR_BGR2RGB)
         h, w = fr.shape[:2]
         if max_side > 0 and max(h, w) > max_side:
-            s = max_side / max(h, w)
-            fr = cv2.resize(fr, (int(round(w * s)), int(round(h * s))), interpolation=cv2.INTER_AREA)
-        frames.append(fr)
+            sc = max_side / max(h, w)
+            fr = cv2.resize(fr, (int(round(w * sc)), int(round(h * sc))), interpolation=cv2.INTER_AREA)
+        return fr
+
+    for i in order:
+        t = max(0.0, float(times[i]))
+        if last_fr is not None and abs(t - last_t) <= half:
+            out[i] = last_fr.copy()
+            continue
+        if last_fr is None or t < last_t or (t - last_t) > SEEK_GAP:
+            cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000.0)
+            cur_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+            last_t = -1.0
+        got = None
+        while True:
+            if not cap.grab():
+                break
+            cur_idx += 1
+            ft = frame_time()
+            if ft + half >= t:
+                ok, fr = cap.retrieve()
+                if ok:
+                    got = fr
+                last_t = ft
+                break
+        if got is None:  # end of stream / decode error: repeat the previous frame
+            if last_fr is None:
+                cap.release()
+                raise RuntimeError(f"[ShortsRemake] no frames decoded from {path}")
+            out[i] = last_fr.copy()
+            continue
+        last_fr = convert(got)
+        out[i] = last_fr
     cap.release()
-    if not frames:
-        raise RuntimeError(f"[ShortsRemake] no frames decoded from {path}")
-    arr = np.stack(frames).astype(np.float32) / 255.0
+    arr = np.stack(out).astype(np.float32) / 255.0
     return torch.from_numpy(arr)
 
 
@@ -320,8 +374,19 @@ class ShortsVideoSegments:
         if not segs:
             raise RuntimeError("[ShortsRemake] could not determine video duration")
 
+        codec = _video_codec(video_path)
+        if codec and codec not in H264_FOURCC:
+            print(f"[ShortsRemake] note: '{codec}' video decodes slowly (and stage 3 reads it per segment). "
+                  f"Run it through '0_YouTube_Download_Trim' with ensure_h264 first for a faster H.264 copy.")
+        try:
+            from comfy.utils import ProgressBar
+            pbar = ProgressBar(len(segs))
+        except Exception:  # noqa: BLE001
+            pbar = None
+        print(f"[ShortsRemake] extracting {frames_per_segment} frames x {len(segs)} segments from {os.path.basename(video_path)} ({codec or '?'})")
+
         frames_out, idx_out, label_out, overview = [], [], [], []
-        for s in segs:
+        for si, s in enumerate(segs):
             length = max(0.001, s["end"] - s["start"])
             k = max(1, frames_per_segment)
             if k == 1:
@@ -335,6 +400,10 @@ class ShortsVideoSegments:
             label_out.append(s["label"])
             overview.append(batch[len(batch) // 2:len(batch) // 2 + 1])
             s["sample_times"] = [round(t, 3) for t in times]
+            if pbar is not None:
+                pbar.update(1)
+            if (si + 1) % 5 == 0 or si + 1 == len(segs):
+                print(f"[ShortsRemake]   frames: {si + 1}/{len(segs)} segments")
         ov = torch.cat(overview, dim=0)
         meta = {"video_file": video_path, "duration": round(duration, 3), "source_fps": round(fps, 3),
                 "width": w, "height": h, "segment_length": segment_seconds, "split_mode": split_mode,
@@ -675,6 +744,9 @@ class ShortsYouTubeDownload:
                                        "tooltip": "Highest video resolution to download (720/1080 is enough for analysis + pose driving)."}),
                 "filename": ("STRING", {"default": "", "placeholder": "empty = <video id>"}),
                 "force_redownload": ("BOOLEAN", {"default": False}),
+                "ensure_h264": ("BOOLEAN", {"default": True,
+                                            "tooltip": "If the video is not H.264 (e.g. AV1/VP9 from YouTube), re-encode it once to <name>_h264.mp4. "
+                                                       "H.264 decodes many times faster in the analysis and generation stages."}),
             }
         }
 
@@ -686,10 +758,10 @@ class ShortsYouTubeDownload:
                    "start..end clip out of it (frame accurate, re-encoded). Returns the clip path (or the full video when no range).")
 
     @classmethod
-    def IS_CHANGED(cls, url, start, end, out_dir, max_height, filename, force_redownload):
+    def IS_CHANGED(cls, url, start, end, out_dir, max_height, filename, force_redownload, ensure_h264=True):
         if force_redownload:
             return float("nan")
-        return f"{url}|{start}|{end}|{out_dir}|{max_height}|{filename}"
+        return f"{url}|{start}|{end}|{out_dir}|{max_height}|{filename}|{ensure_h264}"
 
     def _fetch(self, url, out_dir, max_height, filename, force_redownload):
         """-> (full_video_path, title, duration)"""
@@ -707,7 +779,9 @@ class ShortsYouTubeDownload:
         stem = _sanitize_name(filename) if (filename or "").strip() else "%(id)s"
         h = int(max_height)
         opts = {
-            "format": (f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/"
+            # prefer H.264 (avc1): decodes far faster than AV1/VP9 in OpenCV / VHS
+            "format": (f"bestvideo[vcodec^=avc1][height<={h}][ext=mp4]+bestaudio[ext=m4a]/"
+                       f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/"
                        f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"),
             "merge_output_format": "mp4",
             "outtmpl": os.path.join(od, stem + ".%(ext)s"),
@@ -754,13 +828,26 @@ class ShortsYouTubeDownload:
         os.makedirs(od, exist_ok=True)
         return od
 
-    def download(self, url, start, end, out_dir, max_height, filename, force_redownload):
+    def download(self, url, start, end, out_dir, max_height, filename, force_redownload, ensure_h264=True):
         url = (url or "").strip().strip('"')
         if not url:
             raise ValueError("[ShortsRemake] url is empty (YouTube URL or local video path)")
         t0, t1 = parse_timecode(start), parse_timecode(end)
         full, title, dur = self._fetch(url, out_dir, max_height, filename, force_redownload)
         if t0 is None and t1 is None:
+            if ensure_h264:
+                codec = _video_codec(full)
+                if codec and codec not in H264_FOURCC:
+                    stem = os.path.splitext(os.path.basename(full))[0]
+                    od = os.path.dirname(full) if os.path.isfile(url) and not (out_dir or "").strip() else self._out_dir(out_dir)
+                    h264 = os.path.join(od, f"{stem}_h264.mp4")
+                    if os.path.isfile(h264) and not force_redownload:
+                        print(f"[ShortsRemake] H.264 copy already exists {h264}")
+                    else:
+                        print(f"[ShortsRemake] '{codec}' video -> re-encoding to H.264: {h264} (one-time, a few minutes)")
+                        trim_video(full, None, None, h264)
+                    cdur, _, _, _ = _video_info(h264)
+                    return (h264, title, float(cdur), full)
             return (full, title, dur, full)
 
         if t0 is not None and t1 is not None and t1 <= t0:

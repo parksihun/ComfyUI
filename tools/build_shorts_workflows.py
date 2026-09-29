@@ -244,7 +244,9 @@ NOTE_DOWNLOAD = (
     "- `max_height`: 받을 최대 해상도 (1080 권장)\n"
     "- `out_dir` 비우면 `ComfyUI/input/shorts_downloads/` 에 `<영상id>.mp4` 로 저장\n"
     "- 같은 링크는 다시 받지 않고 받아둔 파일에서 구간만 다시 자릅니다. 다시 받으려면 `force_redownload` 켜기\n"
-    "- 로그인/연령 제한 영상은 받을 수 없습니다\n\n"
+    "- 로그인/연령 제한 영상은 받을 수 없습니다\n"
+    "- `ensure_h264` (기본 켜짐): AV1/VP9 영상이면 H.264로 한 번 변환해 `<이름>_h264.mp4`를 씁니다. "
+    "AV1은 프레임 읽기가 수십 배 느려서 1단계가 몇 분씩 멈춘 것처럼 보입니다. 이미 받아둔 파일도 여기 `url`에 경로를 넣으면 변환됩니다\n\n"
     "결과 **파일 경로가 아래 미리보기에 표시**됩니다. 그 경로를 복사해\n"
     "`1_Analyze_Prompts` 또는 `4_ALL_in_One`의 `Shorts Video Segments` → `video_path`에 붙여 넣으세요."
 )
@@ -252,13 +254,13 @@ NOTE_DOWNLOAD = (
 
 def build_download():
     nodes = [
-        note(13, [-1000, 80], [520, 520], NOTE_DOWNLOAD, "사용법 (0단계 다운로드 + 구간)"),
-        node(11, "ShortsYouTubeDownload", [-440, 80], [460, 250], [],
+        note(13, [-1000, 80], [520, 600], NOTE_DOWNLOAD, "사용법 (0단계 다운로드 + 구간)"),
+        node(11, "ShortsYouTubeDownload", [-440, 80], [460, 280], [],
              [outp("video_path", "STRING", [7]), outp("title", "STRING", None), outp("duration", "FLOAT", None),
               outp("full_video_path", "STRING", None)],
-             ["https://www.youtube.com/watch?v=...", "", "", "", 1080, "", False],
+             ["https://www.youtube.com/watch?v=...", "", "", "", 1080, "", False, True],
              title="Shorts YouTube Download / Trim - 링크(또는 파일) + 구간"),
-        node(12, "PreviewAny", [-440, 380], [460, 160], [inp("source", "*", 7)], [], [None, None, False],
+        node(12, "PreviewAny", [-440, 410], [460, 160], [inp("source", "*", 7)], [], [None, None, False],
              title="저장된 영상 경로 (복사해서 다음 단계에 입력)"),
     ]
     links = {7: [7, 11, 0, 12, 0, "STRING"]}
