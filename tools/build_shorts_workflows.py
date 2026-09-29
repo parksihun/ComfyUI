@@ -173,7 +173,7 @@ def assemble(wf_id, fragments, extra_links=(), ds=None):
 NOTE_ANALYZE = (
     "## 1단계: 영상 분석 → 프롬프트 추출\n\n"
     "**입력**: `Shorts Video Segments` 노드의 `video_path`에 영상 파일 전체 경로.\n"
-    "유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받으면 경로가 `ComfyUI/input/shorts_downloads/<id>.mp4`로 표시됩니다.\n\n"
+    "유튜브 영상은 먼저 `0_YouTube_Download_Trim` 워크플로우로 받으면 경로가 `output/<id>.mp4`(또는 `_h264.mp4`)로 표시됩니다.\n\n"
     "**동작**\n"
     "1. `Shorts Video Segments`가 영상을 구간으로 나누고 구간마다 `frames_per_segment`장을 뽑습니다.\n"
     "   - `split_mode` = fixed : `segment_seconds`(기본 5초) 고정 길이\n"
@@ -245,11 +245,13 @@ NOTE_DOWNLOAD = (
     "- 프레임 단위로 정확하게 자르기 위해 다시 인코딩합니다 (H.264, 화질 손실은 거의 없음)\n\n"
     "**다운로드 옵션**\n"
     "- `max_height`: 받을 최대 해상도 (1080 권장)\n"
-    "- `out_dir` 비우면 `ComfyUI/input/shorts_downloads/` 에 `<영상id>.mp4` 로 저장\n"
+    "- `out_dir` 비우면 ComfyUI 출력 폴더(`output/`)에 `<영상id>.mp4` 로 저장\n"
     "- 같은 링크는 다시 받지 않고 받아둔 파일에서 구간만 다시 자릅니다. 다시 받으려면 `force_redownload` 켜기\n"
     "- 로그인/연령 제한 영상은 받을 수 없습니다\n"
     "- `ensure_h264` (기본 켜짐): AV1/VP9 영상이면 H.264로 한 번 변환해 `<이름>_h264.mp4`를 씁니다. "
-    "AV1은 프레임 읽기가 수십 배 느려서 1단계가 몇 분씩 멈춘 것처럼 보입니다. 이미 받아둔 파일도 여기 `url`에 경로를 넣으면 변환됩니다\n\n"
+    "AV1은 프레임 읽기가 수십 배 느려서 1단계가 몇 분씩 멈춘 것처럼 보입니다. 이미 받아둔 파일도 여기 `url`에 경로를 넣으면 변환됩니다\n"
+    "- **옆으로 누운 영상**: 폰 영상처럼 회전 정보가 파일에 들어 있으면 변환하면서 똑바로 세웁니다(자동). "
+    "회전 정보 없이 실제로 누워 있는 영상은 `rotate`를 90 / 180 / 270(시계 방향)으로 지정하세요\n\n"
     "결과 **파일 경로가 아래 미리보기에 표시**됩니다. 그 경로를 복사해\n"
     "`1_Analyze_Prompts` 또는 `4_ALL_in_One`의 `Shorts Video Segments` → `video_path`에 붙여 넣으세요."
 )
@@ -257,13 +259,13 @@ NOTE_DOWNLOAD = (
 
 def build_download():
     nodes = [
-        note(13, [-1000, 80], [520, 600], NOTE_DOWNLOAD, "사용법 (0단계 다운로드 + 구간)"),
-        node(11, "ShortsYouTubeDownload", [-440, 80], [460, 280], [],
+        note(13, [-1000, 80], [520, 680], NOTE_DOWNLOAD, "사용법 (0단계 다운로드 + 구간)"),
+        node(11, "ShortsYouTubeDownload", [-440, 80], [460, 310], [],
              [outp("video_path", "STRING", [7]), outp("title", "STRING", None), outp("duration", "FLOAT", None),
               outp("full_video_path", "STRING", None)],
-             ["https://www.youtube.com/watch?v=...", "", "", "", 1080, "", False, True],
+             ["https://www.youtube.com/watch?v=...", "", "", "", 1080, "", False, True, "auto"],
              title="Shorts YouTube Download / Trim - 링크(또는 파일) + 구간"),
-        node(12, "PreviewAny", [-440, 410], [460, 160], [inp("source", "*", 7)], [], [None, None, False],
+        node(12, "PreviewAny", [-440, 440], [460, 160], [inp("source", "*", 7)], [], [None, None, False],
              title="저장된 영상 경로 (복사해서 다음 단계에 입력)"),
     ]
     links = {7: [7, 11, 0, 12, 0, "STRING"]}

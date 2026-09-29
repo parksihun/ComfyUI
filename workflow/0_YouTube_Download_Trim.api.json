@@ -8,7 +8,8 @@
    "max_height": 1080,
    "filename": "",
    "force_redownload": false,
-   "ensure_h264": true
+   "ensure_h264": true,
+   "rotate": "auto"
   },
   "class_type": "ShortsYouTubeDownload",
   "_meta": {

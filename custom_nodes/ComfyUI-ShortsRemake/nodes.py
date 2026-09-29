@@ -715,14 +715,36 @@ def _fmt_tag(sec: float) -> str:
     return f"{int(sec // 60)}m{sec % 60:04.1f}s".replace(".0s", "s")
 
 
-def trim_video(src: str, start, end, out_path: str) -> str:
-    """Frame-accurate cut (re-encode H.264/AAC). start/end in seconds, either may be None."""
+def _video_rotation(path: str) -> int:
+    """Display rotation stored in the container metadata (phone videos): 0 / 90 / 180 / 270."""
+    try:
+        cp = subprocess.run([_ffmpeg_exe(), "-hide_banner", "-i", path], capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=60)
+        txt = cp.stderr or ""
+        m = re.search(r"rotation of (-?[\d.]+) degrees", txt) or re.search(r"\brotate\s*:\s*(-?\d+)", txt)
+        if m:
+            return int(round(float(m.group(1)))) % 360
+    except Exception:  # noqa: BLE001
+        pass
+    return 0
+
+
+ROTATE_FILTERS = {"90": "transpose=1", "180": "transpose=1,transpose=1", "270": "transpose=2"}
+
+
+def trim_video(src: str, start, end, out_path: str, rotate: str = "auto") -> str:
+    """Frame-accurate cut / re-encode to H.264+AAC. start/end in seconds, either may be None.
+    ffmpeg applies the container rotation metadata automatically (the output is physically upright);
+    rotate = 90 / 180 / 270 additionally rotates clockwise for videos that are sideways without metadata."""
     cmd = [_ffmpeg_exe(), "-y", "-hide_banner", "-loglevel", "error"]
     if start is not None:
         cmd += ["-ss", f"{start:.3f}"]
     if end is not None:
         cmd += ["-to", f"{end:.3f}"]
-    cmd += ["-i", src, "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
+    cmd += ["-i", src]
+    if str(rotate) in ROTATE_FILTERS:
+        cmd += ["-vf", ROTATE_FILTERS[str(rotate)]]
+    cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out_path]
     cp = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if cp.returncode != 0 or not os.path.isfile(out_path):
@@ -741,14 +763,16 @@ class ShortsYouTubeDownload:
                                      "tooltip": "Clip start. Seconds (80, 80.5) or m:ss / h:mm:ss. Leave both empty to keep the whole video."}),
                 "end": ("STRING", {"default": "", "placeholder": "empty = to the end   e.g. 1:50 or 110",
                                    "tooltip": "Clip end. Seconds or m:ss / h:mm:ss."}),
-                "out_dir": ("STRING", {"default": "", "placeholder": "empty = ComfyUI/input/shorts_downloads"}),
+                "out_dir": ("STRING", {"default": "", "placeholder": "empty = ComfyUI output folder (output/)"}),
                 "max_height": ("INT", {"default": 1080, "min": 144, "max": 4320, "step": 1,
                                        "tooltip": "Highest video resolution to download (720/1080 is enough for analysis + pose driving)."}),
                 "filename": ("STRING", {"default": "", "placeholder": "empty = <video id>"}),
                 "force_redownload": ("BOOLEAN", {"default": False}),
                 "ensure_h264": ("BOOLEAN", {"default": True,
-                                            "tooltip": "If the video is not H.264 (e.g. AV1/VP9 from YouTube), re-encode it once to <name>_h264.mp4. "
-                                                       "H.264 decodes many times faster in the analysis and generation stages."}),
+                                            "tooltip": "If the video is not H.264 (e.g. AV1/VP9 from YouTube) or carries rotation metadata (phone video), "
+                                                       "re-encode it once to <name>_h264.mp4: fast to decode and physically upright."}),
+                "rotate": (["auto", "90", "180", "270"], {"default": "auto",
+                           "tooltip": "auto: apply the rotation stored in the file. 90/180/270: rotate clockwise in addition (for videos that are sideways without metadata)."}),
             }
         }
 
@@ -760,10 +784,10 @@ class ShortsYouTubeDownload:
                    "start..end clip out of it (frame accurate, re-encoded). Returns the clip path (or the full video when no range).")
 
     @classmethod
-    def IS_CHANGED(cls, url, start, end, out_dir, max_height, filename, force_redownload, ensure_h264=True):
+    def IS_CHANGED(cls, url, start, end, out_dir, max_height, filename, force_redownload, ensure_h264=True, rotate="auto"):
         if force_redownload:
             return float("nan")
-        return f"{url}|{start}|{end}|{out_dir}|{max_height}|{filename}|{ensure_h264}"
+        return f"{url}|{start}|{end}|{out_dir}|{max_height}|{filename}|{ensure_h264}|{rotate}"
 
     def _fetch(self, url, out_dir, max_height, filename, force_redownload):
         """-> (full_video_path, title, duration)"""
@@ -824,32 +848,40 @@ class ShortsYouTubeDownload:
         if not od:
             try:
                 import folder_paths
-                od = os.path.join(folder_paths.get_input_directory(), "shorts_downloads")
+                od = folder_paths.get_output_directory()   # root output\ when the launcher passes --output-directory
             except Exception:  # noqa: BLE001
-                od = os.path.join(os.getcwd(), "shorts_downloads")
+                od = os.path.join(os.getcwd(), "output")
         os.makedirs(od, exist_ok=True)
         return od
 
-    def download(self, url, start, end, out_dir, max_height, filename, force_redownload, ensure_h264=True):
+    def download(self, url, start, end, out_dir, max_height, filename, force_redownload, ensure_h264=True, rotate="auto"):
         url = (url or "").strip().strip('"')
         if not url:
             raise ValueError("[ShortsRemake] url is empty (YouTube URL or local video path)")
         t0, t1 = parse_timecode(start), parse_timecode(end)
         full, title, dur = self._fetch(url, out_dir, max_height, filename, force_redownload)
+        rotate = str(rotate or "auto")
         if t0 is None and t1 is None:
-            if ensure_h264:
-                codec = _video_codec(full)
-                if codec and codec not in H264_FOURCC:
-                    stem = os.path.splitext(os.path.basename(full))[0]
-                    od = os.path.dirname(full) if os.path.isfile(url) and not (out_dir or "").strip() else self._out_dir(out_dir)
-                    h264 = os.path.join(od, f"{stem}_h264.mp4")
-                    if os.path.isfile(h264) and not force_redownload:
-                        print(f"[ShortsRemake] H.264 copy already exists {h264}")
-                    else:
-                        print(f"[ShortsRemake] '{codec}' video -> re-encoding to H.264: {h264} (one-time, a few minutes)")
-                        trim_video(full, None, None, h264)
-                    cdur, _, _, _ = _video_info(h264)
-                    return (h264, title, float(cdur), full)
+            codec = _video_codec(full)
+            meta_rot = _video_rotation(full)
+            reasons = []
+            if ensure_h264 and codec and codec not in H264_FOURCC:
+                reasons.append(f"codec {codec}")
+            if meta_rot:
+                reasons.append(f"rotation metadata {meta_rot} deg")
+            if rotate != "auto":
+                reasons.append(f"forced rotate {rotate}")
+            if reasons:
+                stem = os.path.splitext(os.path.basename(full))[0]
+                od = os.path.dirname(full) if os.path.isfile(url) and not (out_dir or "").strip() else self._out_dir(out_dir)
+                h264 = os.path.join(od, f"{stem}_h264.mp4")
+                if os.path.isfile(h264) and not force_redownload:
+                    print(f"[ShortsRemake] H.264 copy already exists {h264}")
+                else:
+                    print(f"[ShortsRemake] re-encoding to upright H.264 ({', '.join(reasons)}): {h264}")
+                    trim_video(full, None, None, h264, rotate)
+                cdur, _, _, _ = _video_info(h264)
+                return (h264, title, float(cdur), full)
             return (full, title, dur, full)
 
         if t0 is not None and t1 is not None and t1 <= t0:
@@ -866,7 +898,7 @@ class ShortsYouTubeDownload:
             print(f"[ShortsRemake] clip already exists {clip}")
         else:
             print(f"[ShortsRemake] trimming {t0 or 0:.2f}s -> {t1 if t1 is not None else dur:.2f}s -> {clip}")
-            trim_video(full, t0, t1, clip)
+            trim_video(full, t0, t1, clip, rotate)
         cdur, _, _, _ = _video_info(clip)
         return (clip, f"{title} [{tag}]", float(cdur), full)
 
