@@ -24,7 +24,7 @@
 | `1_Analyze_Prompts.json` | 분석만. prompts.json을 확인·수정하고 싶을 때 |
 | `2_Compose_Reference.json` | 참조 이미지만. seed를 바꿔 가며 마음에 드는 합성을 고를 때 |
 | `3_Replace_Person_WanAnimate2.json` | 영상 생성만. 일부 구간(`clips`)만 다시 만들 때 |
-| `5_T2V_6seg_from_prompts.json` | **빠른 대안**: 1번 프롬프트 + 참조 이미지 → Wan 2.2 I2V 6구간(30초). 원본 동작을 옮기지 않고 프롬프트대로 움직임. 클립당 시간이 훨씬 짧고 VRAM 여유 있음 |
+| `5_I2V_6seg_from_prompts.json` | **빠른 대안**: 1번 프롬프트 + 참조 이미지 → Wan 2.2 I2V 6구간(30초). 원본 동작을 옮기지 않고 프롬프트대로 움직임. 클립당 시간이 훨씬 짧고 VRAM 여유 있음 |
 | `*.api.json` | 같은 그래프의 API 형식 (서버 자동화용, 아래 참고) |
 
 ## 필요한 것
@@ -130,7 +130,7 @@ prompts.json 구조:
    - 배경이 참조 이미지와 달라지면 `WanAnimate2ToVideo`의 `reference_image_strength`를 1.2~1.5로
    - 컨텍스트 윈도우 스위치(노드 588)는 꺼져 있음. 5초 클립(81프레임)은 필요 없음
 
-## 5번: 5_T2V_6seg_from_prompts.json (Wan 2.2 T2V 6구간)
+## 5번: 5_I2V_6seg_from_prompts.json (Wan 2.2 I2V 6구간)
 
 `video_wan22_14b_i2v_6seg_30s`와 같은 그래프에 `Shorts Prompts Fanout` 노드를 붙인 것입니다. 구간별 프롬프트 6개를 손으로 적는 대신 prompts.json에서 읽어 채웁니다.
 

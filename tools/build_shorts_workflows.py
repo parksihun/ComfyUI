@@ -7,7 +7,7 @@
                                          reference.png (or profile) + prompts.json + source video
                                          -> Wan Animate 2 per segment -> clip_NN.mp4 -> final.mp4
   4_ALL_in_One.json                 stages 1 + 2 + 3 in one graph (video file + images in, final.mp4 out)
-  5_T2V_6seg_from_prompts.json      prompts.json -> Wan 2.2 i2v 6-segment graph (fan-out node fills the prompts)
+  5_I2V_6seg_from_prompts.json      prompts.json -> Wan 2.2 i2v 6-segment graph (fan-out node fills the prompts)
 
 Stage 2 is flattened from the official video_wan_animate2.json template (loop nodes removed; per-segment
 execution comes from ShortsPromptsLoader list outputs). Stage 2 mirrors image_qwen_image_edit_2511.json.
@@ -756,7 +756,7 @@ I2V_DROP_NODES = [22, 23, 32, 33, 43, 44, 54, 55, 65, 66, 76, 77,   # per-segmen
 I2V_FINAL_CREATE = 84                                 # CreateVideo of the full video: images <- collector
 
 NOTE_I2V = (
-    "## 5번: 분석 프롬프트 → Wan 2.2 T2V 6구간 (30초)\n\n"
+    "## 5번: 분석 프롬프트 → Wan 2.2 I2V 6구간 (30초)\n\n"
     "`video_wan22_14b_i2v_6seg_30s`와 같은 그래프이고, 구간별 프롬프트 6개를 손으로 적는 대신 "
     "`Shorts Prompts Fanout`이 1번 결과 **prompts.json에서 읽어** 채웁니다.\n\n"
     "**입력**\n"
@@ -777,7 +777,7 @@ NOTE_I2V = (
 def build_i2v_bridge():
     src = os.path.join(OUT_DIRS[0], I2V_SOURCE)
     if not os.path.isfile(src):
-        print("skip 5_T2V (source missing):", src)
+        print("skip 5_I2V (source missing):", src)
         return
     with io.open(src, encoding="utf-8") as f:
         wf = json.load(f)
@@ -803,7 +803,7 @@ def build_i2v_bridge():
         fan["outputs"][k]["links"] = [lid]
     links = {k: v for k, v in links.items() if k not in old_links}
     nodes.append(fan)
-    nodes.append(note(fid + 1, [-620, 500], [560, 640], NOTE_I2V, "사용법 (5번 T2V 6구간)", ("#223", "#335")))
+    nodes.append(note(fid + 1, [-620, 500], [560, 640], NOTE_I2V, "사용법 (5번 I2V 6구간)", ("#223", "#335")))
 
     # ---- early stop: lazy collector replaces the ImageBatch chain and the per-segment save nodes ----
     dropped = set(I2V_DROP_NODES)
@@ -852,7 +852,7 @@ def build_i2v_bridge():
     wf["id"] = "shorts-5-i2v-6seg-from-prompts"
     for i, n in enumerate(nodes):
         n["order"] = i
-    write_all(wf, "5_T2V_6seg_from_prompts.json")
+    write_all(wf, "5_I2V_6seg_from_prompts.json")
 
 
 

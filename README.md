@@ -12,7 +12,7 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 │   ├── 2_Compose_Reference.json               프로필+배경+소품 → Qwen-Image-Edit → reference.png
 │   ├── 3_Replace_Person_WanAnimate2.json      참조 이미지로 인물 교체 → clip_NN.mp4 → final.mp4
 │   ├── 4_ALL_in_One.json                      올인원 (1→2→3): 영상 파일 + 사진 → 인물 교체 영상
-│   ├── 5_T2V_6seg_from_prompts.json           빠른 대안: 프롬프트 + 참조 이미지 → Wan 2.2 I2V 6구간 30초
+│   ├── 5_I2V_6seg_from_prompts.json           빠른 대안: 프롬프트 + 참조 이미지 → Wan 2.2 I2V 6구간 30초
 │   ├── video_wan22_14b_i2v_6seg_30s.json      5번의 원본 (수동 프롬프트 6구간)
 │   ├── YouTube_Video_Analysis_GPU.json / _CPU.json  영상 내용 요약 (단일 실행)
 │   └── README_Shorts_Remake.md
