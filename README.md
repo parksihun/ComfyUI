@@ -1,6 +1,6 @@
 # ComfyUI-Easy-Install 작업 저장소
 
-ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 저장소입니다. 실행 파일은 번호 순서대로: 1_Setup → 2~4_Download_Models → 5_Start.
+ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 저장소입니다.
 `python_embeded`, `ComfyUI` 본체, 모델, 다른 커스텀 노드는 `.gitignore`로 제외되어 있어
 어떤 PC의 ComfyUI-Easy-Install 폴더에 넣어도 충돌하지 않습니다.
 
@@ -19,18 +19,15 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 │   ├── YouTube_Video_Analysis_GPU.json / _CPU.json  영상 내용 요약 (단일 실행)
 │   └── README_Shorts_Remake.md
 │   └── wan22_14b_flf_chain.json               Wan 2.2 첫/끝 프레임 구간 연결 (WanChain 노드 사용)
-├── custom_nodes/ComfyUI-ShortsRemake/   위 워크플로우가 쓰는 커스텀 노드 10개 (yt-dlp 필요, 1_Setup.bat이 설치)
+├── custom_nodes/ComfyUI-ShortsRemake/   위 워크플로우가 쓰는 커스텀 노드 10개 (yt-dlp 필요, Setup_Folders.bat이 설치)
 ├── custom_nodes/ComfyUI-WanChain/       Wan 2.2 FLF 구간 연결 보조 노드 2개 (Load Image Optional, Collect Segments)
 ├── custom_nodes/ComfyUI-Wan22FMLF/      (외부) Wan Advanced I2V - SVI 워크플로우용
 ├── custom_nodes/ComfyUI-Frame-Interpolation/ (외부) RIFE VFI + ckpts/rife/rife49.pth
 ├── custom_nodes/ComfyUI-Custom-Scripts/ (외부) pysssss Math Expression 등
 ├── tools/build_shorts_workflows.py      0_~4_ 워크플로우 JSON 생성 스크립트
-├── 1_Setup.bat                          폴더 생성 + workflow/custom_nodes 정션 + 의존성 설치 (Setup_Folders.bat 통합)
-├── 2_Download_Models_Shorts.bat           Shorts 파이프라인 모델 전부 다운로드 (없는 파일만 받음, 오프라인 서버용)
-├── 3_Download_Models_QwenImage21.bat      image_qwen_image_2_1_image_edit 워크플로우 모델 (Qwen-Image 2.1 int8, 약 17GB)
-├── 4_Download_Models_Wan22_SVI.bat        Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5 모델 (SVI/lightx2v LoRA, RIFE, 선택 GGUF)
-├── 5_Start_ComfyUI_L40S.bat               GPU 서버(L40S) 실행 스크립트 (SageAttention, 외부 접속, 오프라인 설정 포함)
-└── 5_Start_ComfyUI_CPU.bat                GPU 없는 PC용 실행 스크립트 (--cpu)
+├── Setup_Folders.bat                    폴더 생성 + workflow/custom_nodes 정션 + 의존성 설치 (새 PC에서 한 번)
+├── Start_ComfyUI_L40S.bat               GPU 서버(L40S) 실행 스크립트 (SageAttention, 외부 접속, 오프라인 설정 포함)
+└── Start ComfyUI CPU.bat                GPU 없는 PC용 실행 스크립트 (--cpu)
 
 실행 스크립트(L40S / CPU)는 `--input-directory`, `--output-directory`, `--temp-directory` 옵션으로
 루트의 `input\`, `output\`, `temp\` 폴더를 쓰고, `--extra-model-paths-config`로 루트의 `extra_model_paths.yaml`
@@ -47,10 +44,10 @@ git init
 git remote add origin https://github.com/parksihun/ComfyUI.git
 git fetch origin
 git checkout -f -b main origin/main
-1_Setup.bat
+Setup_Folders.bat
 ```
 
-`1_Setup.bat`은 `custom_nodes\` 아래 폴더들(ShortsRemake, WanChain, 외부 노드 3개)을 `ComfyUI\custom_nodes\`에 정션(폴더 링크)으로 연결하고,
+`Setup_Folders.bat`은 `custom_nodes\` 아래 폴더들(ShortsRemake, WanChain, 외부 노드 3개)을 `ComfyUI\custom_nodes\`에 정션(폴더 링크)으로 연결하고,
 노드가 쓰는 yt-dlp를 `python_embeded`에 설치한 뒤, `workflow\*.json`을 ComfyUI 사이드바용 폴더로 복사합니다. 이후 ComfyUI를 재시작하면 됩니다.
 
 ## 이 PC에서 수정 후 올리기
@@ -68,4 +65,4 @@ git push
 
 - ComfyUI-QwenVL, ComfyUI-VideoHelperSuite (Easy-Install 기본 포함)
 - 모델: `workflow/README_Shorts_Remake.md` 참고 (Qwen3-VL-8B, Qwen-Image-Edit-2511 3개 파일, Wan Animate 2 5개 파일)
-- GPU 서버(L40S) 기준. GPU 없는 PC는 `5_Start_ComfyUI_CPU.bat` + 1단계 워크플로우를 GGUF 노드로 바꿔 확인만 가능
+- GPU 서버(L40S) 기준. GPU 없는 PC는 `Start ComfyUI CPU.bat` + 1단계 워크플로우를 GGUF 노드로 바꿔 확인만 가능

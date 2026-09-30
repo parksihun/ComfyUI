@@ -65,8 +65,8 @@ echo     output     %~dp0output\
 echo     workflow   %~dp0workflow\
 echo     temp       %~dp0temp\
 echo.
-echo   Next: 2_..4_Download_Models_*.bat for models, then start ComfyUI
-echo   (5_Start_ComfyUI_L40S.bat on the server, 5_Start_ComfyUI_CPU.bat here).
+echo   Next: put the models in model\ (see workflow\README_Shorts_Remake.md), then start ComfyUI
+echo   (Start_ComfyUI_L40S.bat on the server, Start ComfyUI CPU.bat here).
 echo   Restart ComfyUI if it was running so the nodes load.
 echo  ============================================================
 echo.

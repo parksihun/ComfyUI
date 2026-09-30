@@ -31,22 +31,42 @@
 
 | 항목 | 내용 |
 |---|---|
-| 커스텀 노드 | `custom_nodes/ComfyUI-ShortsRemake` (이 저장소, `1_Setup.bat`이 링크 + yt-dlp 설치), ComfyUI-QwenVL, VideoHelperSuite |
+| 커스텀 노드 | `custom_nodes/ComfyUI-ShortsRemake` (이 저장소, `Setup_Folders.bat`이 링크 + yt-dlp 설치), ComfyUI-QwenVL, VideoHelperSuite |
 | 1단계 모델 | Qwen3-VL-8B-Instruct (QwenVL 노드가 첫 실행 시 `models/LLM/`에 자동 다운로드, 약 16GB VRAM) |
 | 2단계 모델 | ComfyUI 공식 `image_qwen_image_edit_2511` 템플릿과 동일: `diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors`, `text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors`, `vae/qwen_image_vae.safetensors`, (선택) `loras/Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` |
 | 3단계 모델 | ComfyUI 공식 `video_wan_animate2` 템플릿과 동일 (Comfy-Org/Wan-Animate-2): `diffusion_models/wan_animate_2_int8_convrot.safetensors`, `loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors`, `text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors`, `clip_vision/clip_vision_h.safetensors`, `vae/Wan2_1_VAE_bf16.safetensors` |
 | GPU | L40S 48GB 기준 설계. 이 테스트 PC(GPU 없음)에서는 1단계만 GGUF+CPU로 실행 가능 |
 | 유튜브 | yt-dlp (python_embeded에 설치). 영상+오디오 병합은 내장 imageio-ffmpeg 사용. 로그인/연령 제한 영상은 받을 수 없음 |
 
+## 모델 다운로드 주소
+
+`model\` 아래 해당 폴더에 넣습니다. (curl -L -o <파일> <주소>)
+
+| 폴더 | 파일 | 주소 |
+|---|---|---|
+| diffusion_models | wan_animate_2_int8_convrot.safetensors | https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/diffusion_models/wan_animate_2_int8_convrot.safetensors |
+| loras | lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors | https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors |
+| text_encoders | umt5_xxl_fp8_e4m3fn_scaled.safetensors | https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors |
+| clip_vision | clip_vision_h.safetensors | https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/clip_vision/clip_vision_h.safetensors |
+| vae | Wan2_1_VAE_bf16.safetensors | https://huggingface.co/Comfy-Org/Wan-Animate-2/resolve/main/vae/Wan2_1_VAE_bf16.safetensors |
+| diffusion_models | qwen_image_edit_2511_fp8mixed.safetensors | https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/resolve/main/split_files/diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors |
+| text_encoders | qwen_2.5_vl_7b_fp8_scaled.safetensors | https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors |
+| vae | qwen_image_vae.safetensors | https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors |
+| loras (선택) | Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors | https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/resolve/main/Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors |
+| ComfyUI/models/LLM/Qwen/Qwen3-VL-8B-Instruct | 폴더 전체 | `python_embeded\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='Qwen/Qwen3-VL-8B-Instruct', local_dir=r'ComfyUI\models\LLM\Qwen\Qwen3-VL-8B-Instruct', ignore_patterns=['*.md','.git*'])"` |
+
+Qwen-Image 2.1 편집 워크플로우: `Comfy-Org/Qwen-Image-2.1`의 `diffusion_models/qwen_image_2.1_int8_convrot.safetensors`, `text_encoders/qwen3vl_8b_int8_convrot.safetensors`, `vae/qwen_image_2.1_vae_bf16.safetensors` (ComfyUI 0.37 이상 필요).
+Kenpechi SVI 워크플로우: `Kijai/WanVideo_comfy`의 `LoRAs/Stable-Video-Infinity/v2.0/SVI_v2_PRO_Wan2.2-I2V-A14B_{HIGH,LOW}_lora_rank_128_fp16.safetensors` → `loras\HIGH`, `loras\LOW`; `LoRAs/Wan22_Lightx2v/Wan_2_2_I2V_A14B_HIGH_lightx2v_4step_lora_v1030_rank_64_bf16.safetensors` → `loras\HIGH`; `lightx2v/Wan2.2-Distill-Loras`의 `wan2.2_i2v_A14b_low_noise_lora_rank64_lightx2v_4step_1022.safetensors` → `loras\LOW`; `upscale_models/RealESRGAN_x2plus.pth` (github xinntao/Real-ESRGAN v0.2.1); `rife49.pth`는 저장소에 포함.
+
 ## 오프라인 서버 준비
 
 실행 중에 네트워크를 쓰는 곳은 QwenVL 노드의 모델 자동 다운로드뿐이므로, 아래를 미리 해 두면 완전히 오프라인으로 돕니다.
 
-1. 인터넷 되는 PC에서 `2_Download_Models_Shorts.bat` 실행. Wan Animate 2, Qwen-Image-Edit 2511, Qwen3-VL-8B-Instruct를 모두 받습니다.
+1. 인터넷 되는 PC에서 아래 '모델 다운로드 주소'의 파일을 전부 받습니다 (Wan Animate 2, Qwen-Image-Edit 2511, Qwen3-VL-8B-Instruct).
    - safetensors 파일 → `model\<폴더>\`
    - Qwen3-VL-8B-Instruct → `ComfyUI\models\LLM\Qwen\Qwen3-VL-8B-Instruct\` (config.json + safetensors 여러 개 + 토크나이저 파일)
 2. `model\`과 `ComfyUI\models\LLM\`을 서버의 같은 위치로 복사. 유튜브 영상(mp4)도 미리 받아 같이 복사.
-3. 서버에서는 평소대로 `5_Start_ComfyUI_L40S.bat`로 실행. 이 파일에 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`이 들어 있어 huggingface_hub/transformers가 인터넷을 시도하지 않습니다 (QwenVL 노드는 모델 폴더가 있으면 바로 로컬에서 읽습니다).
+3. 서버에서는 평소대로 `Start_ComfyUI_L40S.bat`로 실행. 이 파일에 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`이 들어 있어 huggingface_hub/transformers가 인터넷을 시도하지 않습니다 (QwenVL 노드는 모델 폴더가 있으면 바로 로컬에서 읽습니다).
 4. 워크플로우는 `1_Analyze_Prompts`(또는 `4_ALL_in_One`)부터 시작하고 `video_path`에 복사해 둔 mp4 경로를 넣습니다. `0_YouTube_Download_Trim`는 오프라인에서 쓰지 않습니다.
 
 ## 0단계: 0_YouTube_Download_Trim.json
