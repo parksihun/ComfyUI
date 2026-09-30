@@ -21,12 +21,14 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 │   └── wan22_14b_flf_chain.json               Wan 2.2 첫/끝 프레임 구간 연결 (WanChain 노드 사용)
 ├── custom_nodes/ComfyUI-ShortsRemake/   위 워크플로우가 쓰는 커스텀 노드 10개 (yt-dlp 필요, setup.bat이 설치)
 ├── custom_nodes/ComfyUI-WanChain/       Wan 2.2 FLF 구간 연결 보조 노드 2개 (Load Image Optional, Collect Segments)
+├── custom_nodes/ComfyUI-Wan22FMLF/      (외부) Wan Advanced I2V - SVI 워크플로우용
+├── custom_nodes/ComfyUI-Frame-Interpolation/ (외부) RIFE VFI + ckpts/rife/rife49.pth
+├── custom_nodes/ComfyUI-Custom-Scripts/ (외부) pysssss Math Expression 등
 ├── tools/build_shorts_workflows.py      0_~4_ 워크플로우 JSON 생성 스크립트
 ├── setup.bat                            새 PC에서 노드 링크 + 의존성 설치 + 워크플로우 복사
 ├── Download_Models_Shorts.bat           Shorts 파이프라인 모델 전부 다운로드 (없는 파일만 받음, 오프라인 서버용)
 ├── Download_Models_QwenImage21.bat      image_qwen_image_2_1_image_edit 워크플로우 모델 (Qwen-Image 2.1 int8, 약 17GB)
 ├── Download_Models_Wan22_SVI.bat        Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5 모델 (SVI/lightx2v LoRA, RIFE, 선택 GGUF)
-├── Install_CustomNodes_Wan22_SVI.bat    위 워크플로우용 커스텀 노드 3개 설치 (Wan22FMLF, Frame-Interpolation, Custom-Scripts)
 ├── Start_ComfyUI_L40S.bat               GPU 서버(L40S) 실행 스크립트 (SageAttention, 외부 접속, 오프라인 설정 포함)
 └── Start ComfyUI CPU.bat                GPU 없는 PC용 실행 스크립트 (--cpu)
 
@@ -48,7 +50,7 @@ git checkout -f -b main origin/main
 setup.bat
 ```
 
-`setup.bat`은 `custom_nodes\` 아래 폴더들(ShortsRemake, WanChain)을 `ComfyUI\custom_nodes\`에 정션(폴더 링크)으로 연결하고,
+`setup.bat`은 `custom_nodes\` 아래 폴더들(ShortsRemake, WanChain, 외부 노드 3개)을 `ComfyUI\custom_nodes\`에 정션(폴더 링크)으로 연결하고,
 노드가 쓰는 yt-dlp를 `python_embeded`에 설치한 뒤, `workflow\*.json`을 ComfyUI 사이드바용 폴더로 복사합니다. 이후 ComfyUI를 재시작하면 됩니다.
 
 ## 이 PC에서 수정 후 올리기

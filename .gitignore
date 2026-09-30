@@ -9,7 +9,6 @@
 !Download_Models_Shorts.bat
 !Download_Models_QwenImage21.bat
 !Download_Models_Wan22_SVI.bat
-!Install_CustomNodes_Wan22_SVI.bat
 !Start_ComfyUI_L40S.bat
 !extra_model_paths.yaml
 
@@ -21,6 +20,15 @@
 !custom_nodes/ComfyUI-ShortsRemake/**
 !custom_nodes/ComfyUI-WanChain/
 !custom_nodes/ComfyUI-WanChain/**
+# third-party nodes vendored for the Wan 2.2 SVI workflow (git metadata stripped)
+!custom_nodes/ComfyUI-Wan22FMLF/
+!custom_nodes/ComfyUI-Wan22FMLF/**
+!custom_nodes/ComfyUI-Frame-Interpolation/
+!custom_nodes/ComfyUI-Frame-Interpolation/**
+custom_nodes/ComfyUI-Frame-Interpolation/demo_frames/
+custom_nodes/ComfyUI-Frame-Interpolation/*.gif
+!custom_nodes/ComfyUI-Custom-Scripts/
+!custom_nodes/ComfyUI-Custom-Scripts/**
 
 !tools/
 !tools/**

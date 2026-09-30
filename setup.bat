@@ -15,8 +15,9 @@ for /d %%D in ("custom_nodes\*") do (
     )
 )
 
-echo [2/3] python packages for ComfyUI-ShortsRemake (yt-dlp)
+echo [2/3] python packages for the custom nodes (yt-dlp; kornia/einops for RIFE)
 python_embeded\python.exe -m pip install -q -r "custom_nodes\ComfyUI-ShortsRemake\requirements.txt"
+python_embeded\python.exe -m pip install -q -r "custom_nodes\ComfyUI-Frame-Interpolation\requirements-no-cupy.txt"
 
 echo [3/3] workflow\*.json -> ComfyUI\user\default\workflows (copy, shows up in the ComfyUI sidebar)
 if not exist "ComfyUI\user\default\workflows" mkdir "ComfyUI\user\default\workflows"
