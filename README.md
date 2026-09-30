@@ -26,6 +26,7 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 ├── Download_Models_Shorts.bat           Shorts 파이프라인 모델 전부 다운로드 (없는 파일만 받음, 오프라인 서버용)
 ├── Download_Models_QwenImage21.bat      image_qwen_image_2_1_image_edit 워크플로우 모델 (Qwen-Image 2.1 int8, 약 17GB)
 ├── Download_Models_Wan22_SVI.bat        Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5 모델 (SVI/lightx2v LoRA, RIFE, 선택 GGUF)
+├── Install_CustomNodes_Wan22_SVI.bat    위 워크플로우용 커스텀 노드 3개 설치 (Wan22FMLF, Frame-Interpolation, Custom-Scripts)
 ├── Start_ComfyUI_L40S.bat               GPU 서버(L40S) 실행 스크립트 (SageAttention, 외부 접속, 오프라인 설정 포함)
 └── Start ComfyUI CPU.bat                GPU 없는 PC용 실행 스크립트 (--cpu)
 
