@@ -19,13 +19,14 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 │   ├── YouTube_Video_Analysis_GPU.json / _CPU.json  영상 내용 요약 (단일 실행)
 │   └── README_Shorts_Remake.md
 │   └── wan22_14b_flf_chain.json               Wan 2.2 첫/끝 프레임 구간 연결 (WanChain 노드 사용)
-├── custom_nodes/ComfyUI-ShortsRemake/   위 워크플로우가 쓰는 커스텀 노드 10개 (yt-dlp 필요, Setup_Folders.bat이 설치)
+├── custom_nodes/ComfyUI-ShortsRemake/   위 워크플로우가 쓰는 커스텀 노드 10개 (yt-dlp 필요, Install_Python_Packages.bat으로 설치)
 ├── custom_nodes/ComfyUI-WanChain/       Wan 2.2 FLF 구간 연결 보조 노드 2개 (Load Image Optional, Collect Segments)
 ├── custom_nodes/ComfyUI-Wan22FMLF/      (외부) Wan Advanced I2V - SVI 워크플로우용
 ├── custom_nodes/ComfyUI-Frame-Interpolation/ (외부) RIFE VFI + ckpts/rife/rife49.pth
 ├── custom_nodes/ComfyUI-Custom-Scripts/ (외부) pysssss Math Expression 등
 ├── tools/build_shorts_workflows.py      0_~4_ 워크플로우 JSON 생성 스크립트
-├── Setup_Folders.bat                    폴더 생성 + workflow/custom_nodes 정션 + 의존성 설치 (새 PC에서 한 번)
+├── Setup_Folders.bat                    폴더 생성 + workflow/custom_nodes 정션 (새 PC에서 한 번, extra_model_paths.yaml과 함께)
+├── Install_Python_Packages.bat          워크플로우용 추가 파이썬 패키지 (yt-dlp 등, 인터넷 필요)
 ├── Start_ComfyUI_L40S.bat               GPU 서버(L40S) 실행 스크립트 (SageAttention, 외부 접속, 오프라인 설정 포함)
 └── Start ComfyUI CPU.bat                GPU 없는 PC용 실행 스크립트 (--cpu)
 
@@ -47,8 +48,8 @@ git checkout -f -b main origin/main
 Setup_Folders.bat
 ```
 
-`Setup_Folders.bat`은 `custom_nodes\` 아래 폴더들(ShortsRemake, WanChain, 외부 노드 3개)을 `ComfyUI\custom_nodes\`에 정션(폴더 링크)으로 연결하고,
-노드가 쓰는 yt-dlp를 `python_embeded`에 설치한 뒤, `workflow\*.json`을 ComfyUI 사이드바용 폴더로 복사합니다. 이후 ComfyUI를 재시작하면 됩니다.
+`Setup_Folders.bat`은 `model\`, `input\`, `output\`, `temp\` 폴더를 만들고, `workflow\`와 `custom_nodes\` 아래 폴더들(ShortsRemake, WanChain, 외부 노드 3개)을
+`ComfyUI\` 안에 정션(폴더 링크)으로 연결합니다. 유튜브 다운로드 노드를 쓰려면 `Install_Python_Packages.bat`으로 yt-dlp를 추가 설치합니다(인터넷 필요). 이후 ComfyUI를 재시작하면 됩니다.
 
 ## 이 PC에서 수정 후 올리기
 
