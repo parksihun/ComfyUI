@@ -62,7 +62,7 @@ echo     workflow   %~dp0workflow\
 echo     temp       %~dp0temp\
 echo.
 echo   Next: Install_Python_Packages.bat (yt-dlp for the YouTube node; online only),
-        put the models in model\ (see workflow\README_Shorts_Remake.md), then start ComfyUI
+echo        put the models in model\ (see workflow\README_Shorts_Remake.md), then start ComfyUI
 echo   (Start_ComfyUI_L40S.bat on the server, Start ComfyUI CPU.bat here).
 echo   Restart ComfyUI if it was running so the nodes load.
 echo  ============================================================
