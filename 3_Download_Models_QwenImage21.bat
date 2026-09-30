@@ -48,7 +48,7 @@ if errorlevel 1 (
 )
 
 if not exist "%MODEL%\" (
-    echo  [91mmodel\ folder not found.[0m Run Setup_Folders.bat first.
+    echo  [91mmodel\ folder not found.[0m Run 1_Setup.bat first.
     pause
     exit /b 1
 )

@@ -53,7 +53,7 @@ if errorlevel 1 (
     exit /b 1
 )
 if not exist "%MODEL%\" (
-    echo  [91mmodel\ folder not found.[0m Run Setup_Folders.bat first.
+    echo  [91mmodel\ folder not found.[0m Run 1_Setup.bat first.
     pause
     exit /b 1
 )
@@ -86,8 +86,8 @@ call :DL loras\LOW SVI_v2_PRO_Wan2.2-I2V-A14B_LOW_lora_rank_128_fp16.safetensors
 echo.
 echo  [3/5] lightx2v 4-step LoRAs (HIGH v1030 / LOW 1022)
 echo.
-call :DL loras\HIGH Wan_2_2_I2V_A14B_HIGH_lightx2v_4step_lora_v1030_rank_64_bf16.safetensors ^
-    "%HF%/Kijai/WanVideo_comfy/resolve/main/LoRAs/Wan22_Lightx2v/Wan_2_2_I2V_A14B_HIGH_lightx2v_4step_lora_v1030_rank_64_bf16.safetensors"
+call :DL loras\HIGH Wan_2_I2V_A14B_HIGH_lightx2v_4step_lora_v1030_rank_64_bf16.safetensors ^
+    "%HF%/Kijai/WanVideo_comfy/resolve/main/LoRAs/Wan22_Lightx2v/Wan_2_I2V_A14B_HIGH_lightx2v_4step_lora_v1030_rank_64_bf16.safetensors"
 call :DL loras\LOW Wan2.2_i2v_A14b_low_noise_lora_rank64_lightx2v_4step_1022.safetensors ^
     "%HF%/lightx2v/Wan2.2-Distill-Loras/resolve/main/wan2.2_i2v_A14b_low_noise_lora_rank64_lightx2v_4step_1022.safetensors"
 

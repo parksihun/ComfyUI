@@ -31,7 +31,7 @@
 
 | 항목 | 내용 |
 |---|---|
-| 커스텀 노드 | `custom_nodes/ComfyUI-ShortsRemake` (이 저장소, `setup.bat`이 링크 + yt-dlp 설치), ComfyUI-QwenVL, VideoHelperSuite |
+| 커스텀 노드 | `custom_nodes/ComfyUI-ShortsRemake` (이 저장소, `1_Setup.bat`이 링크 + yt-dlp 설치), ComfyUI-QwenVL, VideoHelperSuite |
 | 1단계 모델 | Qwen3-VL-8B-Instruct (QwenVL 노드가 첫 실행 시 `models/LLM/`에 자동 다운로드, 약 16GB VRAM) |
 | 2단계 모델 | ComfyUI 공식 `image_qwen_image_edit_2511` 템플릿과 동일: `diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors`, `text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors`, `vae/qwen_image_vae.safetensors`, (선택) `loras/Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` |
 | 3단계 모델 | ComfyUI 공식 `video_wan_animate2` 템플릿과 동일 (Comfy-Org/Wan-Animate-2): `diffusion_models/wan_animate_2_int8_convrot.safetensors`, `loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors`, `text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors`, `clip_vision/clip_vision_h.safetensors`, `vae/Wan2_1_VAE_bf16.safetensors` |
@@ -42,11 +42,11 @@
 
 실행 중에 네트워크를 쓰는 곳은 QwenVL 노드의 모델 자동 다운로드뿐이므로, 아래를 미리 해 두면 완전히 오프라인으로 돕니다.
 
-1. 인터넷 되는 PC에서 `Download_Models_Shorts.bat` 실행. Wan Animate 2, Qwen-Image-Edit 2511, Qwen3-VL-8B-Instruct를 모두 받습니다.
+1. 인터넷 되는 PC에서 `2_Download_Models_Shorts.bat` 실행. Wan Animate 2, Qwen-Image-Edit 2511, Qwen3-VL-8B-Instruct를 모두 받습니다.
    - safetensors 파일 → `model\<폴더>\`
    - Qwen3-VL-8B-Instruct → `ComfyUI\models\LLM\Qwen\Qwen3-VL-8B-Instruct\` (config.json + safetensors 여러 개 + 토크나이저 파일)
 2. `model\`과 `ComfyUI\models\LLM\`을 서버의 같은 위치로 복사. 유튜브 영상(mp4)도 미리 받아 같이 복사.
-3. 서버에서는 평소대로 `Start_ComfyUI_L40S.bat`로 실행. 이 파일에 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`이 들어 있어 huggingface_hub/transformers가 인터넷을 시도하지 않습니다 (QwenVL 노드는 모델 폴더가 있으면 바로 로컬에서 읽습니다).
+3. 서버에서는 평소대로 `5_Start_ComfyUI_L40S.bat`로 실행. 이 파일에 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`이 들어 있어 huggingface_hub/transformers가 인터넷을 시도하지 않습니다 (QwenVL 노드는 모델 폴더가 있으면 바로 로컬에서 읽습니다).
 4. 워크플로우는 `1_Analyze_Prompts`(또는 `4_ALL_in_One`)부터 시작하고 `video_path`에 복사해 둔 mp4 경로를 넣습니다. `0_YouTube_Download_Trim`는 오프라인에서 쓰지 않습니다.
 
 ## 0단계: 0_YouTube_Download_Trim.json

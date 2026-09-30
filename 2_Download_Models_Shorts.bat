@@ -45,7 +45,7 @@ if errorlevel 1 (
 )
 
 if not exist "%MODEL%\" (
-    echo  [91mmodel\ folder not found.[0m Run Setup_Folders.bat first.
+    echo  [91mmodel\ folder not found.[0m Run 1_Setup.bat first.
     pause
     exit /b 1
 )
@@ -106,7 +106,7 @@ if %FAIL% GTR 0 (
 echo.
 echo   Restart ComfyUI so the new files show up in the dropdowns.
 echo   Offline server: copy model\ and ComfyUI\models\LLM\ over, then
-echo   start with Start_ComfyUI_L40S.bat as usual.
+echo   start with 5_Start_ComfyUI_L40S.bat as usual.
 echo  ============================================================
 echo.
 pause

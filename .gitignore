@@ -4,12 +4,12 @@
 *
 !.gitignore
 !README.md
-!setup.bat
-!Start ComfyUI CPU.bat
-!Download_Models_Shorts.bat
-!Download_Models_QwenImage21.bat
-!Download_Models_Wan22_SVI.bat
-!Start_ComfyUI_L40S.bat
+!1_Setup.bat
+!5_Start_ComfyUI_CPU.bat
+!2_Download_Models_Shorts.bat
+!3_Download_Models_QwenImage21.bat
+!4_Download_Models_Wan22_SVI.bat
+!5_Start_ComfyUI_L40S.bat
 !extra_model_paths.yaml
 
 !workflow/
