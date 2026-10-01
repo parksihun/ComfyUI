@@ -16,7 +16,7 @@ if not exist "ComfyUI\" (
 echo  [1/4] folders: model\ (+ subfolders), input\, output\, workflow\, temp\
 for %%D in (model model\checkpoints model\diffusion_models model\unet model\vae model\loras model\loras\HIGH model\loras\LOW ^
             model\clip model\clip_vision model\text_encoders model\controlnet model\embeddings model\upscale_models ^
-            model\style_models model\gligen model\hypernetworks model\photomaker model\configs model\latent_upscale_models model\LLM ^
+            model\style_models model\gligen model\hypernetworks model\photomaker model\configs model\latent_upscale_models model\LLM model\prompt_generator ^
             input output workflow temp) do (
     if not exist "%%D" mkdir "%%D"
 )

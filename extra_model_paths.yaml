@@ -29,6 +29,8 @@ forensic:
     configs: configs
     # LLM / vision-language models (QwenVL nodes). Lookup also still covers ComfyUI/models/LLM.
     LLM: LLM
+    # Qwen3_VQA (ComfyUI_Qwen3-VL-Instruct): one folder per model, e.g. prompt_generator/Qwen3-VL-4B-Instruct
+    prompt_generator: prompt_generator
 
 # ------------------------------------------------------------------
 # 기존 ComfyUI\models 폴더도 함께 쓰고 싶다면 아래 주석을 해제하세요.
