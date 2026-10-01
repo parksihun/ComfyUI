@@ -8,7 +8,7 @@
                                          -> Wan Animate 2 per segment -> clip_NN.mp4 -> final.mp4
   4_ALL_in_One.json                 stages 1 + 2 + 3 in one graph (video file + images in, final.mp4 out)
   5_I2V_6seg_from_prompts.json      prompts.json -> Wan 2.2 i2v 6-segment graph (fan-out node fills the prompts)
-  6_QwenChat_Test.json              small z-image turbo graph + notes for trying the Qwen Chat sidebar (no API file)
+  6_QwenChat_Test.json              Qwen Chat sidebar test: start image -> six section prompts written into the nodes (no API file)
 
 Stage 2 is flattened from the official video_wan_animate2.json template (loop nodes removed; per-segment
 execution comes from ShortsPromptsLoader list outputs). Stage 2 mirrors image_qwen_image_edit_2511.json.
@@ -908,53 +908,73 @@ def build_i2v_bridge():
 
 
 # --------------------------------------------------------------------------- #
-# 6: a small z-image turbo graph to try the Qwen Chat sidebar (ComfyUI-QwenVL-Mod) on
+# 6: Qwen Chat (ComfyUI-QwenVL-Mod sidebar) test: look at the start image, write the six section prompts.
+#    The graph is the prompt-input part of the Wan 2.2 SVI workflow (same node titles), nothing is executed.
 # --------------------------------------------------------------------------- #
-ZIT_UNET = "z_image_turbo_bf16.safetensors"
-ZIT_CLIP = "qwen_3_4b.safetensors"
-ZIT_VAE = "ae.safetensors"
+WAN_CLIP = "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+SVI_ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th"]
 
 # Qwen Chat sends every widget value of the open graph to the model, note text included, so the note inside the
 # workflow stays short and the test sentences live in README_QwenChat_Test.md.
 NOTE_CHAT = (
-    "## Qwen Chat 테스트\n\n"
+    "## Qwen Chat 테스트: 이미지 → 영상 프롬프트 6개\n\n"
     "1. 사이드바의 Qwen Chat을 열고 모델 선택\n"
-    "2. `분석할 이미지`에 이미지 올리기\n"
-    "3. 보낼 문장은 `workflow/README_QwenChat_Test.md`"
+    "2. `Load Image_1st`에 시작 이미지 올리기\n"
+    "3. 보낼 문장은 `workflow/README_QwenChat_Test.md`\n\n"
+    "Queue는 누르지 않습니다 (실행할 것이 없는 그래프입니다)."
 )
 
 README_CHAT_INTRO = (
-    "# Qwen Chat 테스트 (6_QwenChat_Test)\n\n"
-    "Qwen Chat(ComfyUI-QwenVL-Mod의 사이드바 채팅)이 **열려 있는 워크플로우를 읽고 고치고 실행**하는지 확인하는 작은 워크플로우입니다. "
-    "그래프는 z-image turbo로 이미지 한 장을 만드는 것이 전부입니다.\n\n"
+    "# Qwen Chat 테스트: 이미지 분석 → 영상 프롬프트 (6_QwenChat_Test)\n\n"
+    "Qwen Chat(ComfyUI-QwenVL-Mod의 사이드바 채팅)이 **시작 이미지를 보고 영상 구간 프롬프트 6개를 써서 노드에 넣는지** 확인하는 워크플로우입니다.\n\n"
+    "그래프는 Wan 2.2 SVI 워크플로우에서 프롬프트를 넣는 부분만 떼어 온 것입니다 (노드 이름이 같습니다).\n\n"
+    "| 노드 | 역할 |\n|---|---|\n"
+    "| `Load Image_1st` | 시작 이미지. Qwen Chat이 자동으로 봅니다 |\n"
+    "| `1st_CLIP Text Encode (Prompt)` ~ `6th_…` | 구간 1~6 프롬프트. Qwen Chat이 여기에 씁니다 |\n"
+    "| `CLIP Text Encode (Prompt)_Negative` | 네거티브 프롬프트 |\n\n"
+    "출력 노드가 없어서 Queue로 실행되는 것은 없습니다. 채팅만으로 테스트합니다.\n\n"
     "## 준비\n\n"
     "1. ComfyUI에서 `6_QwenChat_Test` 워크플로우를 엽니다\n"
     "2. 왼쪽 사이드바에서 말풍선 아이콘 **Qwen Chat**을 엽니다\n"
-    "3. 위쪽 Model에서 모델을 고릅니다 (GGUF는 mmproj 파일이 같은 폴더에 있어야 이미지를 봅니다)\n"
-    "4. `분석할 이미지` 노드에 테스트할 이미지를 올립니다\n\n"
+    "3. 위쪽 Model에서 모델을 고릅니다. **받아 둔 파일과 같은 이름**을 골라야 합니다 (예: `…Q8_0.gguf`만 받았으면 Q8_0)\n"
+    "4. 설정(⚙)에서 **Max tokens를 2048**로 올립니다 (기본 1024는 프롬프트 6개를 쓰다 끊길 수 있습니다)\n"
+    "5. `Load Image_1st` 노드에 시작 이미지를 올립니다\n\n"
+    "## 받아 둔 모델이 쓰이는지 확인하는 법\n\n"
+    "첫 문장을 보낸 뒤 **ComfyUI 콘솔 창**을 봅니다.\n\n"
+    "| 콘솔에 나오는 줄 | 뜻 |\n|---|---|\n"
+    "| `[QwenVL] Using model from alternate LLM path: …\\model\\LLM\\GGUF\\…` | `model\\LLM`에 받아 둔 파일을 찾았음 |\n"
+    "| `[QwenVL] Using mmproj from alternate LLM path: …mmproj-BF16.gguf` | 이미지용 mmproj도 찾았음 |\n"
+    "| `[QwenVL] Loading GGUF: <파일명> (device=cuda, gpu_layers=-1, ctx=…)` | 그 파일을 GPU에 올리는 중. `device=cpu`면 GPU를 못 쓰는 것 |\n"
+    "| 다운로드 진행 표시, `hf_hub_download failed` | 파일을 못 찾아 새로 받으려는 것. 고른 모델 이름과 받아 둔 파일 이름이 다릅니다 |\n\n"
+    "그 밖에 답이 온 뒤 VRAM 사용량이 모델 크기만큼(Q8_0 9B는 약 11GB) 늘어 있으면 올라간 것입니다. "
+    "`ComfyUI\\models\\LLM\\GGUF` 아래에 새 파일이 생기지 않았는지도 확인하면 됩니다.\n\n"
     "## Qwen Chat이 보는 것과 할 수 있는 것\n\n"
-    "- 열려 있는 워크플로우의 모든 노드와 위젯 값 (노드 200개까지). 메모 노드의 글도 같이 가므로 이 워크플로우의 메모는 짧게 두었습니다\n"
-    "- `Load Image` 노드에 들어 있는 이미지 (최대 3장, 자동으로 첨부). 채팅창의 첨부 버튼으로 올린 이미지가 있으면 그것만 봅니다\n"
-    "- 할 수 있는 것: 위젯 값 바꾸기, 노드 bypass/켜기, Queue 실행. 노드를 추가하거나 선을 연결하지는 못합니다\n"
-    "- Queue를 실행하기 직전에 채팅 모델은 VRAM에서 자동으로 내려갑니다. 다음 대화 때 다시 올라오므로 그때 첫 답이 느립니다\n"
+    "- 열려 있는 워크플로우의 모든 노드와 위젯 값 (노드 200개까지, 메모 노드의 글 포함)\n"
+    "- `Load Image` 노드에 들어 있는 이미지 (최대 3장, 자동 첨부). 채팅창의 첨부 버튼으로 올린 이미지가 있으면 그것만 봅니다\n"
+    "- 할 수 있는 것: 위젯 값 바꾸기, 노드 bypass/켜기, Queue 실행. 답 아래 Applied 목록이 실제로 바뀐 것입니다\n"
     "- 대화 기록이 쌓이면 이전 지시가 섞이니, 테스트를 바꿀 때는 채팅창의 Clear로 지우세요\n\n"
 )
 
 README_CHAT_TESTS = (
     "## 순서대로 보내 볼 문장\n\n"
-    "**1. 대화** (모델이 뜨는지)\n```\n안녕, 이 워크플로우는 뭘 하는 거야?\n```\n\n"
-    "**2. 이미지 분석** (`분석할 이미지`를 실제로 보는지)\n```\n이 이미지를 한국어로 자세히 설명해줘. 인물, 옷, 장소, 조명, 카메라 구도.\n```\n\n"
-    "**3. 값 바꾸기** (적용되면 답 아래에 Applied 목록이 붙고 노드 값이 바뀝니다)\n"
-    "```\nKSampler의 steps를 6으로 바꿔줘\n```\n```\n이미지 크기를 720x1280으로 바꿔줘\n```\n\n"
-    "**4. bypass**\n```\n이미지 확대 노드를 bypass 해줘\n```\n```\n이미지 확대 노드를 다시 켜줘\n```\n\n"
-    "**5. 프롬프트 작성 + 실행** (`이미지 프롬프트`에 영어 프롬프트를 쓰고 Queue까지)\n"
-    "```\n해변을 걷는 강아지 사진을 생성해줘\n```\n\n"
-    "**6. 이미지를 보고 프롬프트 작성** (이미지 → 글 → 위젯)\n"
-    "```\n분석할 이미지와 같은 분위기의 이미지를 만들 프롬프트를 이미지 프롬프트 노드에 써줘. 실행은 하지 마.\n```\n\n"
+    "**1. 이미지 분석** (이미지를 실제로 보는지)\n"
+    "```\n시작 이미지를 한국어로 자세히 설명해줘. 인물, 옷, 장소, 조명, 카메라 구도. 노드는 건드리지 마.\n```\n\n"
+    "**2. 영상 프롬프트 1개** (답으로만 받기)\n"
+    "```\n이 이미지를 첫 프레임으로 하는 5초 영상의 프롬프트를 영어로 써줘. 인물의 움직임과 카메라 움직임을 넣고, 노드는 건드리지 마.\n```\n\n"
+    "**3. 구간 프롬프트 6개를 노드에 쓰기** (핵심 테스트)\n"
+    "```\n이 이미지를 첫 프레임으로 이어지는 영상을 6구간으로 나눠줘. 각 구간은 약 5초이고 앞 구간이 끝난 자세에서 이어져야 해. "
+    "구간마다 영어 프롬프트(40~70단어, 인물 동작과 카메라 움직임)를 써서 1st~6th CLIP Text Encode (Prompt) 노드의 text에 순서대로 넣어줘. "
+    "네거티브 노드는 그대로 두고, 실행(queue)은 하지 마.\n```\n\n"
+    "**4. 연출 방향 주기**\n"
+    "```\n창밖을 보다가 돌아서 카메라 쪽으로 걸어오며 미소 짓는 내용으로 6구간을 다시 써서 같은 노드에 넣어줘. 실행은 하지 마.\n```\n\n"
+    "**5. 한 구간만 고치기**\n"
+    "```\n3rd 구간만 더 천천히 움직이고 카메라가 가까이 다가가게 고쳐줘. 다른 구간은 그대로 둬.\n```\n\n"
     "**확인할 것**\n"
-    "- 답이 한국어로 오는지, 없는 노드나 위젯을 지어내지 않는지 (Rejected 목록)\n"
-    "- 5번에서 Queue가 실제로 들어가고 `결과 이미지`가 나오는지\n"
-    "- 답이 중간에 끊기면 설정(⚙)의 Max tokens를 올립니다\n\n"
+    "- 3번 답 아래 Applied 목록에 1st~6th 여섯 개가 모두 있는지 (Rejected가 있으면 노드나 위젯 이름을 잘못 짚은 것)\n"
+    "- 프롬프트에 이미지 속 인물, 옷, 장소가 반영되어 있는지\n"
+    "- 구간이 서로 이어지는지, 같은 문장의 반복이 아닌지\n"
+    "- 5번에서 3rd만 바뀌는지\n\n"
+    "채워진 프롬프트는 SVI 워크플로우의 같은 이름 노드에 그대로 붙여 넣을 수 있습니다.\n\n"
 )
 
 
@@ -965,11 +985,10 @@ def _readme_chat_scenario():
     spec.loader.exec_module(webapp)
     instruction = webapp.SCENARIO_CHAT.format(n=6, s=5.0, direction="")
     return (
-        "## 7. 웹 프로그램(tools/video_webapp)의 시나리오 지시문\n\n"
-        "웹 프로그램은 2단계에서 아래 지시문과 이미지를 Qwen Chat에 보냅니다. 여기서 같은 모델로 미리 보내 보면 "
-        "그 모델이 형식을 지키는지 알 수 있습니다.\n\n"
-        "1. 설정(⚙)에서 **Max tokens를 2048**로 올립니다 (기본 1024는 6구간을 쓰기에 모자랍니다)\n"
-        "2. Clear로 대화를 지우고, 아래 지시문을 그대로 붙여 보냅니다\n\n"
+        "## 6. 웹 프로그램(tools/video_webapp)의 시나리오 지시문\n\n"
+        "웹 프로그램은 2단계에서 아래 지시문과 이미지를 Qwen Chat에 보내고, 답을 구간 6개로 읽습니다. "
+        "여기서 같은 모델로 미리 보내 보면 그 모델이 형식을 지키는지 알 수 있습니다.\n\n"
+        "Clear로 대화를 지우고, 아래 지시문을 그대로 붙여 보냅니다.\n\n"
         "```\n" + instruction + "\n```\n\n"
         "**기대하는 답**: `SUMMARY_KO:`, `COMMON:`, `PART 1:` … `PART 6:`, `KO 1:` … `KO 6:` 로 시작하는 줄들. "
         "이렇게 나오면 웹 프로그램에서 그대로 6구간으로 읽힙니다.\n\n"
@@ -983,42 +1002,24 @@ def _readme_chat_scenario():
 
 def build_qwen_chat_test():
     x0, y0 = 0, 0
+    clip_links = list(range(500, 507))
     nodes = [
-        note(140, [x0 - 420, y0], [380, 220], NOTE_CHAT, "사용법 (6번 Qwen Chat 테스트)", ("#232", "#353")),
-        node(100, "UNETLoader", [x0, y0], [380, 82], [], [outp("MODEL", "MODEL", [500])], [ZIT_UNET, "default"]),
-        node(101, "CLIPLoader", [x0, y0 + 130], [380, 106], [], [outp("CLIP", "CLIP", [502])], [ZIT_CLIP, "lumina2", "default"]),
-        node(102, "VAELoader", [x0, y0 + 290], [380, 58], [], [outp("VAE", "VAE", [508])], [ZIT_VAE]),
-        node(105, "EmptySD3LatentImage", [x0, y0 + 400], [380, 106], [], [outp("LATENT", "LATENT", [506])], [960, 1424, 1],
-             title="이미지 크기"),
-        node(103, "CLIPTextEncode", [x0 + 430, y0], [460, 260], [inp("clip", "CLIP", 502)],
-             [outp("CONDITIONING", "CONDITIONING", [503, 504])],
-             ["A young woman standing in a bright cafe by the window, full body, natural daylight, photorealistic"],
-             title="이미지 프롬프트"),
-        node(104, "ConditioningZeroOut", [x0 + 430, y0 + 310], [300, 26], [inp("conditioning", "CONDITIONING", 504)],
-             [outp("CONDITIONING", "CONDITIONING", [505])], None),
-        node(106, "ModelSamplingAuraFlow", [x0 + 430, y0 + 390], [300, 82], [inp("model", "MODEL", 500)],
-             [outp("MODEL", "MODEL", [501])], [3, "flow"]),
-        node(107, "KSampler", [x0 + 940, y0], [320, 262],
-             [inp("model", "MODEL", 501), inp("positive", "CONDITIONING", 503), inp("negative", "CONDITIONING", 505),
-              inp("latent_image", "LATENT", 506)],
-             [outp("LATENT", "LATENT", [507])], [0, "randomize", 8, 1, "res_multistep", "simple", 1]),
-        node(108, "VAEDecode", [x0 + 940, y0 + 310], [320, 46], [inp("samples", "LATENT", 507), inp("vae", "VAE", 508)],
-             [outp("IMAGE", "IMAGE", [509])], None),
-        node(110, "ImageScaleBy", [x0 + 940, y0 + 410], [320, 82], [inp("image", "IMAGE", 509)],
-             [outp("IMAGE", "IMAGE", [510])], ["lanczos", 1.5], title="이미지 확대 (bypass 테스트용)"),
-        node(109, "SaveImage", [x0 + 940, y0 + 550], [320, 480], [inp("images", "IMAGE", 510)], [], ["qwen_chat_test/zimage"],
-             title="결과 이미지"),
-        # not wired to anything: Qwen Chat reads the image from the widget, and a missing file cannot block the Queue
-        node(130, "LoadImage", [x0, y0 + 610], [380, 420], [], [outp("IMAGE", "IMAGE", None), outp("MASK", "MASK", None)],
-             ["example.png", "image"], title="분석할 이미지 (Qwen Chat이 자동으로 봅니다)"),
+        note(140, [x0 - 420, y0], [380, 240], NOTE_CHAT, "사용법 (6번 Qwen Chat 테스트)", ("#232", "#353")),
+        # not wired to anything: Qwen Chat reads the image from the widget
+        node(130, "LoadImage", [x0 - 420, y0 + 300], [380, 460], [], [outp("IMAGE", "IMAGE", None), outp("MASK", "MASK", None)],
+             ["example.png", "image"], title="Load Image_1st"),
+        node(101, "CLIPLoader", [x0 - 420, y0 + 820], [380, 106], [], [outp("CLIP", "CLIP", clip_links)],
+             [WAN_CLIP, "wan", "default"], title="Load CLIP"),
     ]
-    L = {l[0]: l for l in [
-        [500, 100, 0, 106, 0, "MODEL"], [501, 106, 0, 107, 0, "MODEL"], [502, 101, 0, 103, 0, "CLIP"],
-        [503, 103, 0, 107, 1, "CONDITIONING"], [504, 103, 0, 104, 0, "CONDITIONING"], [505, 104, 0, 107, 2, "CONDITIONING"],
-        [506, 105, 0, 107, 3, "LATENT"], [507, 107, 0, 108, 0, "LATENT"], [508, 102, 0, 108, 1, "VAE"],
-        [509, 108, 0, 110, 0, "IMAGE"], [510, 110, 0, 109, 0, "IMAGE"],
-    ]}
-    wf = assemble("shorts-6-qwen-chat-test", [(nodes, L)], ds={"scale": 0.55, "offset": [680, 80]})
+    for i, name in enumerate(SVI_ORDINALS):
+        nodes.append(node(111 + i, "CLIPTextEncode", [x0 + (i % 3) * 470, y0 + (i // 3) * 330], [440, 280],
+                          [inp("clip", "CLIP", clip_links[i])], [outp("CONDITIONING", "CONDITIONING", None)], [""],
+                          title=f"{name}_CLIP Text Encode (Prompt)"))
+    nodes.append(node(117, "CLIPTextEncode", [x0, y0 + 660], [910, 160], [inp("clip", "CLIP", clip_links[6])],
+                      [outp("CONDITIONING", "CONDITIONING", None)], [DEFAULT_NEGATIVE],
+                      title="CLIP Text Encode (Prompt)_Negative"))
+    L = {lid: [lid, 101, 0, 111 + i, 0, "CLIP"] for i, lid in enumerate(clip_links)}
+    wf = assemble("shorts-6-qwen-chat-test", [(nodes, L)], ds={"scale": 0.7, "offset": [520, 80]})
     write_all(wf, "6_QwenChat_Test.json", api=False)    # the chat works on the open graph in the UI
     readme = os.path.join(OUT_DIRS[0], "README_QwenChat_Test.md")
     with io.open(readme, "w", encoding="utf-8") as f:

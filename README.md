@@ -13,7 +13,7 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 │   ├── 3_Replace_Person_WanAnimate2.json      참조 이미지로 인물 교체 → clip_NN.mp4 → final.mp4
 │   ├── 4_ALL_in_One.json                      올인원 (1→2→3): 영상 파일 + 사진 → 인물 교체 영상
 │   ├── 5_I2V_6seg_from_prompts.json           빠른 대안: 프롬프트 + 참조 이미지 → Wan 2.2 I2V 6구간 30초
-│   ├── 6_QwenChat_Test.json                   Qwen Chat(QwenVL-Mod 사이드바) 테스트용 작은 z-image 그래프, 보낼 문장은 README_QwenChat_Test.md
+│   ├── 6_QwenChat_Test.json                   Qwen Chat(QwenVL-Mod 사이드바) 테스트: 시작 이미지 → 구간 프롬프트 6개, 보낼 문장은 README_QwenChat_Test.md
 │   ├── video_wan22_14b_i2v_6seg_30s.json      5번의 원본 (수동 프롬프트 6구간)
 │   ├── image_qwen_image_2_1_image_edit.json   Qwen-Image 2.1 이미지 편집 (옷 갈아입히기 등, ComfyUI 0.37 이상)
 │   ├── Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5.json  Wan 2.2 I2V + SVI 장편 연결 (Kenpechi, 추가 커스텀 노드 필요)
