@@ -21,10 +21,10 @@ if not exist "python_embeded\python.exe" (
 )
 
 echo  [1/2] ComfyUI-ShortsRemake (yt-dlp)
-python_embeded\python.exe -m pip install -r "custom_nodes\ComfyUI-ShortsRemakeequirements.txt"
+python_embeded\python.exe -m pip install -r "custom_nodes\ComfyUI-ShortsRemake\requirements.txt"
 
 echo  [2/2] ComfyUI-Frame-Interpolation (RIFE VFI)
-python_embeded\python.exe -m pip install -r "custom_nodes\ComfyUI-Frame-Interpolationequirements-no-cupy.txt"
+python_embeded\python.exe -m pip install -r "custom_nodes\ComfyUI-Frame-Interpolation\requirements-no-cupy.txt"
 
 echo.
 echo  done. Restart ComfyUI if it was running.
