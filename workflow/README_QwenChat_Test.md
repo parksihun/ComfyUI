@@ -52,7 +52,12 @@ Qwen Chat(ComfyUI-QwenVL-Mod의 사이드바 채팅)이 **시작 이미지를 �
 이 이미지를 첫 프레임으로 하는 5초 영상의 프롬프트를 영어로 써줘. 인물의 움직임과 카메라 움직임을 넣고, 노드는 건드리지 마.
 ```
 
-**3. 구간 프롬프트 6개를 노드에 쓰기** (핵심 테스트)
+**3. 구간 프롬프트 6개를 노드에 쓰기** (핵심 테스트, 자세한 요청)
+```
+이 이미지를 첫 프레임으로 이어지는 영상을 6구간(구간당 약 5초)으로 나눠줘. 앞 구간이 끝난 자세에서 다음 구간이 시작해야 해. 구간마다 영어로 90~130단어의 한 문단을 쓰고, 문단에는 순서대로 (1) 시작 자세와 화면 속 위치, (2) 동작을 시간 순서로 2~3단계(손, 고개, 시선, 체중 이동, 속도), (3) 표정과 그 변화, (4) 머리카락·옷·배경·빛의 움직임, (5) 카메라의 샷 크기·앵글·움직임과 속도, (6) 끝 자세를 넣어줘. 구간마다 다른 동작이어야 하고 같은 문장을 반복하지 마. 완성한 문단을 1st~6th CLIP Text Encode (Prompt) 노드의 text에 순서대로 넣어줘. 답변 message에는 프롬프트를 다시 적지 말고 한국어로 한 줄 요약만 써. 네거티브 노드는 그대로 두고, 실행(queue)은 하지 마.
+```
+
+**3-1. 같은 것을 짧게 요청** (분량 비교용)
 ```
 이 이미지를 첫 프레임으로 이어지는 영상을 6구간으로 나눠줘. 각 구간은 약 5초이고 앞 구간이 끝난 자세에서 이어져야 해. 구간마다 영어 프롬프트(40~70단어, 인물 동작과 카메라 움직임)를 써서 1st~6th CLIP Text Encode (Prompt) 노드의 text에 순서대로 넣어줘. 네거티브 노드는 그대로 두고, 실행(queue)은 하지 마.
 ```
@@ -75,9 +80,27 @@ Qwen Chat(ComfyUI-QwenVL-Mod의 사이드바 채팅)이 **시작 이미지를 �
 
 채워진 프롬프트는 SVI 워크플로우의 같은 이름 노드에 그대로 붙여 넣을 수 있습니다.
 
+## 글의 분량은 요청 문장이 정합니다
+
+모델은 요청받은 만큼만 씁니다. 한 줄로 부탁하면 짧게, 구간마다 무엇을 넣을지 적어 주면 길게 나옵니다. 이 워크플로우와 같은 이미지, 같은 모델(Qwen3.5-9B GGUF Q8)로 잰 결과입니다.
+
+| 보낸 문장 | 구간당 영어 단어 수 |
+|---|---|
+| 3-1번 (40~70단어로 요청) | 41~46 |
+| 3번 (90~130단어 + 넣을 내용 6가지) | 115~130 |
+
+두 경우 모두 1st~6th 노드 여섯 개에 영어로 정확히 들어갔습니다. `video_dasiwa-wan22` 워크플로우의 Qwen3_VQA 노드에 긴 지시문이 들어 있는 것도 같은 이유입니다: 그 글은 모델에게 주는 작업 지시서이고, 지시가 자세할수록 결과도 자세해집니다.
+
+그 밖에 분량에 영향을 주는 것:
+- **Max tokens**: 답이 끊기면 올립니다. 3번은 2048이면 충분했습니다 (답변 message에 프롬프트를 다시 적지 말라고 한 이유)
+- **temperature**: 기본 0.2는 표현이 단조롭습니다. 0.6~0.8로 올리면 어휘가 다양해집니다
+- **문장에 넣는 요구**: 더 풍부하게 하려면 단어 수를 올리거나 조명, 질감, 분위기, 배경 움직임 같은 항목을 더 적습니다
+
+채팅 없이 Queue로 같은 일을 하려면 `7_Qwen_Image_to_VideoPrompts` 워크플로우를 쓰면 됩니다 (같은 GGUF 모델을 직접 부르고 지시문이 노드에 들어 있습니다).
+
 ## 6. 웹 프로그램(tools/video_webapp)의 시나리오 지시문
 
-웹 프로그램은 2단계에서 아래 지시문과 이미지를 Qwen Chat에 보내고, 답을 구간 6개로 읽습니다. 여기서 같은 모델로 미리 보내 보면 그 모델이 형식을 지키는지 알 수 있습니다.
+웹 프로그램에서 분석 방법을 `Qwen Chat`으로 고르면 아래 지시문과 이미지를 Qwen Chat에 보내고, 답을 구간 6개로 읽습니다 (기본값인 `Qwen GGUF 직접 호출`은 채팅을 거치지 않습니다). 여기서 같은 모델로 미리 보내 보면 그 모델이 형식을 지키는지 알 수 있습니다.
 
 Clear로 대화를 지우고, 아래 지시문을 그대로 붙여 보냅니다.
 
@@ -87,7 +110,7 @@ The image is the FIRST FRAME of a video. Write a 6-part scenario that continues 
 Write "message" as plain text lines in exactly this layout (labels in capitals, one item per line, no markdown):
 SUMMARY_KO: Korean, 1-2 sentences describing the whole scenario
 COMMON: English, 20-40 words: the look, outfit, location, lighting and visual style that stay the same
-PART 1: English, 40-70 words, natural sentences: what happens from the start to the end of this shot, body motion, expression, camera framing and movement
+PART 1: ENGLISH ONLY, 60-100 words, natural sentences: what happens from the start to the end of this shot, body motion, expression, camera framing and movement
 KO 1: Korean, one sentence describing part 1
 PART 2: ...
 KO 2: ...

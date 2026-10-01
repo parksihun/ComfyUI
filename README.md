@@ -14,13 +14,14 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 │   ├── 4_ALL_in_One.json                      올인원 (1→2→3): 영상 파일 + 사진 → 인물 교체 영상
 │   ├── 5_I2V_6seg_from_prompts.json           빠른 대안: 프롬프트 + 참조 이미지 → Wan 2.2 I2V 6구간 30초
 │   ├── 6_QwenChat_Test.json                   Qwen Chat(QwenVL-Mod 사이드바) 테스트: 시작 이미지 → 구간 프롬프트 6개, 보낼 문장은 README_QwenChat_Test.md
+│   ├── 7_Qwen_Image_to_VideoPrompts.json      시작 이미지 → QwenVL-Mod GGUF 모델 직접 호출 → 자세한 6구간 영상 프롬프트 (Queue 실행)
 │   ├── video_wan22_14b_i2v_6seg_30s.json      5번의 원본 (수동 프롬프트 6구간)
 │   ├── image_qwen_image_2_1_image_edit.json   Qwen-Image 2.1 이미지 편집 (옷 갈아입히기 등, ComfyUI 0.37 이상)
 │   ├── Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5.json  Wan 2.2 I2V + SVI 장편 연결 (Kenpechi, 추가 커스텀 노드 필요)
 │   ├── YouTube_Video_Analysis_GPU.json / _CPU.json  영상 내용 요약 (단일 실행)
 │   └── README_Shorts_Remake.md
 │   └── wan22_14b_flf_chain.json               Wan 2.2 첫/끝 프레임 구간 연결 (WanChain 노드 사용)
-├── custom_nodes/ComfyUI-ShortsRemake/   위 워크플로우가 쓰는 커스텀 노드 10개 (yt-dlp 필요, Install_Python_Packages.bat으로 설치)
+├── custom_nodes/ComfyUI-ShortsRemake/   위 워크플로우가 쓰는 커스텀 노드 14개 (yt-dlp 필요, Install_Python_Packages.bat으로 설치)
 ├── custom_nodes/ComfyUI-WanChain/       Wan 2.2 FLF 구간 연결 보조 노드 2개 (Load Image Optional, Collect Segments)
 ├── custom_nodes/ComfyUI-Wan22FMLF/      (외부) Wan Advanced I2V - SVI 워크플로우용
 ├── custom_nodes/ComfyUI-Frame-Interpolation/ (외부) RIFE VFI + ckpts/rife/rife49.pth

@@ -1,0 +1,26 @@
+{
+ "130": {
+  "inputs": {"image": "example.png"},
+  "class_type": "LoadImage",
+  "_meta": {"title": "시작 이미지"}
+ },
+ "111": {
+  "inputs": {
+   "model_name": "",
+   "system_prompt": "You are a helpful vision-language assistant. Answer directly with the final answer only. No <think> and no reasoning.",
+   "prompt": "",
+   "max_tokens": 3072,
+   "temperature": 0.6,
+   "seed": 1,
+   "keep_model_loaded": false,
+   "image": ["130", 0]
+  },
+  "class_type": "ShortsQwenGGUFVision",
+  "_meta": {"title": "Qwen GGUF 이미지 분석 (시나리오 작성)"}
+ },
+ "114": {
+  "inputs": {"source": ["111", 0]},
+  "class_type": "PreviewAny",
+  "_meta": {"title": "모델 답변"}
+ }
+}

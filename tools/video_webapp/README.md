@@ -25,9 +25,14 @@ ComfyUI와 따로 도는 작은 웹 서버입니다. 직접 생성하지는 않�
 
 | 방법 | 쓰는 것 | 비고 |
 |---|---|---|
-| Qwen Chat | ComfyUI-QwenVL-Mod의 채팅 엔드포인트 (`/qwenvl/chat`) | 모델 목록은 Qwen Chat과 같습니다. Mod가 없으면 선택할 수 없습니다 |
+| Qwen GGUF 직접 호출 (기본) | `Shorts Qwen GGUF Vision` 노드 (`templates/scenario_gguf.api.json`) | QwenVL-Mod의 GGUF 모델을 프리셋·채팅 규약 없이 부릅니다. 받아 둔 모델이 목록 맨 위에 옵니다. Mod와 ShortsRemake 노드가 필요합니다 |
+| Qwen Chat | ComfyUI-QwenVL-Mod의 채팅 엔드포인트 (`/qwenvl/chat`) | 같은 모델이지만 채팅은 워크플로우 조수 역할이라 글이 짧게 나옵니다 |
 | QwenVL 노드 | 원본 ComfyUI-QwenVL 노드 (`templates/scenario_qwenvl.api.json`) | 기본 Qwen3-VL-8B-Instruct |
 | 직접 작성 | 모델 없음 | 빈 칸 6개를 만들어 직접 씁니다 |
+
+`프롬프트 분량`이 `자세히`면 구간마다 시작 자세, 동작 순서, 표정, 옷·머리 움직임, 카메라, 끝 자세를 쓰게 하는 지시문(구간당 90~130단어)을,
+`보통`이면 짧은 지시문(40~70단어)을 씁니다. Qwen Chat에는 적용되지 않습니다.
+같은 이미지와 모델(Qwen3.5-9B GGUF Q8)로 재 본 구간당 단어 수: Qwen Chat 약 20(영어 대신 한국어로 나와서 이후 지시문에 영어 지정을 추가함, 추가 후는 재지 않음), 직접 호출 + 보통 약 30, 직접 호출 + 자세히 약 85.
 
 모델이 형식을 지키지 않아 구간을 못 읽으면 경고와 함께 답변 원문을 보여 줍니다. 원문을 보고 빈 칸을 채우거나 다시 생성하세요.
 

@@ -17,6 +17,7 @@ Nodes
 - Shorts Segments Collect : lazy seg_1..seg_8 IMAGE inputs; only the first `count` segments execute, frames concatenated
 - Shorts Free VRAM        : pass-through that unloads every QwenVL model instance (+ ComfyUI models) between stages
 - Shorts Size From Image  : width/height (multiples of 16) in the aspect ratio of an image, long side = max_side
+- Shorts Qwen GGUF Vision : free-form question about an image to a ComfyUI-QwenVL-Mod GGUF model (no preset added)
 
 List mechanics: outputs flagged in OUTPUT_IS_LIST make every downstream node run once
 per segment, so a normal single-clip generation graph becomes a per-segment loop.
@@ -1506,6 +1507,94 @@ class ShortsSizeFromImage:
         return (W, H, image, info)
 
 
+# --------------------------------------------------------------------------- #
+# 10. free-form question to a GGUF vision model of ComfyUI-QwenVL-Mod
+# --------------------------------------------------------------------------- #
+QWEN_GGUF_MISSING = "(ComfyUI-QwenVL-Mod not loaded)"
+QWEN_GGUF_SYSTEM = "You are a helpful vision-language assistant. Answer directly with the final answer only. No <think> and no reasoning."
+_QWEN_GGUF_LIST = (0.0, [])
+
+
+def _qwen_gguf_module():
+    """ComfyUI-QwenVL-Mod registers its files as top-level modules; its chat service finds them the same way."""
+    import sys
+    return sys.modules.get("AILab_QwenVL_GGUF")
+
+
+def _qwen_gguf_models() -> list[str]:
+    """Vision-capable catalog entries, the ones whose file is already on disk first (so the default works offline)."""
+    global _QWEN_GGUF_LIST
+    stamp, cached = _QWEN_GGUF_LIST
+    if cached and time.time() - stamp < 30:
+        return cached
+    mod = _qwen_gguf_module()
+    if mod is None:
+        return [QWEN_GGUF_MISSING]
+    models = (mod.GGUF_VL_CATALOG.get("models") or {})
+    present, absent = [], []
+    for name in sorted(k for k, e in models.items() if (e or {}).get("mmproj_filename")):
+        r = mod._resolve_model_entry(name)
+        filename = Path(r.model_filename)
+        default = mod._resolve_base_dir(mod.GGUF_VL_CATALOG.get("base_dir") or "LLM/GGUF") / mod._safe_dirname(r.author or "") / r.repo_dirname / filename.name
+        on_disk = filename.exists() if filename.is_absolute() else (
+            default.exists() or mod.find_in_llm_paths(r.model_filename, r.author or "", r.repo_dirname or "") is not None)
+        (present if on_disk else absent).append(name)
+    _QWEN_GGUF_LIST = (time.time(), (present + absent) or [QWEN_GGUF_MISSING])
+    return _QWEN_GGUF_LIST[1]
+
+
+class ShortsQwenGGUFVision:
+    """Sends system prompt + prompt (+ image) to a GGUF model from ComfyUI-QwenVL-Mod's catalog and returns the raw
+    answer. Unlike that pack's own nodes no preset template is appended, and unlike its chat endpoint the model
+    is not put into the workflow-assistant role, so a long instruction gets a long answer."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model_name": (_qwen_gguf_models(), {"tooltip": "GGUF vision models of ComfyUI-QwenVL-Mod. Files already downloaded are listed first."}),
+                "system_prompt": ("STRING", {"default": QWEN_GGUF_SYSTEM, "multiline": True}),
+                "prompt": ("STRING", {"default": "", "multiline": True}),
+                "max_tokens": ("INT", {"default": 3072, "min": 64, "max": 8192}),
+                "temperature": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 2.0, "step": 0.05}),
+                "seed": ("INT", {"default": 1, "min": 1, "max": 4294967295}),
+                "keep_model_loaded": ("BOOLEAN", {"default": False}),
+            },
+            "optional": {"image": ("IMAGE",)},
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("response",)
+    FUNCTION = "ask"
+    CATEGORY = "ShortsRemake"
+
+    def __init__(self):
+        self.base = None
+
+    def ask(self, model_name, system_prompt, prompt, max_tokens, temperature, seed, keep_model_loaded, image=None):
+        mod = _qwen_gguf_module()
+        if mod is None:
+            raise RuntimeError("[ShortsRemake] ComfyUI-QwenVL-Mod is not installed (its GGUF loader is used by this node)")
+        if self.base is None:
+            self.base = mod.QwenVLGGUFBase()
+        self.base._load_model(model_name=model_name, device="auto", ctx=None, n_batch=None, gpu_layers=None,
+                              image_max_tokens=None, top_k=None, pool_size=None)
+        images = []
+        if image is not None and self.base.chat_handler is not None:
+            b64 = mod._tensor_to_base64_png(image[0] if image.ndim == 4 else image)
+            if b64:
+                images.append(b64)
+        user = ("/no_think\n" + prompt) if getattr(self.base, "is_qwen35", False) else prompt
+        try:
+            text = self.base._invoke(system_prompt=system_prompt, user_prompt=user, images_b64=images,
+                                     max_tokens=max_tokens, temperature=temperature, top_p=0.9,
+                                     repetition_penalty=1.05, seed=seed, model_name=model_name)
+        finally:
+            if not keep_model_loaded:
+                self.base.clear()
+        return (text,)
+
+
 NODE_CLASS_MAPPINGS = {
     "ShortsVideoSegments": ShortsVideoSegments,
     "ShortsPromptsCollector": ShortsPromptsCollector,
@@ -1520,6 +1609,7 @@ NODE_CLASS_MAPPINGS = {
     "ShortsSegmentsCollect": ShortsSegmentsCollect,
     "ShortsFreeVRAM": ShortsFreeVRAM,
     "ShortsSizeFromImage": ShortsSizeFromImage,
+    "ShortsQwenGGUFVision": ShortsQwenGGUFVision,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsVideoSegments": "Shorts Video Segments",
@@ -1535,4 +1625,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ShortsSegmentsCollect": "Shorts Segments Collect (lazy, stops after last segment)",
     "ShortsFreeVRAM": "Shorts Free VRAM (unload QwenVL + models)",
     "ShortsSizeFromImage": "Shorts Size From Image (width/height by aspect)",
+    "ShortsQwenGGUFVision": "Shorts Qwen GGUF Vision (QwenVL-Mod model, free prompt)",
 }

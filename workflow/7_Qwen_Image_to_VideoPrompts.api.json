@@ -1,0 +1,42 @@
+{
+ "130": {
+  "inputs": {
+   "image": "example.png"
+  },
+  "class_type": "LoadImage",
+  "_meta": {
+   "title": "시작 이미지"
+  }
+ },
+ "111": {
+  "inputs": {
+   "model_name": "Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-Q8_0.gguf",
+   "system_prompt": "You are a helpful vision-language assistant. Answer directly with the final answer only. No <think> and no reasoning.",
+   "prompt": "The image is the FIRST FRAME of a video. First study it closely: who or what is in it, appearance, clothing, pose, expression, location, background objects, lighting, colours, camera distance and angle.\nThen write a 6-part scenario that continues from this frame. Each part is one continuous shot of about 5 seconds and starts exactly in the pose and framing where the previous part ended. Keep the same subject, outfit, location and lighting unless the direction says otherwise. No text, captions or logos in the scene.\nEvery part is ONE paragraph of 90-130 English words in natural present-tense sentences and covers, in this order:\n1) the starting pose and where the subject is in the frame;\n2) the action as two or three beats in time order (what moves first, what follows, how it ends), with hands, head, gaze, weight shift and pace;\n3) the facial expression and how it changes;\n4) secondary motion: hair, clothing, objects, background, light;\n5) the camera: shot size, angle and one clear movement (or static) with its speed;\n6) the final pose of the shot, which the next part continues from.\nEach part must describe a different action; do not reuse sentences between parts.\nReturn ONLY a JSON object, no markdown, with exactly these keys:\n\"summary_ko\": Korean, 1-2 sentences describing the whole scenario.\n\"common_prompt\": English, 30-50 words: the look, outfit, location, lighting and visual style that stay the same in every part.\n\"segments\": an array of exactly 6 objects, in order. Each object has \"positive_prompt\" (the English paragraph described above) and \"scene_ko\" (Korean, one sentence).",
+   "max_tokens": 3072,
+   "temperature": 0.6,
+   "seed": 1,
+   "keep_model_loaded": false,
+   "image": [
+    "130",
+    0
+   ]
+  },
+  "class_type": "ShortsQwenGGUFVision",
+  "_meta": {
+   "title": "Shorts Qwen GGUF Vision - 이미지를 보고 6구간 시나리오 작성"
+  }
+ },
+ "114": {
+  "inputs": {
+   "source": [
+    "111",
+    0
+   ]
+  },
+  "class_type": "PreviewAny",
+  "_meta": {
+   "title": "모델 답변"
+  }
+ }
+}

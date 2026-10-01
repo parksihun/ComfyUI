@@ -120,12 +120,20 @@
           <div>
             <label>분석 방법</label>
             <select id="analyzer">
-              <option value="chat">Qwen Chat (QwenVL-Mod)</option>
+              <option value="gguf">Qwen GGUF 직접 호출 (QwenVL-Mod 모델)</option>
+              <option value="chat">Qwen Chat (QwenVL-Mod 채팅)</option>
               <option value="node">QwenVL 노드 (원본 QwenVL)</option>
               <option value="manual">직접 작성 (모델 사용 안 함)</option>
             </select>
           </div>
           <div style="flex:2"><label>모델</label><select id="model"></select></div>
+          <div>
+            <label>프롬프트 분량</label>
+            <select id="detail">
+              <option value="rich">자세히 (구간당 90~130단어)</option>
+              <option value="normal">보통 (40~70단어)</option>
+            </select>
+          </div>
         </div>
         <div class="actions">
           <button id="btnScenario">시나리오 생성</button>
@@ -180,7 +188,7 @@
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const state = { image: null, dir: null, segCount: 0, currentJob: null, busy: false, status: null, paramsLoaded: null };
-const SAVED = ['imgPrompt', 'imgSize', 'imgSteps', 'direction', 'segments', 'seconds', 'scName', 'analyzer', 'model', 'backend'];
+const SAVED = ['imgPrompt', 'imgSize', 'imgSteps', 'direction', 'segments', 'seconds', 'scName', 'analyzer', 'model', 'detail', 'backend'];
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -265,7 +273,10 @@ function fillModels() {
   const s = state.status || {}, kind = $('analyzer').value, sel = $('model'), keep = sel.value || localStorage.getItem('vw_model') || '';
   sel.innerHTML = '';
   const add = (value, text, group) => { const o = document.createElement('option'); o.value = value; o.textContent = text; (group || sel).appendChild(o); };
-  if (kind === 'chat') {
+  if (kind === 'gguf') {
+    if (!(s.gguf_models || []).length) add('', s.comfy_ok ? '사용 불가 (QwenVL-Mod 또는 ShortsRemake 노드 없음)' : 'ComfyUI 연결 대기');
+    for (const m of s.gguf_models || []) add(m, m);
+  } else if (kind === 'chat') {
     if (!s.chat) add('', s.comfy_ok ? 'Qwen Chat 없음 (ComfyUI-QwenVL-Mod 미설치)' : 'ComfyUI 연결 대기');
     else for (const [backend, label] of [['gguf', 'GGUF'], ['hf', 'Transformers']]) {
       if (!(s.chat[backend] || []).length) continue;
@@ -279,6 +290,7 @@ function fillModels() {
   } else add('', '—');
   if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
   sel.disabled = kind === 'manual';
+  $('detail').disabled = kind === 'manual' || kind === 'chat';
 }
 
 function showScenario(dir, sc) {
@@ -305,7 +317,8 @@ async function genScenario() {
   if (!state.image) throw new Error('먼저 이미지를 만들거나 올리세요');
   const model = $('model').value, analyzer = $('analyzer').value;
   const params = { image: state.image, direction: $('direction').value, segments: Number($('segments').value) || 6,
-                   seconds: Number($('seconds').value) || 5, analyzer, name: $('scName').value };
+                   seconds: Number($('seconds').value) || 5, analyzer, name: $('scName').value, detail: $('detail').value };
+  if (analyzer === 'gguf' && model) params.gguf_model = model;
   if (analyzer === 'chat' && model) [params.chat_backend, params.chat_model] = model.split('|');
   if (analyzer === 'node' && model) params.node_model = model;
   $('scWarning').hidden = true; $('rawBox').hidden = true;
@@ -390,7 +403,8 @@ async function genVideo() {
 // ---- status ----
 async function refreshStatus() {
   try {
-    const s = await api('/api/status'), first = !state.status || state.status.comfy_ok !== s.comfy_ok || !!state.status.chat !== !!s.chat;
+    const count = x => ((x || {}).gguf_models || []).length;
+    const s = await api('/api/status'), first = !state.status || state.status.comfy_ok !== s.comfy_ok || !!state.status.chat !== !!s.chat || count(state.status) !== count(s);
     state.status = s;
     $('dot').classList.toggle('on', s.comfy_ok);
     let text = s.comfy_ok ? 'ComfyUI 연결됨 (' + s.comfy_url + ')' : 'ComfyUI에 연결할 수 없음 (' + s.comfy_url + ')';
@@ -398,7 +412,7 @@ async function refreshStatus() {
     if (s.vram) text += ' · VRAM ' + ((s.vram.total - s.vram.free) / 2 ** 30).toFixed(1) + ' / ' + (s.vram.total / 2 ** 30).toFixed(1) + ' GB';
     $('statusText').textContent = text;
     if (first) {
-      if (s.comfy_ok && !s.chat && $('analyzer').value === 'chat' && !localStorage.getItem('vw_analyzer')) $('analyzer').value = 'node';
+      if (s.comfy_ok && !localStorage.getItem('vw_analyzer')) $('analyzer').value = count(s) ? 'gguf' : s.chat ? 'chat' : 'node';
       fillModels();
       if (s.comfy_ok && $('paramBox').open) loadParams();
     }

@@ -9,6 +9,7 @@
   4_ALL_in_One.json                 stages 1 + 2 + 3 in one graph (video file + images in, final.mp4 out)
   5_I2V_6seg_from_prompts.json      prompts.json -> Wan 2.2 i2v 6-segment graph (fan-out node fills the prompts)
   6_QwenChat_Test.json              Qwen Chat sidebar test: start image -> six section prompts written into the nodes (no API file)
+  7_Qwen_Image_to_VideoPrompts.json start image -> QwenVL-Mod GGUF model asked directly -> detailed six-part scenario text
 
 Stage 2 is flattened from the official video_wan_animate2.json template (loop nodes removed; per-segment
 execution comes from ShortsPromptsLoader list outputs). Stage 2 mirrors image_qwen_image_edit_2511.json.
@@ -961,10 +962,10 @@ README_CHAT_TESTS = (
     "```\n시작 이미지를 한국어로 자세히 설명해줘. 인물, 옷, 장소, 조명, 카메라 구도. 노드는 건드리지 마.\n```\n\n"
     "**2. 영상 프롬프트 1개** (답으로만 받기)\n"
     "```\n이 이미지를 첫 프레임으로 하는 5초 영상의 프롬프트를 영어로 써줘. 인물의 움직임과 카메라 움직임을 넣고, 노드는 건드리지 마.\n```\n\n"
-    "**3. 구간 프롬프트 6개를 노드에 쓰기** (핵심 테스트)\n"
-    "```\n이 이미지를 첫 프레임으로 이어지는 영상을 6구간으로 나눠줘. 각 구간은 약 5초이고 앞 구간이 끝난 자세에서 이어져야 해. "
-    "구간마다 영어 프롬프트(40~70단어, 인물 동작과 카메라 움직임)를 써서 1st~6th CLIP Text Encode (Prompt) 노드의 text에 순서대로 넣어줘. "
-    "네거티브 노드는 그대로 두고, 실행(queue)은 하지 마.\n```\n\n"
+    "**3. 구간 프롬프트 6개를 노드에 쓰기** (핵심 테스트, 자세한 요청)\n"
+    "```\n이 이미지를 첫 프레임으로 이어지는 영상을 6구간(구간당 약 5초)으로 나눠줘. 앞 구간이 끝난 자세에서 다음 구간이 시작해야 해. 구간마다 영어로 90~130단어의 한 문단을 쓰고, 문단에는 순서대로 (1) 시작 자세와 화면 속 위치, (2) 동작을 시간 순서로 2~3단계(손, 고개, 시선, 체중 이동, 속도), (3) 표정과 그 변화, (4) 머리카락·옷·배경·빛의 움직임, (5) 카메라의 샷 크기·앵글·움직임과 속도, (6) 끝 자세를 넣어줘. 구간마다 다른 동작이어야 하고 같은 문장을 반복하지 마. 완성한 문단을 1st~6th CLIP Text Encode (Prompt) 노드의 text에 순서대로 넣어줘. 답변 message에는 프롬프트를 다시 적지 말고 한국어로 한 줄 요약만 써. 네거티브 노드는 그대로 두고, 실행(queue)은 하지 마.\n```\n\n"
+    "**3-1. 같은 것을 짧게 요청** (분량 비교용)\n"
+    "```\n이 이미지를 첫 프레임으로 이어지는 영상을 6구간으로 나눠줘. 각 구간은 약 5초이고 앞 구간이 끝난 자세에서 이어져야 해. 구간마다 영어 프롬프트(40~70단어, 인물 동작과 카메라 움직임)를 써서 1st~6th CLIP Text Encode (Prompt) 노드의 text에 순서대로 넣어줘. 네거티브 노드는 그대로 두고, 실행(queue)은 하지 마.\n```\n\n"
     "**4. 연출 방향 주기**\n"
     "```\n창밖을 보다가 돌아서 카메라 쪽으로 걸어오며 미소 짓는 내용으로 6구간을 다시 써서 같은 노드에 넣어줘. 실행은 하지 마.\n```\n\n"
     "**5. 한 구간만 고치기**\n"
@@ -975,18 +976,37 @@ README_CHAT_TESTS = (
     "- 구간이 서로 이어지는지, 같은 문장의 반복이 아닌지\n"
     "- 5번에서 3rd만 바뀌는지\n\n"
     "채워진 프롬프트는 SVI 워크플로우의 같은 이름 노드에 그대로 붙여 넣을 수 있습니다.\n\n"
+    "## 글의 분량은 요청 문장이 정합니다\n\n"
+    "모델은 요청받은 만큼만 씁니다. 한 줄로 부탁하면 짧게, 구간마다 무엇을 넣을지 적어 주면 길게 나옵니다. "
+    "이 워크플로우와 같은 이미지, 같은 모델(Qwen3.5-9B GGUF Q8)로 잰 결과입니다.\n\n"
+    "| 보낸 문장 | 구간당 영어 단어 수 |\n|---|---|\n"
+    "| 3-1번 (40~70단어로 요청) | 41~46 |\n"
+    "| 3번 (90~130단어 + 넣을 내용 6가지) | 115~130 |\n\n"
+    "두 경우 모두 1st~6th 노드 여섯 개에 영어로 정확히 들어갔습니다. "
+    "`video_dasiwa-wan22` 워크플로우의 Qwen3_VQA 노드에 긴 지시문이 들어 있는 것도 같은 이유입니다: "
+    "그 글은 모델에게 주는 작업 지시서이고, 지시가 자세할수록 결과도 자세해집니다.\n\n"
+    "그 밖에 분량에 영향을 주는 것:\n"
+    "- **Max tokens**: 답이 끊기면 올립니다. 3번은 2048이면 충분했습니다 (답변 message에 프롬프트를 다시 적지 말라고 한 이유)\n"
+    "- **temperature**: 기본 0.2는 표현이 단조롭습니다. 0.6~0.8로 올리면 어휘가 다양해집니다\n"
+    "- **문장에 넣는 요구**: 더 풍부하게 하려면 단어 수를 올리거나 조명, 질감, 분위기, 배경 움직임 같은 항목을 더 적습니다\n\n"
+    "채팅 없이 Queue로 같은 일을 하려면 `7_Qwen_Image_to_VideoPrompts` 워크플로우를 쓰면 됩니다 "
+    "(같은 GGUF 모델을 직접 부르고 지시문이 노드에 들어 있습니다).\n\n"
 )
 
 
-def _readme_chat_scenario():
-    # the instruction the web program sends, kept in one place (loaded by path: ComfyUI has its own `app` package)
+def _webapp():
+    """tools/video_webapp/app.py: the scenario instructions live there (loaded by path, ComfyUI has its own `app` package)."""
     spec = importlib.util.spec_from_file_location("video_webapp_app", os.path.join(ROOT, "tools", "video_webapp", "app.py"))
     webapp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(webapp)
-    instruction = webapp.SCENARIO_CHAT.format(n=6, s=5.0, direction="")
+    return webapp
+
+
+def _readme_chat_scenario():
+    instruction = _webapp().SCENARIO_CHAT.format(n=6, s=5.0, direction="")
     return (
         "## 6. 웹 프로그램(tools/video_webapp)의 시나리오 지시문\n\n"
-        "웹 프로그램은 2단계에서 아래 지시문과 이미지를 Qwen Chat에 보내고, 답을 구간 6개로 읽습니다. "
+        "웹 프로그램에서 분석 방법을 `Qwen Chat`으로 고르면 아래 지시문과 이미지를 Qwen Chat에 보내고, 답을 구간 6개로 읽습니다 (기본값인 `Qwen GGUF 직접 호출`은 채팅을 거치지 않습니다). "
         "여기서 같은 모델로 미리 보내 보면 그 모델이 형식을 지키는지 알 수 있습니다.\n\n"
         "Clear로 대화를 지우고, 아래 지시문을 그대로 붙여 보냅니다.\n\n"
         "```\n" + instruction + "\n```\n\n"
@@ -1027,7 +1047,52 @@ def build_qwen_chat_test():
     print("wrote", readme)
 
 
+# --------------------------------------------------------------------------- #
+# 7: start image -> a QwenVL-Mod GGUF model asked directly -> detailed six-part scenario (Queue)
+# --------------------------------------------------------------------------- #
+GGUF_DEFAULT = "Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-Q8_0.gguf"   # the file Download_Models_QwenVL_GGUF.bat fetches
+
+NOTE_GGUF_PROMPTS = (
+    "## 7번: 이미지 → 자세한 영상 프롬프트 6구간\n\n"
+    "1. `시작 이미지`에 이미지를 올립니다\n"
+    "2. `Shorts Qwen GGUF Vision`의 `model_name`에서 받아 둔 모델을 고릅니다 (받아 둔 파일이 목록 맨 위에 옵니다)\n"
+    "3. Queue. 아래 `모델 답변`에 6구간 시나리오가 JSON으로 나옵니다\n\n"
+    "**무엇이 다른가**: QwenVL-Mod의 GGUF 모델을 프리셋이나 채팅 규약 없이 직접 부릅니다. "
+    "`prompt`에 든 지시문이 구간마다 써야 할 내용(시작 자세, 동작 순서, 표정, 옷·머리 움직임, 카메라, 끝 자세)을 정해 두어서 "
+    "구간당 90~130단어로 길게 나옵니다.\n\n"
+    "**바꿀 곳**\n"
+    "- 연출 방향을 주려면 `prompt`에서 `Every part is ONE paragraph` 줄 앞에 "
+    "`Direction from the user (follow it): …` 한 줄을 넣습니다 (한국어 가능)\n"
+    "- 더 길게/짧게: `90-130`을 다른 숫자로. 구간 수와 길이도 지시문의 숫자를 바꿉니다\n"
+    "- `temperature`를 올리면(0.8) 표현이 다양해지고, 내리면(0.3) 이미지에 더 붙습니다\n"
+    "- seed가 randomize라 Queue마다 다른 시나리오가 나옵니다\n\n"
+    "**필요한 것**: ComfyUI-QwenVL-Mod (모델 로더를 빌려 씁니다), `model\\LLM\\GGUF\\…`의 GGUF 모델과 mmproj 파일.\n"
+    "실행이 끝나면 모델은 VRAM에서 내려갑니다 (`keep_model_loaded`를 켜면 유지).\n\n"
+    "웹 프로그램(tools/video_webapp)의 분석 방법 `Qwen GGUF 직접 호출`이 이 노드와 같은 지시문을 씁니다."
+)
+
+
+def build_gguf_prompts():
+    webapp = _webapp()
+    instruction = webapp.SCENARIO_RICH.format(n=6, s=5.0, direction="")
+    nodes = [
+        note(140, [-620, 0], [560, 620], NOTE_GGUF_PROMPTS, "사용법 (7번 이미지 → 영상 프롬프트)", ("#232", "#353")),
+        node(130, "LoadImage", [0, 0], [380, 460], [], [outp("IMAGE", "IMAGE", [520]), outp("MASK", "MASK", None)],
+             ["example.png", "image"], title="시작 이미지"),
+        node(111, "ShortsQwenGGUFVision", [430, 0], [560, 620], [inp("image", "IMAGE", 520)],
+             [outp("response", "STRING", [521])],
+             [GGUF_DEFAULT, "You are a helpful vision-language assistant. Answer directly with the final answer only. "
+                            "No <think> and no reasoning.", instruction, 3072, 0.6, 1, "randomize", False],
+             title="Shorts Qwen GGUF Vision - 이미지를 보고 6구간 시나리오 작성"),
+        node(114, "PreviewAny", [1040, 0], [760, 900], [inp("source", "*", 521)], [], [None, None, False], title="모델 답변"),
+    ]
+    L = {520: [520, 130, 0, 111, 0, "IMAGE"], 521: [521, 111, 0, 114, 0, "STRING"]}
+    wf = assemble("shorts-7-qwen-image-to-video-prompts", [(nodes, L)], ds={"scale": 0.6, "offset": [700, 80]})
+    write_all(wf, "7_Qwen_Image_to_VideoPrompts.json")
+
+
 if __name__ == "__main__":
     build_all()
     build_i2v_bridge()
     build_qwen_chat_test()
+    build_gguf_prompts()

@@ -64,6 +64,30 @@ SCENARIO_JSON = SCENARIO_BODY + (
     "\"positive_prompt\" (English, 40-70 words, natural sentences: what happens from the start to the end of this "
     "shot, body motion, expression, camera framing and movement) and \"scene_ko\" (Korean, one sentence)."
 )
+# the detailed version: spells out what every part has to contain, which is what makes the text rich
+SCENARIO_RICH = (
+    "The image is the FIRST FRAME of a video. First study it closely: who or what is in it, appearance, clothing, "
+    "pose, expression, location, background objects, lighting, colours, camera distance and angle.\n"
+    "Then write a {n}-part scenario that continues from this frame. Each part is one continuous shot of about "
+    "{s:g} seconds and starts exactly in the pose and framing where the previous part ended. Keep the same subject, "
+    "outfit, location and lighting unless the direction says otherwise. No text, captions or logos in the scene.\n"
+    "{direction}"
+    "Every part is ONE paragraph of 90-130 English words in natural present-tense sentences and covers, in this order:\n"
+    "1) the starting pose and where the subject is in the frame;\n"
+    "2) the action as two or three beats in time order (what moves first, what follows, how it ends), with hands, "
+    "head, gaze, weight shift and pace;\n"
+    "3) the facial expression and how it changes;\n"
+    "4) secondary motion: hair, clothing, objects, background, light;\n"
+    "5) the camera: shot size, angle and one clear movement (or static) with its speed;\n"
+    "6) the final pose of the shot, which the next part continues from.\n"
+    "Each part must describe a different action; do not reuse sentences between parts.\n"
+    "Return ONLY a JSON object, no markdown, with exactly these keys:\n"
+    "\"summary_ko\": Korean, 1-2 sentences describing the whole scenario.\n"
+    "\"common_prompt\": English, 30-50 words: the look, outfit, location, lighting and visual style that stay "
+    "the same in every part.\n"
+    "\"segments\": an array of exactly {n} objects, in order. Each object has \"positive_prompt\" (the English "
+    "paragraph described above) and \"scene_ko\" (Korean, one sentence)."
+)
 # for Qwen Chat, whose own protocol wraps the answer in {"message": ...}
 SCENARIO_CHAT = (
     "This is not a workflow request: leave \"actions\" and \"choices\" empty and put the whole answer in "
@@ -72,7 +96,7 @@ SCENARIO_CHAT = (
     "no markdown):\n"
     "SUMMARY_KO: Korean, 1-2 sentences describing the whole scenario\n"
     "COMMON: English, 20-40 words: the look, outfit, location, lighting and visual style that stay the same\n"
-    "PART 1: English, 40-70 words, natural sentences: what happens from the start to the end of this shot, "
+    "PART 1: ENGLISH ONLY, 60-100 words, natural sentences: what happens from the start to the end of this shot, "
     "body motion, expression, camera framing and movement\n"
     "KO 1: Korean, one sentence describing part 1\n"
     "PART 2: ...\nKO 2: ...\n(continue the same way up to PART {n} and KO {n})"
@@ -334,7 +358,7 @@ class App:
         self.last_stage = None
         self._svi_cache = None
         self._chat_models = (0, None)
-        self._node_models = (0, [])
+        self._combos = {}
 
     # ---- helpers -----------------------------------------------------------------------------
     def path(self, rel):
@@ -382,14 +406,14 @@ class App:
             self._chat_models = (time.time(), models)
         return models
 
-    async def node_models(self):
-        """Model names offered by the original QwenVL node ([] when that node pack is not installed)."""
-        stamp, models = self._node_models
+    async def combo_values(self, class_type, name="model_name"):
+        """Choices of a node's combo input ([] when the node is not installed)."""
+        stamp, values = self._combos.get(class_type, (0, []))
         if time.time() - stamp > 60:
-            info = (await self.comfy.get_json("/object_info/AILab_QwenVL_Advanced", timeout=10)).get("AILab_QwenVL_Advanced")
-            models = info["input"]["required"]["model_name"][0] if info else []
-            self._node_models = (time.time(), models)
-        return models
+            info = (await self.comfy.get_json(f"/object_info/{class_type}", timeout=10)).get(class_type)
+            values = info["input"]["required"][name][0] if info else []
+            self._combos[class_type] = (time.time(), values)
+        return values
 
     async def hand_over(self, stage, job):
         """Free VRAM held by the previous stage before a different one starts."""
@@ -542,7 +566,8 @@ class App:
         n = max(1, min(8, int(p.get("segments") or 6)))
         seconds = float(p.get("seconds") or 5)
         direction = (p.get("direction") or "").strip()
-        analyzer = p.get("analyzer") or "chat"
+        analyzer = p.get("analyzer") or "gguf"
+        template = SCENARIO_RICH if (p.get("detail") or "rich") == "rich" else SCENARIO_JSON
 
         job.step = "이미지 준비"
         image = Image.open(io.BytesIO(await self.comfy.view_bytes(ref))).convert("RGB")
@@ -558,9 +583,10 @@ class App:
         raw = ""
         if analyzer == "chat":
             raw = await self.analyze_chat(job, image, SCENARIO_CHAT.format(n=n, s=seconds, direction=clause), p)
-        elif analyzer == "node":
+        elif analyzer in ("gguf", "node"):
             uploaded = await self.comfy.upload_image(png.getvalue(), upload_name(name))
-            raw = await self.analyze_node(job, uploaded, SCENARIO_JSON.format(n=n, s=seconds, direction=clause), p)
+            run = self.analyze_gguf if analyzer == "gguf" else self.analyze_node
+            raw = await run(job, uploaded, template.format(n=n, s=seconds, direction=clause), p)
         parsed = parse_scenario(raw)
         doc = build_scenario_doc(parsed, n, seconds, image.width, image.height, direction, ref)
         self.save_scenario(name, doc)
@@ -593,9 +619,32 @@ class App:
             "options": {"max_tokens": int(p.get("max_tokens") or 2048), "temperature": float(p.get("temperature") or 0.4)},
         }
         status, res = await self.comfy.post_json("/qwenvl/chat", body, timeout=1800)
+        if status == 500:
+            # QwenVL-Mod keeps the chat model loaded and, unpatched, fails every call after the first one
+            # ("Fatal Decode Error at Pos 0"). A freshly loaded model does not have that problem.
+            job.step = "Qwen Chat 오류, 모델을 다시 올려 재시도하는 중"
+            await self.comfy.post_json("/qwenvl/chat/unload", {"backend": "all"}, timeout=60)
+            status, res = await self.comfy.post_json("/qwenvl/chat", body, timeout=1800)
         if status != 200:
             raise AppError(f"Qwen Chat 오류 ({status}): {res.get('error', res)}")
         return res.get("message") or ""
+
+    async def analyze_gguf(self, job, uploaded, instruction, p):
+        """A QwenVL-Mod GGUF model asked directly (no preset, no chat protocol) through our own node."""
+        models = [m for m in await self.combo_values("ShortsQwenGGUFVision") if not m.startswith("(")]
+        if not models:
+            raise AppError("Qwen GGUF 직접 호출을 쓸 수 없습니다. ComfyUI에 ComfyUI-QwenVL-Mod와 최신 ComfyUI-ShortsRemake가 "
+                           "있어야 합니다 (ComfyUI를 재시작했는지도 확인하세요).")
+        with open(os.path.join(TEMPLATES, "scenario_gguf.api.json"), encoding="utf-8") as f:
+            prompt = json.load(f)
+        prompt["130"]["inputs"]["image"] = (uploaded["subfolder"] + "/" if uploaded["subfolder"] else "") + uploaded["filename"]
+        q = prompt["111"]["inputs"]
+        q.update(prompt=instruction, seed=random.randint(1, 2 ** 31),
+                 model_name=p.get("gguf_model") if p.get("gguf_model") in models else models[0])
+        await self.hand_over("gguf", job)
+        outputs = await self.run_prompt(job, prompt)
+        text = (outputs.get("114") or {}).get("text") or []
+        return text[0] if text and isinstance(text[0], str) else ""
 
     async def analyze_node(self, job, uploaded, instruction, p):
         with open(os.path.join(TEMPLATES, "scenario_qwenvl.api.json"), encoding="utf-8") as f:
@@ -768,7 +817,7 @@ async def index(request):
 async def api_status(request):
     app = request.app["app"]
     out = {"comfy_url": app.comfy.url, "comfy_ok": False, "ws_ok": app.comfy.ws_ok, "output_dir": app.output_dir,
-           "running": 0, "pending": 0, "vram": None, "chat": None, "node_models": [],
+           "running": 0, "pending": 0, "vram": None, "chat": None, "node_models": [], "gguf_models": [],
            "svi_override": os.path.isfile(os.path.join(TEMPLATES, "video_svi.api.json"))}
     try:
         queue = await app.comfy.get_json("/queue", timeout=5)
@@ -777,7 +826,8 @@ async def api_status(request):
         if devices and devices[0].get("vram_total"):
             out["vram"] = {"name": devices[0].get("name", ""), "total": devices[0]["vram_total"], "free": devices[0].get("vram_free", 0)}
         out["chat"] = await app.chat_models()
-        out["node_models"] = await app.node_models()
+        out["node_models"] = await app.combo_values("AILab_QwenVL_Advanced")
+        out["gguf_models"] = [m for m in await app.combo_values("ShortsQwenGGUFVision") if not m.startswith("(")]
     except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, ValueError):
         pass
     return web.json_response(out)
