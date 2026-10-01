@@ -46,6 +46,20 @@ def widget_names(info):
     return names
 
 
+def widget_default(info, name):
+    """Default the frontend gives a widget that has no saved value."""
+    inputs = info.get("input", {})
+    spec = (inputs.get("required") or {}).get(name) or (inputs.get("optional") or {}).get(name)
+    typ = spec[0]
+    opts = spec[1] if len(spec) > 1 and isinstance(spec[1], dict) else {}
+    if "default" in opts:
+        return opts["default"]
+    choices = typ if isinstance(typ, list) else opts.get("options")
+    if choices:
+        return choices[0]
+    return {"INT": 0, "FLOAT": 0.0, "BOOLEAN": False}.get(typ, "")
+
+
 class _Scope:
     """One graph level: the root workflow or one subgraph instance."""
 
@@ -159,10 +173,12 @@ class Converter:
         if node["type"] == "Power Lora Loader (rgthree)":
             loras = [v for v in wv if isinstance(v, dict) and "lora" in v]
             return {f"lora_{i + 1}": v for i, v in enumerate(loras)}
-        out = {}
-        for name, value in zip(widget_names(self.info[node["type"]]), wv):
+        names = widget_names(self.info[node["type"]])
+        out = {name: value for name, value in zip(names, wv) if name is not None}
+        # saved with an older version of the node: the frontend gives the widgets added since their defaults
+        for name in names[len(wv):]:
             if name is not None:
-                out[name] = value
+                out[name] = widget_default(self.info[node["type"]], name)
         return out
 
     def _emit(self, scope, api):
