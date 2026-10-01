@@ -1,0 +1,579 @@
+{
+  "id": "shorts-6-qwen-chat-test",
+  "revision": 0,
+  "last_node_id": 140,
+  "last_link_id": 510,
+  "nodes": [
+    {
+      "id": 140,
+      "type": "MarkdownNote",
+      "pos": [
+        -420,
+        0
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "MarkdownNote"
+      },
+      "widgets_values": [
+        "## Qwen Chat 테스트\n\n1. 사이드바의 Qwen Chat을 열고 모델 선택\n2. `분석할 이미지`에 이미지 올리기\n3. 보낼 문장은 `workflow/README_QwenChat_Test.md`"
+      ],
+      "title": "사용법 (6번 Qwen Chat 테스트)",
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 100,
+      "type": "UNETLoader",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        380,
+        82
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            500
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "z_image_turbo_bf16.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 101,
+      "type": "CLIPLoader",
+      "pos": [
+        0,
+        130
+      ],
+      "size": [
+        380,
+        106
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            502
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen_3_4b.safetensors",
+        "lumina2",
+        "default"
+      ]
+    },
+    {
+      "id": 102,
+      "type": "VAELoader",
+      "pos": [
+        0,
+        290
+      ],
+      "size": [
+        380,
+        58
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            508
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "ae.safetensors"
+      ]
+    },
+    {
+      "id": 105,
+      "type": "EmptySD3LatentImage",
+      "pos": [
+        0,
+        400
+      ],
+      "size": [
+        380,
+        106
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            506
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptySD3LatentImage"
+      },
+      "widgets_values": [
+        960,
+        1424,
+        1
+      ],
+      "title": "이미지 크기"
+    },
+    {
+      "id": 103,
+      "type": "CLIPTextEncode",
+      "pos": [
+        430,
+        0
+      ],
+      "size": [
+        460,
+        260
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 502
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            503,
+            504
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "A young woman standing in a bright cafe by the window, full body, natural daylight, photorealistic"
+      ],
+      "title": "이미지 프롬프트"
+    },
+    {
+      "id": 104,
+      "type": "ConditioningZeroOut",
+      "pos": [
+        430,
+        310
+      ],
+      "size": [
+        300,
+        26
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 504
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            505
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ConditioningZeroOut"
+      }
+    },
+    {
+      "id": 106,
+      "type": "ModelSamplingAuraFlow",
+      "pos": [
+        430,
+        390
+      ],
+      "size": [
+        300,
+        82
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 500
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            501
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ModelSamplingAuraFlow"
+      },
+      "widgets_values": [
+        3,
+        "flow"
+      ]
+    },
+    {
+      "id": 107,
+      "type": "KSampler",
+      "pos": [
+        940,
+        0
+      ],
+      "size": [
+        320,
+        262
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 501
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 503
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 505
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 506
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            507
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        0,
+        "randomize",
+        8,
+        1,
+        "res_multistep",
+        "simple",
+        1
+      ]
+    },
+    {
+      "id": 108,
+      "type": "VAEDecode",
+      "pos": [
+        940,
+        310
+      ],
+      "size": [
+        320,
+        46
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 507
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 508
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            509
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 110,
+      "type": "ImageScaleBy",
+      "pos": [
+        940,
+        410
+      ],
+      "size": [
+        320,
+        82
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 509
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            510
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageScaleBy"
+      },
+      "widgets_values": [
+        "lanczos",
+        1.5
+      ],
+      "title": "이미지 확대 (bypass 테스트용)"
+    },
+    {
+      "id": 109,
+      "type": "SaveImage",
+      "pos": [
+        940,
+        550
+      ],
+      "size": [
+        320,
+        480
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 510
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "qwen_chat_test/zimage"
+      ],
+      "title": "결과 이미지"
+    },
+    {
+      "id": 130,
+      "type": "LoadImage",
+      "pos": [
+        0,
+        610
+      ],
+      "size": [
+        380,
+        420
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "example.png",
+        "image"
+      ],
+      "title": "분석할 이미지 (Qwen Chat이 자동으로 봅니다)"
+    }
+  ],
+  "links": [
+    [
+      500,
+      100,
+      0,
+      106,
+      0,
+      "MODEL"
+    ],
+    [
+      501,
+      106,
+      0,
+      107,
+      0,
+      "MODEL"
+    ],
+    [
+      502,
+      101,
+      0,
+      103,
+      0,
+      "CLIP"
+    ],
+    [
+      503,
+      103,
+      0,
+      107,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      504,
+      103,
+      0,
+      104,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      505,
+      104,
+      0,
+      107,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      506,
+      105,
+      0,
+      107,
+      3,
+      "LATENT"
+    ],
+    [
+      507,
+      107,
+      0,
+      108,
+      0,
+      "LATENT"
+    ],
+    [
+      508,
+      102,
+      0,
+      108,
+      1,
+      "VAE"
+    ],
+    [
+      509,
+      108,
+      0,
+      110,
+      0,
+      "IMAGE"
+    ],
+    [
+      510,
+      110,
+      0,
+      109,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.55,
+      "offset": [
+        680,
+        80
+      ]
+    }
+  },
+  "version": 0.4
+}
