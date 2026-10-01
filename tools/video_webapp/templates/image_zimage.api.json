@@ -1,0 +1,55 @@
+{
+ "100": {
+  "inputs": {"unet_name": "z_image_turbo_bf16.safetensors", "weight_dtype": "default"},
+  "class_type": "UNETLoader",
+  "_meta": {"title": "z-image turbo"}
+ },
+ "101": {
+  "inputs": {"clip_name": "qwen_3_4b.safetensors", "type": "lumina2", "device": "default"},
+  "class_type": "CLIPLoader",
+  "_meta": {"title": "텍스트 인코더"}
+ },
+ "102": {
+  "inputs": {"vae_name": "ae.safetensors"},
+  "class_type": "VAELoader",
+  "_meta": {"title": "VAE"}
+ },
+ "103": {
+  "inputs": {"text": "", "clip": ["101", 0]},
+  "class_type": "CLIPTextEncode",
+  "_meta": {"title": "이미지 프롬프트"}
+ },
+ "104": {
+  "inputs": {"conditioning": ["103", 0]},
+  "class_type": "ConditioningZeroOut",
+  "_meta": {"title": "빈 네거티브"}
+ },
+ "105": {
+  "inputs": {"width": 960, "height": 1424, "batch_size": 1},
+  "class_type": "EmptySD3LatentImage",
+  "_meta": {"title": "이미지 크기"}
+ },
+ "106": {
+  "inputs": {"shift": 3, "sampling": "flow", "model": ["100", 0]},
+  "class_type": "ModelSamplingAuraFlow",
+  "_meta": {"title": "ModelSamplingAuraFlow"}
+ },
+ "107": {
+  "inputs": {
+   "seed": 0, "steps": 8, "cfg": 1, "sampler_name": "res_multistep", "scheduler": "simple", "denoise": 1,
+   "model": ["106", 0], "positive": ["103", 0], "negative": ["104", 0], "latent_image": ["105", 0]
+  },
+  "class_type": "KSampler",
+  "_meta": {"title": "이미지 샘플링"}
+ },
+ "108": {
+  "inputs": {"samples": ["107", 0], "vae": ["102", 0]},
+  "class_type": "VAEDecode",
+  "_meta": {"title": "VAE 디코드"}
+ },
+ "120": {
+  "inputs": {"filename_prefix": "webapp/zimage", "images": ["108", 0]},
+  "class_type": "SaveImage",
+  "_meta": {"title": "이미지 저장"}
+ }
+}

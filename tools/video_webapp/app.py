@@ -1,0 +1,975 @@
+"""Video web app: z-image turbo image -> Qwen scenario (N prompts) -> Wan 2.2 SVI video.
+
+A small aiohttp server with a one-page UI. It does not generate anything itself: every step is queued on a
+running ComfyUI through its HTTP API (/prompt, /history, /view, /upload/image, /free, /ws), so it only needs
+the packages ComfyUI already ships (aiohttp, Pillow) and works on the offline server.
+
+    python_embeded\\python.exe tools\\video_webapp\\app.py [--port 8288] [--comfy http://127.0.0.1:8188]
+"""
+import argparse
+import asyncio
+import base64
+import copy
+import io
+import json
+import logging
+import os
+import random
+import re
+import sys
+import time
+import uuid
+import webbrowser
+
+import aiohttp
+from aiohttp import web
+from PIL import Image
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)      # python_embeded does not put the script's folder on sys.path
+import comfy_convert  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(HERE))
+TEMPLATES = os.path.join(HERE, "templates")
+log = logging.getLogger("video_webapp")
+
+DEFAULT_CONFIG = {
+    "host": "0.0.0.0",
+    "port": 8288,
+    "comfy_url": "http://127.0.0.1:8188",
+    "output_dir": "",                                     # empty = <ComfyUI-Easy-Install>/output
+    "svi_workflow": "workflow/Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5.json",
+    "i2v_api": "workflow/5_I2V_6seg_from_prompts.api.json",
+}
+
+DEFAULT_NEGATIVE = (
+    "blurry, low quality, distorted face, deformed hands, extra fingers, extra limbs, watermark, text, subtitles, "
+    "logo, jpeg artifacts, flicker, static frame, morphing"
+)
+
+SCENARIO_BODY = (
+    "The image is the FIRST FRAME of a video. Write a {n}-part scenario that continues from it. "
+    "Each part is one continuous shot of about {s:g} seconds and starts exactly where the previous part ended. "
+    "Keep the same person, outfit, location and lighting as in the image unless the direction says otherwise. "
+    "Make the parts flow into each other as one story. No text, captions or logos in the scene.\n"
+    "{direction}"
+)
+# for a vision node that returns the raw model text
+SCENARIO_JSON = SCENARIO_BODY + (
+    "Return ONLY a JSON object, no markdown, with exactly these keys:\n"
+    "\"summary_ko\": Korean, 1-2 sentences describing the whole scenario.\n"
+    "\"common_prompt\": English, 20-40 words: the look, outfit, location, lighting and visual style that stay "
+    "the same in every part.\n"
+    "\"segments\": an array of exactly {n} objects, in order. Each object has: "
+    "\"positive_prompt\" (English, 40-70 words, natural sentences: what happens from the start to the end of this "
+    "shot, body motion, expression, camera framing and movement) and \"scene_ko\" (Korean, one sentence)."
+)
+# for Qwen Chat, whose own protocol wraps the answer in {"message": ...}
+SCENARIO_CHAT = (
+    "This is not a workflow request: leave \"actions\" and \"choices\" empty and put the whole answer in "
+    "\"message\". Look at the attached image.\n" + SCENARIO_BODY +
+    "Write \"message\" as plain text lines in exactly this layout (labels in capitals, one item per line, "
+    "no markdown):\n"
+    "SUMMARY_KO: Korean, 1-2 sentences describing the whole scenario\n"
+    "COMMON: English, 20-40 words: the look, outfit, location, lighting and visual style that stay the same\n"
+    "PART 1: English, 40-70 words, natural sentences: what happens from the start to the end of this shot, "
+    "body motion, expression, camera framing and movement\n"
+    "KO 1: Korean, one sentence describing part 1\n"
+    "PART 2: ...\nKO 2: ...\n(continue the same way up to PART {n} and KO {n})"
+)
+
+VIDEO_EXT = (".mp4", ".webm", ".mkv", ".mov", ".gif", ".webp")
+BROWSER_VIDEO_EXT = (".mp4", ".webm")
+
+
+class AppError(Exception):
+    """An error whose message is shown to the user as is."""
+
+
+# ---------------------------------------------------------------------------------------------- #
+# scenario text -> structure
+# ---------------------------------------------------------------------------------------------- #
+def _clean(text):
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _find_json(text):
+    candidates = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.S | re.I)
+    first, last = text.find("{"), text.rfind("}")
+    if 0 <= first < last:
+        candidates.append(text[first:last + 1])
+    for c in candidates:
+        try:
+            data = json.loads(c)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
+def _segments_from_json(g):
+    raw = None
+    for key in ("segments", "scenes", "parts", "shots", "prompts"):
+        if isinstance(g.get(key), list):
+            raw = g[key]
+            break
+    if raw is None:
+        raw = [g[k] for i in range(1, 33) for k in (f"segment_{i}", f"part_{i}", f"scene_{i}", f"shot_{i}") if k in g]
+    out = []
+    for item in raw:
+        if isinstance(item, str):
+            item = {"positive_prompt": item}
+        if not isinstance(item, dict):
+            continue
+        text = _clean(item.get("positive_prompt") or item.get("prompt") or item.get("description"))
+        if text:
+            out.append({"positive_prompt": text, "scene_ko": _clean(item.get("scene_ko") or item.get("ko"))})
+    return out
+
+
+_LABEL = re.compile(r"\b(SUMMARY_KO|COMMON|PART|KO)[ _]*(\d*)\s*[:：]")
+
+
+def _parse_labeled(text):
+    marks = list(_LABEL.finditer(text))
+    out = {"summary_ko": "", "common_prompt": "", "parts": {}, "ko": {}}
+    for i, m in enumerate(marks):
+        body = _clean(text[m.end():marks[i + 1].start() if i + 1 < len(marks) else len(text)]).strip("*# ")
+        label, num = m.group(1), m.group(2)
+        if label == "SUMMARY_KO":
+            out["summary_ko"] = body
+        elif label == "COMMON":
+            out["common_prompt"] = body
+        elif num and label == "PART":
+            out["parts"].setdefault(int(num), body)
+        elif num and label == "KO":
+            out["ko"].setdefault(int(num), body)
+    segs = [{"positive_prompt": out["parts"][k], "scene_ko": out["ko"].get(k, "")} for k in sorted(out["parts"]) if out["parts"][k]]
+    return {"summary_ko": out["summary_ko"], "common_prompt": out["common_prompt"], "segments": segs}
+
+
+def parse_scenario(text):
+    """Model answer -> {summary_ko, common_prompt, segments:[{positive_prompt, scene_ko}]}; segments may be empty."""
+    text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
+    data = _find_json(text)
+    if data is not None:
+        segs = _segments_from_json(data)
+        if segs:
+            return {"summary_ko": _clean(data.get("summary_ko")), "common_prompt": _clean(data.get("common_prompt")),
+                    "segments": segs}
+        if isinstance(data.get("message"), str):      # chat protocol echoed back as raw JSON
+            text = data["message"]
+    labeled = _parse_labeled(text)
+    if labeled["segments"]:
+        return labeled
+    numbered = re.findall(r"(?m)^\s*(\d+)\s*[.)]\s+(.+)$", text)
+    return {"summary_ko": labeled["summary_ko"], "common_prompt": labeled["common_prompt"],
+            "segments": [{"positive_prompt": _clean(t), "scene_ko": ""} for _, t in numbered]}
+
+
+def _fmt_time(sec):
+    return f"{int(sec // 60):02d}:{sec % 60:04.1f}"
+
+
+def build_scenario_doc(parsed, n, seconds, width, height, direction, image_ref):
+    segs = list(parsed["segments"][:n])
+    while len(segs) < n:
+        segs.append({"positive_prompt": "", "scene_ko": ""})
+    out = []
+    for i, sg in enumerate(segs):
+        start, end = round(i * seconds, 3), round((i + 1) * seconds, 3)
+        out.append({"index": i + 1, "start": start, "end": end, "duration": round(seconds, 3),
+                    "label": f"{_fmt_time(start)} - {_fmt_time(end)}",
+                    "positive_prompt": sg["positive_prompt"], "motion": "", "camera": "", "scene_ko": sg.get("scene_ko", "")})
+    return {
+        "source": "video_webapp", "video_file": "", "image_file": "reference.png", "image_ref": image_ref,
+        "direction": direction, "duration": round(n * seconds, 3), "width": width, "height": height,
+        "segment_length": seconds, "fps": 16,
+        "summary_ko": parsed.get("summary_ko", ""), "common_prompt": parsed.get("common_prompt", ""),
+        "negative_prompt": DEFAULT_NEGATIVE, "segments": out,
+    }
+
+
+def sanitize_name(name):
+    name = re.sub(r'[\\/:*?"<>|.\x00-\x1f]', "", name or "").strip()
+    return re.sub(r"\s+", "_", name)[:40] or "scenario"
+
+
+def upload_name(scenario_dir):
+    """File name for the start image in ComfyUI's input folder. ASCII only: multipart file names get
+    percent-encoded on the way, and the scenario folder may be Korean."""
+    return "".join(c for c in scenario_dir if c.isascii() and (c.isalnum() or c == "_")).strip("_") + ".png"
+
+
+# ---------------------------------------------------------------------------------------------- #
+# ComfyUI client
+# ---------------------------------------------------------------------------------------------- #
+class Comfy:
+    def __init__(self, url):
+        self.url = url.rstrip("/")
+        self.client_id = uuid.uuid4().hex
+        self.session = None
+        self._object_info = None
+        self.ws_ok = False
+
+    async def start(self):
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, sock_connect=10))
+
+    async def close(self):
+        await self.session.close()
+
+    async def get_json(self, path, timeout=30, **params):
+        async with self.session.get(self.url + path, params=params or None, timeout=aiohttp.ClientTimeout(total=timeout)) as r:
+            r.raise_for_status()
+            return await r.json()
+
+    async def post_json(self, path, data, timeout=30):
+        async with self.session.post(self.url + path, json=data, timeout=aiohttp.ClientTimeout(total=timeout)) as r:
+            text = await r.text()
+            try:
+                body = json.loads(text) if text else {}
+            except json.JSONDecodeError:
+                body = {"error": text[:500]}
+            return r.status, body
+
+    async def object_info(self):
+        if self._object_info is None:
+            self._object_info = await self.get_json("/object_info", timeout=120)
+        return self._object_info
+
+    async def view_bytes(self, ref):
+        params = {"filename": ref["filename"], "subfolder": ref.get("subfolder", ""), "type": ref.get("type", "output")}
+        async with self.session.get(self.url + "/view", params=params, timeout=aiohttp.ClientTimeout(total=120)) as r:
+            if r.status != 200:
+                raise AppError(f"ComfyUI에서 이미지를 읽지 못했습니다 ({r.status}): {ref['filename']}")
+            return await r.read()
+
+    async def upload_image(self, data, filename, subfolder="webapp"):
+        form = aiohttp.FormData()
+        form.add_field("image", data, filename=filename, content_type="image/png")
+        form.add_field("subfolder", subfolder)
+        form.add_field("type", "input")
+        form.add_field("overwrite", "true")
+        async with self.session.post(self.url + "/upload/image", data=form, timeout=aiohttp.ClientTimeout(total=120)) as r:
+            if r.status != 200:
+                raise AppError(f"ComfyUI에 이미지를 올리지 못했습니다 ({r.status}): {(await r.text())[:300]}")
+            body = await r.json()
+        return {"filename": body["name"], "subfolder": body.get("subfolder", ""), "type": body.get("type", "input")}
+
+    async def queue_prompt(self, prompt):
+        status, body = await self.post_json("/prompt", {"prompt": prompt, "client_id": self.client_id}, timeout=120)
+        if status == 200 and body.get("prompt_id"):
+            return body["prompt_id"]
+        lines = []
+        err = body.get("error")
+        if isinstance(err, dict):
+            lines.append(f"{err.get('message', '')} {err.get('details', '')}".strip())
+        elif err:
+            lines.append(str(err))
+        for nid, ne in (body.get("node_errors") or {}).items():
+            title = (prompt.get(nid, {}).get("_meta") or {}).get("title") or ne.get("class_type", "")
+            for e in ne.get("errors", []):
+                lines.append(f"[{nid} {title}] {e.get('message', '')}: {e.get('details', '')}")
+        raise AppError("ComfyUI가 작업을 거부했습니다 (" + str(status) + ")\n" + "\n".join(lines[:20]))
+
+
+# ---------------------------------------------------------------------------------------------- #
+# jobs
+# ---------------------------------------------------------------------------------------------- #
+class Job:
+    def __init__(self, kind, label):
+        self.id = uuid.uuid4().hex[:12]
+        self.kind = kind
+        self.label = label
+        self.state = "queued"        # queued -> running -> done | error | cancelled
+        self.step = "대기 중"
+        self.prompt_id = None
+        self.titles = {}
+        self.node = ""
+        self.nodes_done = set()
+        self.progress = None
+        self.outputs = []
+        self.result = None
+        self.error = ""
+        self.notes = []
+        self.created = time.time()
+        self.started = None
+        self.finished = None
+        self.task = None
+        self.cancel_requested = False
+
+    def to_dict(self):
+        end = self.finished or time.time()
+        return {
+            "id": self.id, "kind": self.kind, "label": self.label, "state": self.state, "step": self.step,
+            "node": self.node, "nodes_done": len(self.nodes_done), "nodes_total": len(self.titles),
+            "progress": self.progress, "outputs": self.outputs, "result": self.result, "error": self.error,
+            "notes": self.notes, "elapsed": round(end - (self.started or self.created), 1),
+        }
+
+
+def output_files(node_id, title, output):
+    files = []
+    for key in ("images", "gifs", "video", "videos"):
+        for it in output.get(key) or []:
+            if not isinstance(it, dict) or not it.get("filename"):
+                continue
+            ext = os.path.splitext(it["filename"])[1].lower()
+            is_video = ext in VIDEO_EXT and (key != "images" or ext not in (".gif", ".webp") or bool(output.get("animated")))
+            files.append({"node": node_id, "title": title, "filename": it["filename"], "subfolder": it.get("subfolder", ""),
+                          "type": it.get("type", "output"), "kind": "video" if is_video else "image",
+                          "playable": ext in BROWSER_VIDEO_EXT})
+    return files
+
+
+class App:
+    def __init__(self, config):
+        self.cfg = config
+        self.comfy = Comfy(config["comfy_url"])
+        self.output_dir = config["output_dir"] or os.path.join(ROOT, "output")
+        self.jobs = {}
+        self.by_prompt = {}
+        self.lock = asyncio.Lock()       # one stage at a time: the stages hand VRAM over to each other
+        self.last_stage = None
+        self._svi_cache = None
+        self._chat_models = (0, None)
+        self._node_models = (0, [])
+
+    # ---- helpers -----------------------------------------------------------------------------
+    def path(self, rel):
+        return rel if os.path.isabs(rel) else os.path.join(ROOT, rel)
+
+    def scenario_dir(self, name):
+        if not name or name != os.path.basename(name) or name in (".", ".."):
+            raise AppError("잘못된 시나리오 폴더 이름입니다")
+        return os.path.join(self.output_dir, name)
+
+    def load_scenario(self, name):
+        path = os.path.join(self.scenario_dir(name), "prompts.json")
+        if not os.path.isfile(path):
+            raise AppError(f"시나리오가 없습니다: {path}")
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+
+    def save_scenario(self, name, doc):
+        folder = self.scenario_dir(name)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "prompts.json"), "w", encoding="utf-8") as f:
+            json.dump(doc, f, ensure_ascii=False, indent=2)
+        with open(os.path.join(folder, "comfyui_prompts.txt"), "w", encoding="utf-8") as f:
+            f.write("COMMON:\n" + doc.get("common_prompt", "") + "\n\nNEGATIVE:\n" + doc.get("negative_prompt", "") + "\n\n")
+            for sg in doc.get("segments", []):
+                f.write(f"### part_{sg['index']:02d} [{sg.get('label', '')}]\n{sg.get('positive_prompt', '')}\n{sg.get('scene_ko', '')}\n\n")
+
+    def list_scenarios(self):
+        found = []
+        if os.path.isdir(self.output_dir):
+            for name in os.listdir(self.output_dir):
+                p = os.path.join(self.output_dir, name, "prompts.json")
+                if name.endswith("_prompts") and os.path.isfile(p):
+                    found.append((os.path.getmtime(p), name))
+        return [{"dir": name, "mtime": int(m)} for m, name in sorted(found, reverse=True)[:100]]
+
+    async def chat_models(self):
+        """{'hf': [...], 'gguf': [...]} from the QwenVL-Mod chat endpoint, or None when it is not installed."""
+        stamp, models = self._chat_models
+        if time.time() - stamp > 30:
+            try:
+                models = await self.comfy.get_json("/qwenvl/chat/models", timeout=5)
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                models = None
+            self._chat_models = (time.time(), models)
+        return models
+
+    async def node_models(self):
+        """Model names offered by the original QwenVL node ([] when that node pack is not installed)."""
+        stamp, models = self._node_models
+        if time.time() - stamp > 60:
+            info = (await self.comfy.get_json("/object_info/AILab_QwenVL_Advanced", timeout=10)).get("AILab_QwenVL_Advanced")
+            models = info["input"]["required"]["model_name"][0] if info else []
+            self._node_models = (time.time(), models)
+        return models
+
+    async def hand_over(self, stage, job):
+        """Free VRAM held by the previous stage before a different one starts."""
+        if self.last_stage == stage:
+            return
+        job.step = "이전 단계 모델을 VRAM에서 내리는 중"
+        try:
+            if self.last_stage in (None, "chat"):
+                await self.comfy.post_json("/qwenvl/chat/unload", {"backend": "all"}, timeout=60)
+            await self.comfy.post_json("/free", {"unload_models": True, "free_memory": True})
+            await asyncio.sleep(2.0)      # the worker applies /free when it next wakes up; let it finish before queueing
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            pass
+        self.last_stage = stage
+
+    # ---- running a prompt on ComfyUI ---------------------------------------------------------
+    async def run_prompt(self, job, prompt):
+        job.titles = {nid: (n.get("_meta") or {}).get("title") or n["class_type"] for nid, n in prompt.items()}
+        job.nodes_done, job.progress, job.node = set(), None, ""
+        pid = await self.comfy.queue_prompt(prompt)
+        job.prompt_id = pid
+        self.by_prompt[pid] = job
+        job.step = "ComfyUI 대기열"
+        missing = 0
+        try:
+            while True:
+                await asyncio.sleep(1.0)
+                entry = (await self.comfy.get_json(f"/history/{pid}")).get(pid)
+                if entry:
+                    break
+                queue = await self.comfy.get_json("/queue")
+                ids = [item[1] for item in queue.get("queue_running", []) + queue.get("queue_pending", [])]
+                if pid in [item[1] for item in queue.get("queue_running", [])]:
+                    job.step = "ComfyUI 실행 중"
+                missing = 0 if pid in ids else missing + 1
+                if missing >= 2 and job.cancel_requested:      # removed from the queue before it started
+                    raise asyncio.CancelledError()
+                if missing >= 5:
+                    raise AppError("ComfyUI 대기열에서 작업이 사라졌습니다 (ComfyUI가 재시작되었나요?)")
+        finally:
+            self.by_prompt.pop(pid, None)
+        for nid, out in (entry.get("outputs") or {}).items():
+            self.add_outputs(job, nid, out)
+        status = entry.get("status") or {}
+        if status.get("status_str") == "error":
+            for name, data in status.get("messages") or []:
+                if name == "execution_interrupted":
+                    raise asyncio.CancelledError()
+                if name == "execution_error":
+                    title = job.titles.get(str(data.get("node_id")), data.get("node_type", ""))
+                    raise AppError(f"[{data.get('node_id')} {title}] {data.get('exception_type', '')}: {data.get('exception_message', '')}")
+            raise AppError("ComfyUI 실행 중 오류가 났습니다 (ComfyUI 콘솔을 확인하세요)")
+        return entry.get("outputs") or {}
+
+    def add_outputs(self, job, node_id, output):
+        if not isinstance(output, dict):
+            return
+        seen = {(f["filename"], f["subfolder"], f["type"]) for f in job.outputs}
+        for f in output_files(node_id, job.titles.get(node_id, node_id), output):
+            if (f["filename"], f["subfolder"], f["type"]) not in seen:
+                job.outputs.append(f)
+
+    def on_ws(self, msg):
+        data = msg.get("data") or {}
+        job = self.by_prompt.get(data.get("prompt_id"))
+        if job is None:
+            return
+        kind = msg.get("type")
+        if kind == "execution_cached":
+            job.nodes_done.update(data.get("nodes") or [])
+        elif kind == "executing" and data.get("node") is not None:
+            job.step = "ComfyUI 실행 중"
+            job.node = job.titles.get(data["node"], str(data["node"]))
+            job.nodes_done.add(data["node"])
+            job.progress = None
+        elif kind == "progress":
+            job.progress = {"value": data.get("value", 0), "max": data.get("max", 0)}
+        elif kind == "executed":
+            self.add_outputs(job, str(data.get("node")), data.get("output") or {})
+
+    async def ws_loop(self):
+        ws_url = "ws" + self.comfy.url[4:] + "/ws?clientId=" + self.comfy.client_id
+        while True:
+            try:
+                async with self.comfy.session.ws_connect(ws_url, heartbeat=30, max_msg_size=0) as ws:
+                    self.comfy.ws_ok = True
+                    async for msg in ws:
+                        if msg.type == aiohttp.WSMsgType.TEXT:
+                            self.on_ws(json.loads(msg.data))
+                        elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                            break
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+                pass
+            self.comfy.ws_ok = False
+            self.comfy._object_info = None      # ComfyUI may come back with different nodes or models
+            await asyncio.sleep(3.0)
+
+    def start_job(self, kind, label, coro_fn, *args):
+        job = Job(kind, label)
+        self.jobs[job.id] = job
+        for old in sorted(self.jobs.values(), key=lambda j: j.created)[:-50]:
+            self.jobs.pop(old.id, None)
+
+        async def runner():
+            try:
+                async with self.lock:
+                    job.state, job.started = "running", time.time()
+                    job.result = await coro_fn(job, *args)
+                job.state, job.step = "done", "완료"
+            except asyncio.CancelledError:
+                job.state, job.step = "cancelled", "중단됨"
+            except AppError as e:
+                job.state, job.step, job.error = "error", "오류", str(e)
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                job.state, job.step = "error", "오류"
+                job.error = f"ComfyUI({self.comfy.url})와 통신하지 못했습니다: {type(e).__name__} {e}"
+            except Exception as e:  # shown in the UI instead of dying silently in a background task
+                log.exception("job %s failed", job.id)
+                job.state, job.step, job.error = "error", "오류", f"{type(e).__name__}: {e}"
+            job.finished = time.time()
+
+        job.task = asyncio.create_task(runner())
+        return job
+
+    # ---- stage 1: image ----------------------------------------------------------------------
+    async def stage_image(self, job, p):
+        with open(os.path.join(TEMPLATES, "image_zimage.api.json"), encoding="utf-8") as f:
+            prompt = json.load(f)
+        text = (p.get("prompt") or "").strip()
+        if not text:
+            raise AppError("이미지 프롬프트를 입력하세요")
+        seed = int(p.get("seed") or 0) or random.randint(1, 2 ** 48)
+        prompt["103"]["inputs"]["text"] = text
+        prompt["105"]["inputs"].update(width=int(p.get("width") or 960) // 16 * 16, height=int(p.get("height") or 1424) // 16 * 16)
+        prompt["107"]["inputs"].update(seed=seed, steps=int(p.get("steps") or 8))
+        prompt["120"]["inputs"]["filename_prefix"] = "webapp/zimage_" + time.strftime("%Y%m%d")
+        await self.hand_over("image", job)
+        outputs = await self.run_prompt(job, prompt)
+        images = (outputs.get("120") or {}).get("images") or []
+        if not images:
+            raise AppError("이미지가 만들어지지 않았습니다")
+        ref = {k: images[0].get(k, "") for k in ("filename", "subfolder", "type")}
+        return {"image": ref, "seed": seed, "width": prompt["105"]["inputs"]["width"], "height": prompt["105"]["inputs"]["height"]}
+
+    # ---- stage 2: scenario -------------------------------------------------------------------
+    async def stage_scenario(self, job, p):
+        ref = p.get("image") or {}
+        if not ref.get("filename"):
+            raise AppError("먼저 이미지를 만들거나 올리세요")
+        n = max(1, min(8, int(p.get("segments") or 6)))
+        seconds = float(p.get("seconds") or 5)
+        direction = (p.get("direction") or "").strip()
+        analyzer = p.get("analyzer") or "chat"
+
+        job.step = "이미지 준비"
+        image = Image.open(io.BytesIO(await self.comfy.view_bytes(ref))).convert("RGB")
+        name = time.strftime("%Y%m%d_%H%M%S") + "_" + sanitize_name(p.get("name")) + "_prompts"
+        folder = self.scenario_dir(name)
+        os.makedirs(folder, exist_ok=True)
+        png = io.BytesIO()
+        image.save(png, "PNG")
+        with open(os.path.join(folder, "reference.png"), "wb") as f:
+            f.write(png.getvalue())
+
+        clause = f"Direction from the user (follow it): {direction}\n" if direction else ""
+        raw = ""
+        if analyzer == "chat":
+            raw = await self.analyze_chat(job, image, SCENARIO_CHAT.format(n=n, s=seconds, direction=clause), p)
+        elif analyzer == "node":
+            uploaded = await self.comfy.upload_image(png.getvalue(), upload_name(name))
+            raw = await self.analyze_node(job, uploaded, SCENARIO_JSON.format(n=n, s=seconds, direction=clause), p)
+        parsed = parse_scenario(raw)
+        doc = build_scenario_doc(parsed, n, seconds, image.width, image.height, direction, ref)
+        self.save_scenario(name, doc)
+        if raw:
+            with open(os.path.join(folder, "model_answer.txt"), "w", encoding="utf-8") as f:
+                f.write(raw)
+        got = len(parsed["segments"])
+        warning = ""
+        if analyzer != "manual" and got < n:
+            warning = (f"모델이 구간 {n}개 중 {got}개만 형식에 맞게 썼습니다. 아래 원문을 참고해 빈 칸을 직접 채우거나 다시 생성하세요."
+                       if got else "모델 답변에서 구간 프롬프트를 찾지 못했습니다. 아래 원문을 참고해 직접 채우거나 다시 생성하세요.")
+        return {"dir": name, "scenario": doc, "raw": raw, "warning": warning}
+
+    async def analyze_chat(self, job, image, instruction, p):
+        models = await self.chat_models()
+        if models is None:
+            raise AppError("Qwen Chat을 쓸 수 없습니다. ComfyUI에 ComfyUI-QwenVL-Mod가 설치되어 있어야 합니다 "
+                           "(분석 방법을 'QwenVL 노드'로 바꾸면 원본 QwenVL 노드로 분석합니다).")
+        backend = p.get("chat_backend") or ("gguf" if models.get("gguf") else "hf")
+        small = image.copy()
+        small.thumbnail((1536, 1536))
+        jpg = io.BytesIO()
+        small.save(jpg, "JPEG", quality=92)
+        await self.hand_over("chat", job)
+        job.step = "Qwen Chat이 이미지를 분석하는 중 (모델 로딩 포함, 수 분 걸릴 수 있음)"
+        body = {
+            "backend": backend, "model": p.get("chat_model") or None,
+            "messages": [{"role": "user", "content": instruction}],
+            "graph": {"nodes": []}, "images": [base64.b64encode(jpg.getvalue()).decode("ascii")],
+            "options": {"max_tokens": int(p.get("max_tokens") or 2048), "temperature": float(p.get("temperature") or 0.4)},
+        }
+        status, res = await self.comfy.post_json("/qwenvl/chat", body, timeout=1800)
+        if status != 200:
+            raise AppError(f"Qwen Chat 오류 ({status}): {res.get('error', res)}")
+        return res.get("message") or ""
+
+    async def analyze_node(self, job, uploaded, instruction, p):
+        with open(os.path.join(TEMPLATES, "scenario_qwenvl.api.json"), encoding="utf-8") as f:
+            prompt = json.load(f)
+        prompt["130"]["inputs"]["image"] = (uploaded["subfolder"] + "/" if uploaded["subfolder"] else "") + uploaded["filename"]
+        q = prompt["111"]["inputs"]
+        q["custom_prompt"] = instruction
+        q["seed"] = random.randint(1, 2 ** 31)
+        if p.get("node_model"):
+            q["model_name"] = p["node_model"]
+        await self.hand_over("node", job)
+        outputs = await self.run_prompt(job, prompt)
+        text = (outputs.get("114") or {}).get("text") or []
+        return text[0] if text and isinstance(text[0], str) else ""
+
+    # ---- stage 3: video ----------------------------------------------------------------------
+    async def svi_api(self):
+        """The SVI workflow as an API prompt: templates/video_svi.api.json (exported from the UI) when it exists,
+        otherwise the UI workflow converted with ComfyUI's node definitions."""
+        override = os.path.join(TEMPLATES, "video_svi.api.json")
+        path = override if os.path.isfile(override) else self.path(self.cfg["svi_workflow"])
+        if not os.path.isfile(path):
+            raise AppError(f"SVI 워크플로우 파일이 없습니다: {path}")
+        key = (path, os.path.getmtime(path))
+        if self._svi_cache is None or self._svi_cache[0] != key or self.comfy._object_info is None:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            warnings = []
+            if not comfy_convert.is_api_format(data):
+                data, warnings = comfy_convert.workflow_to_api(data, await self.comfy.object_info())
+            self._svi_cache = (key, data, warnings)
+        return copy.deepcopy(self._svi_cache[1]), list(self._svi_cache[2])
+
+    @staticmethod
+    def svi_slots(api):
+        """(start image node id, [prompt node ids in section order], {param node id: node})."""
+        loads = [nid for nid, n in api.items() if n["class_type"] == "LoadImage"]
+        first = [nid for nid in loads if "1st" in api[nid]["_meta"]["title"].lower()]
+        prompts = sorted(((comfy_convert.ordinal_of(n["_meta"]["title"]), nid) for nid, n in api.items()
+                          if n["class_type"] == "CLIPTextEncode" and comfy_convert.ordinal_of(n["_meta"]["title"])))
+        params = {nid: n for nid, n in api.items()
+                  if n["class_type"] in ("INTConstant", "PrimitiveInt", "PrimitiveFloat", "FloatConstant")
+                  and not isinstance(n["inputs"].get("value"), list)}
+        return (first or loads or [None])[0], [nid for _, nid in prompts], params
+
+    async def video_info(self, backend):
+        if backend != "svi":
+            return {"backend": backend, "slots": 6, "params": [], "warnings": []}
+        api, warnings = await self.svi_api()
+        load, prompts, params = self.svi_slots(api)
+        if load is None or not prompts:
+            warnings.append("워크플로우에서 시작 이미지(Load Image) 또는 '1st_…' 프롬프트 노드를 찾지 못했습니다")
+        items = [{"id": nid, "title": n["_meta"]["title"], "value": n["inputs"].get("value"),
+                  "float": n["class_type"] in ("PrimitiveFloat", "FloatConstant")} for nid, n in params.items()]
+        items.sort(key=lambda p: (comfy_convert.ordinal_of(p["title"]) or 0, p["title"].lower()))
+        return {"backend": backend, "slots": len(prompts), "warnings": warnings, "params": items}
+
+    def build_svi(self, api, doc, texts, image_name, p, job):
+        load, prompt_nodes, params = self.svi_slots(api)
+        if load is None or not prompt_nodes:
+            raise AppError("SVI 워크플로우에서 시작 이미지 노드나 '1st_…' 프롬프트 노드를 찾지 못했습니다")
+        api[load]["inputs"]["image"] = image_name
+        if len(texts) != len(prompt_nodes):
+            job.notes.append(f"시나리오 구간 {len(texts)}개, 워크플로우 구간 {len(prompt_nodes)}개: "
+                             + ("남는 구간은 마지막 프롬프트를 반복합니다" if len(texts) < len(prompt_nodes) else "뒤쪽 프롬프트는 쓰지 않습니다"))
+        for i, nid in enumerate(prompt_nodes):
+            api[nid]["inputs"]["text"] = texts[min(i, len(texts) - 1)]
+        for nid, value in (p.get("params") or {}).items():
+            if nid in params and value not in ("", None):
+                api[nid]["inputs"]["value"] = float(value) if params[nid]["class_type"] in ("PrimitiveFloat", "FloatConstant") else int(float(value))
+        if p.get("match_size", True):
+            by_title = {n["_meta"]["title"].strip().lower(): n for n in params.values()}
+            w, h = by_title.get("width"), by_title.get("height")
+            if w and h and doc.get("width") and doc.get("height"):
+                scale = max(w["inputs"]["value"], h["inputs"]["value"]) / max(doc["width"], doc["height"])
+                w["inputs"]["value"] = max(16, round(doc["width"] * scale / 16) * 16)
+                h["inputs"]["value"] = max(16, round(doc["height"] * scale / 16) * 16)
+                job.notes.append(f"영상 크기 {w['inputs']['value']}x{h['inputs']['value']} (시작 이미지 비율)")
+        return api
+
+    @staticmethod
+    def build_i2v(api, doc, texts, image_name):
+        """Workflow 5 graph with the prompts.json reader replaced by the values themselves."""
+        fan = next((nid for nid, n in api.items() if n["class_type"] == "ShortsPromptsFanout"), None)
+        load = next((nid for nid, n in api.items() if n["class_type"] == "LoadImage"), None)
+        if fan is None or load is None:
+            raise AppError("I2V 템플릿에 ShortsPromptsFanout / LoadImage 노드가 없습니다")
+        texts = texts[:6]
+        slots = texts + [""] * (8 - len(texts))
+        values = slots + [doc.get("common_prompt", ""), doc.get("negative_prompt") or DEFAULT_NEGATIVE,
+                          len(texts), "\n".join(texts), len(texts)]
+        del api[fan]
+        joined = {}      # the workflow appends a fixed style text to every segment prompt; here the prompt goes in as is
+        for nid, node in api.items():
+            for name, v in node["inputs"].items():
+                if isinstance(v, list) and len(v) == 2 and str(v[0]) == fan:
+                    node["inputs"][name] = values[v[1]]
+                    if node["class_type"] == "StringConcatenate":
+                        joined[nid] = values[v[1]]
+        for nid in joined:
+            del api[nid]
+        for node in api.values():
+            for name, v in node["inputs"].items():
+                if isinstance(v, list) and len(v) == 2 and str(v[0]) in joined:
+                    node["inputs"][name] = joined[str(v[0])]
+        api[load]["inputs"]["image"] = image_name
+        return api
+
+    async def stage_video(self, job, p):
+        name = p.get("dir") or ""
+        doc = self.load_scenario(name)
+        texts = [_clean(sg.get("positive_prompt")) for sg in doc.get("segments", [])]
+        if not texts or not all(texts):
+            raise AppError("비어 있는 구간 프롬프트가 있습니다. 모두 채우고 저장한 뒤 다시 시도하세요")
+        if p.get("prepend_common") and doc.get("common_prompt"):
+            texts = [doc["common_prompt"].rstrip(". ") + ". " + t for t in texts]
+        ref_path = os.path.join(self.scenario_dir(name), "reference.png")
+        if not os.path.isfile(ref_path):
+            raise AppError(f"시작 이미지가 없습니다: {ref_path}")
+        job.step = "시작 이미지를 ComfyUI로 전송"
+        with open(ref_path, "rb") as f:
+            uploaded = await self.comfy.upload_image(f.read(), upload_name(name))
+        image_name = (uploaded["subfolder"] + "/" if uploaded["subfolder"] else "") + uploaded["filename"]
+
+        backend = p.get("backend") or "svi"
+        if backend == "svi":
+            api, warnings = await self.svi_api()
+            job.notes.extend(warnings)
+            api = self.build_svi(api, doc, texts, image_name, p, job)
+        else:
+            path = self.path(self.cfg["i2v_api"])
+            if not os.path.isfile(path):
+                raise AppError(f"I2V 템플릿이 없습니다: {path}")
+            with open(path, encoding="utf-8") as f:
+                api = self.build_i2v(json.load(f), doc, texts, image_name)
+        if p.get("random_seed", True):
+            comfy_convert.randomize_seeds(api)
+        comfy_convert.apply_text_replacements(api)
+        await self.hand_over("video", job)
+        await self.run_prompt(job, api)
+        videos = [f for f in job.outputs if f["kind"] == "video"]
+        if not videos:
+            raise AppError("영상 파일이 만들어지지 않았습니다 (ComfyUI 콘솔을 확인하세요)")
+        final = [f for f in videos if f["type"] == "output"] or videos
+        return {"dir": name, "final": final[-1]}
+
+
+# ---------------------------------------------------------------------------------------------- #
+# HTTP handlers
+# ---------------------------------------------------------------------------------------------- #
+def json_error(message, status=400):
+    return web.json_response({"error": message}, status=status)
+
+
+@web.middleware
+async def errors(request, handler):
+    try:
+        return await handler(request)
+    except AppError as e:
+        return json_error(str(e))
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        app = request.app["app"]
+        return json_error(f"ComfyUI({app.comfy.url})에 연결하지 못했습니다: {type(e).__name__} {e}", 502)
+
+
+async def index(request):
+    return web.FileResponse(os.path.join(HERE, "static", "index.html"), headers={"Cache-Control": "no-cache"})
+
+
+async def api_status(request):
+    app = request.app["app"]
+    out = {"comfy_url": app.comfy.url, "comfy_ok": False, "ws_ok": app.comfy.ws_ok, "output_dir": app.output_dir,
+           "running": 0, "pending": 0, "vram": None, "chat": None, "node_models": [],
+           "svi_override": os.path.isfile(os.path.join(TEMPLATES, "video_svi.api.json"))}
+    try:
+        queue = await app.comfy.get_json("/queue", timeout=5)
+        out.update(comfy_ok=True, running=len(queue.get("queue_running", [])), pending=len(queue.get("queue_pending", [])))
+        devices = (await app.comfy.get_json("/system_stats", timeout=5)).get("devices") or []
+        if devices and devices[0].get("vram_total"):
+            out["vram"] = {"name": devices[0].get("name", ""), "total": devices[0]["vram_total"], "free": devices[0].get("vram_free", 0)}
+        out["chat"] = await app.chat_models()
+        out["node_models"] = await app.node_models()
+    except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, ValueError):
+        pass
+    return web.json_response(out)
+
+
+async def api_start(request):
+    app = request.app["app"]
+    kind = request.match_info["kind"]
+    params = await request.json()
+    stages = {"image": ("이미지 생성", app.stage_image), "scenario": ("시나리오 생성", app.stage_scenario),
+              "video": ("영상 생성", app.stage_video)}
+    if kind not in stages:
+        return json_error("unknown stage", 404)
+    label, fn = stages[kind]
+    job = app.start_job(kind, label, fn, params)
+    return web.json_response({"job": job.to_dict()})
+
+
+async def api_job(request):
+    job = request.app["app"].jobs.get(request.match_info["id"])
+    if job is None:
+        return json_error("job not found", 404)
+    return web.json_response(job.to_dict())
+
+
+async def api_cancel(request):
+    app = request.app["app"]
+    job = app.jobs.get(request.match_info["id"])
+    if job is None:
+        return json_error("job not found", 404)
+    if job.state in ("queued", "running"):
+        job.cancel_requested = True
+        if job.prompt_id:
+            await app.comfy.post_json("/queue", {"delete": [job.prompt_id]})
+            await app.comfy.post_json("/interrupt", {"prompt_id": job.prompt_id})
+        else:
+            job.task.cancel()
+    return web.json_response(job.to_dict())
+
+
+async def api_free(request):
+    app = request.app["app"]
+    await app.comfy.post_json("/qwenvl/chat/unload", {"backend": "all"}, timeout=60)
+    await app.comfy.post_json("/free", {"unload_models": True, "free_memory": True})
+    app.last_stage = "freed"
+    return web.json_response({"ok": True})
+
+
+async def api_upload(request):
+    app = request.app["app"]
+    field = await (await request.multipart()).next()
+    if field is None or field.name != "image":
+        return json_error("image 필드가 없습니다")
+    data = await field.read()
+    try:
+        image = Image.open(io.BytesIO(data)).convert("RGB")
+    except OSError:
+        return json_error("이미지 파일이 아닙니다")
+    png = io.BytesIO()
+    image.save(png, "PNG")
+    ref = await app.comfy.upload_image(png.getvalue(), time.strftime("%Y%m%d_%H%M%S") + "_upload.png")
+    return web.json_response({"image": ref, "width": image.width, "height": image.height})
+
+
+async def api_scenarios(request):
+    return web.json_response({"scenarios": request.app["app"].list_scenarios()})
+
+
+async def api_scenario_get(request):
+    app = request.app["app"]
+    name = request.query.get("dir", "")
+    return web.json_response({"dir": name, "scenario": app.load_scenario(name)})
+
+
+async def api_scenario_save(request):
+    app = request.app["app"]
+    body = await request.json()
+    name = body.get("dir", "")
+    doc = app.load_scenario(name)
+    edit = body.get("scenario") or {}
+    for key in ("summary_ko", "common_prompt", "negative_prompt"):
+        if isinstance(edit.get(key), str):
+            doc[key] = edit[key].strip()
+    texts = edit.get("prompts")
+    if isinstance(texts, list):
+        seconds = float(doc.get("segment_length") or 5)
+        old = doc.get("segments", [])
+        doc["segments"] = []
+        for i, text in enumerate(texts[:8]):
+            sg = old[i] if i < len(old) else {"motion": "", "camera": "", "scene_ko": ""}
+            start, end = round(i * seconds, 3), round((i + 1) * seconds, 3)
+            sg.update(index=i + 1, start=start, end=end, duration=round(seconds, 3),
+                      label=f"{_fmt_time(start)} - {_fmt_time(end)}", positive_prompt=_clean(text))
+            doc["segments"].append(sg)
+        doc["duration"] = round(len(doc["segments"]) * seconds, 3)
+    app.save_scenario(name, doc)
+    return web.json_response({"dir": name, "scenario": doc})
+
+
+async def api_scenario_image(request):
+    app = request.app["app"]
+    path = os.path.join(app.scenario_dir(request.query.get("dir", "")), "reference.png")
+    if not os.path.isfile(path):
+        return json_error("not found", 404)
+    return web.FileResponse(path, headers={"Cache-Control": "no-cache"})
+
+
+async def api_video_info(request):
+    return web.json_response(await request.app["app"].video_info(request.query.get("backend", "svi")))
+
+
+async def _proxy(request, path, params):
+    app = request.app["app"]
+    headers = {"Range": request.headers["Range"]} if "Range" in request.headers else {}
+    async with app.comfy.session.get(app.comfy.url + path, params=params, headers=headers) as r:
+        resp = web.StreamResponse(status=r.status)
+        for h in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
+            if h in r.headers:
+                resp.headers[h] = r.headers[h]
+        await resp.prepare(request)
+        try:
+            async for chunk in r.content.iter_chunked(1 << 16):
+                await resp.write(chunk)
+            await resp.write_eof()
+        except (ConnectionResetError, aiohttp.ClientConnectionError):
+            pass      # the browser stopped the download (seeking in a video does this)
+        return resp
+
+
+async def api_view(request):
+    params = {k: request.query.get(k, "") for k in ("filename", "subfolder", "type")}
+    path = "/vhs/viewvideo" if request.query.get("transcode") else "/view"
+    return await _proxy(request, path, params)
+
+
+async def on_startup(web_app):
+    app = web_app["app"]
+    await app.comfy.start()
+    web_app["ws_task"] = asyncio.create_task(app.ws_loop())
+    if app.cfg.get("open"):
+        host = "127.0.0.1" if app.cfg["host"] in ("0.0.0.0", "::") else app.cfg["host"]
+        asyncio.get_running_loop().call_later(1.0, webbrowser.open, f"http://{host}:{app.cfg['port']}")
+
+
+async def on_cleanup(web_app):
+    web_app["ws_task"].cancel()
+    await web_app["app"].comfy.close()
+
+
+def load_config():
+    cfg = dict(DEFAULT_CONFIG)
+    path = os.path.join(HERE, "config.json")
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as f:
+            cfg.update(json.load(f))
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--host", default=cfg["host"])
+    ap.add_argument("--port", type=int, default=cfg["port"])
+    ap.add_argument("--comfy", default=cfg["comfy_url"], help="ComfyUI address, e.g. http://127.0.0.1:8188")
+    ap.add_argument("--output-dir", default=cfg["output_dir"], help="where scenario folders are written (default: <root>/output)")
+    ap.add_argument("--open", action="store_true", help="open the page in the default browser once the server is up")
+    args = ap.parse_args()
+    cfg.update(host=args.host, port=args.port, comfy_url=args.comfy, output_dir=args.output_dir, open=args.open)
+    return cfg
+
+
+def make_app(cfg):
+    web_app = web.Application(middlewares=[errors], client_max_size=64 * 1024 * 1024)
+    web_app["app"] = App(cfg)
+    web_app.add_routes([
+        web.get("/", index),
+        web.get("/api/status", api_status),
+        web.post("/api/start/{kind}", api_start),
+        web.get("/api/job/{id}", api_job),
+        web.post("/api/job/{id}/cancel", api_cancel),
+        web.post("/api/free", api_free),
+        web.post("/api/upload", api_upload),
+        web.get("/api/scenarios", api_scenarios),
+        web.get("/api/scenario", api_scenario_get),
+        web.post("/api/scenario", api_scenario_save),
+        web.get("/api/scenario/image", api_scenario_image),
+        web.get("/api/video/info", api_video_info),
+        web.get("/api/view", api_view),
+    ])
+    web_app.on_startup.append(on_startup)
+    web_app.on_cleanup.append(on_cleanup)
+    return web_app
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    config = load_config()
+    shown = "127.0.0.1" if config["host"] in ("0.0.0.0", "::") else config["host"]
+    print(f"\n  Video web app:  http://{shown}:{config['port']}\n  ComfyUI:        {config['comfy_url']}\n")
+    web.run_app(make_app(config), host=config["host"], port=config["port"], print=None)

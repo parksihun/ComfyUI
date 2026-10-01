@@ -1,0 +1,40 @@
+{
+ "130": {
+  "inputs": {"image": "example.png"},
+  "class_type": "LoadImage",
+  "_meta": {"title": "시작 이미지"}
+ },
+ "111": {
+  "inputs": {
+   "model_name": "Qwen3-VL-8B-Instruct",
+   "quantization": "None (FP16)",
+   "attention_mode": "auto",
+   "use_torch_compile": false,
+   "device": "auto",
+   "preset_prompt": "📹 Video Summary",
+   "custom_prompt": "",
+   "max_tokens": 2048,
+   "temperature": 0.3,
+   "top_p": 0.9,
+   "num_beams": 1,
+   "repetition_penalty": 1.2,
+   "frame_count": 1,
+   "video_frame_size": "auto",
+   "keep_model_loaded": false,
+   "seed": 1,
+   "image": ["130", 0]
+  },
+  "class_type": "AILab_QwenVL_Advanced",
+  "_meta": {"title": "QwenVL 이미지 분석 (시나리오 작성)"}
+ },
+ "113": {
+  "inputs": {"unload_comfy_models": true, "value": ["111", 0]},
+  "class_type": "ShortsFreeVRAM",
+  "_meta": {"title": "Qwen 모델 해제"}
+ },
+ "114": {
+  "inputs": {"source": ["113", 0]},
+  "class_type": "PreviewAny",
+  "_meta": {"title": "모델 답변"}
+ }
+}
