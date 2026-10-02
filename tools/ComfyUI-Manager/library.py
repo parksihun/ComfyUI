@@ -116,21 +116,24 @@ class Catalogue:
         self.stamp, self.entries = None, []
 
     def load(self):
-        files = []
-        for folder, prefix in self.dirs:
-            if os.path.isdir(folder):
-                files += [(os.path.join(folder, f), prefix) for f in sorted(os.listdir(folder)) if f.lower().endswith(".json")]
+        files = []      # (path, name shown): subfolders of workflow/ are included, shown as "sub/name"
+        for base, prefix in self.dirs:
+            for folder, dirs, names in os.walk(base):
+                dirs.sort()
+                for f in sorted(names):
+                    if f.lower().endswith(".json"):
+                        rel = os.path.relpath(os.path.join(folder, f), base).replace("\\", "/")
+                        files.append((os.path.join(folder, f), prefix + re.sub(r"\.api$", "", os.path.splitext(rel)[0])))
         stamp = tuple((p, os.path.getmtime(p)) for p, _ in files)
         if stamp == self.stamp:
             return self.entries
         entries = []
-        for path, prefix in files:
+        for path, name in files:
             try:
                 with open(path, encoding="utf-8") as f:
                     data = json.load(f)
             except (OSError, ValueError):
                 continue
-            name = prefix + re.sub(r"\.api$", "", os.path.splitext(os.path.basename(path))[0])
             if comfy_convert.is_api_format(data) and data:
                 entries.append({"name": name, "id": None, "types": api_types(data), "created": os.path.getctime(path)})
             elif isinstance(data, dict) and isinstance(data.get("nodes"), list):
