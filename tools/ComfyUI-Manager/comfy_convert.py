@@ -231,6 +231,87 @@ def ordinal_of(title):
     return int(m.group(1)) if m else None
 
 
+_SEGMENT = re.compile(r"(?:구간|part|segment|seg|scene|shot)\s*[_#-]?\s*(\d+)", re.IGNORECASE)
+_NEGATIVE = re.compile(r"negative|네거티브|부정", re.IGNORECASE)
+VIDEO_OUT = ("VHS_VideoCombine", "SaveVideo", "SaveWEBM", "SaveAnimatedWEBP", "SaveAnimatedPNG")
+# inputs that never lead to a prompt, so they are not followed when looking for the text encoders
+_NOT_TEXT = {"clip", "vae", "model", "image", "images", "pixels", "latent", "latent_image", "samples", "mask", "clip_vision",
+             "clip_vision_output", "start_image", "end_image", "control_net", "sampler", "sigmas", "noise", "audio"}
+
+
+def _is_link(value):
+    return isinstance(value, list) and len(value) == 2 and isinstance(value[0], (str, int)) and isinstance(value[1], int)
+
+
+def text_encoders(api):
+    """(positive, negative): the CLIPTextEncode nodes whose result ends up as a sampler's positive / negative prompt.
+    One that feeds both (a negative made by zeroing the positive) counts as positive."""
+    found = {"positive": set(), "negative": set()}
+
+    def walk(link, role, seen):
+        nid = str(link[0])
+        node = api.get(nid)
+        if node is None or nid in seen:
+            return
+        seen.add(nid)
+        if node["class_type"] == "CLIPTextEncode":
+            found[role].add(nid)
+            return
+        links = {k: v for k, v in node["inputs"].items() if _is_link(v)}
+        if "positive" in links and "negative" in links:      # passes both on: output 0 is the positive one, 1 the negative
+            walk(links["negative" if link[1] == 1 else "positive"], role, seen)
+            return
+        for name, value in links.items():
+            if name not in _NOT_TEXT:
+                walk(value, role, seen)
+
+    for node in api.values():
+        for name, role in (("positive", "positive"), ("negative", "negative"), ("conditioning", "positive")):
+            if _is_link(node["inputs"].get(name)) and (name != "conditioning" or node["class_type"].endswith("Guider")):
+                walk(node["inputs"][name], role, set())
+    title = lambda nid: (api[nid].get("_meta") or {}).get("title") or ""
+    for nid, node in api.items():      # what the tracing does not reach (custom samplers) is told by its title
+        if node["class_type"] == "CLIPTextEncode" and nid not in found["positive"] | found["negative"]:
+            if _NEGATIVE.search(title(nid)):
+                found["negative"].add(nid)
+            elif ordinal_of(title(nid)) or _SEGMENT.search(title(nid)):
+                found["positive"].add(nid)
+    positive = {nid for nid in found["positive"] if not (_NEGATIVE.search(title(nid)) and nid in found["negative"])}
+    return positive, found["negative"] - positive
+
+
+def find_slots(api):
+    """Where a workflow takes what the manager gives it.
+      load:    the LoadImage node of the start image (None when there is none)
+      prompts: [[node ids] per segment, in order]; one group when the prompts are not numbered
+      sizes:   empty-latent nodes whose width / height are plain numbers
+      video:   it saves a video
+      saves:   SaveImage nodes
+    Segments are told by the title: '1st_...', '2nd_...' or '구간 1 ...', 'part 2 ...'."""
+    title = lambda nid: (api[nid].get("_meta") or {}).get("title") or ""
+    loads = [nid for nid, n in api.items() if n["class_type"] == "LoadImage"]
+    first = [nid for nid in loads if re.search(r"1st|start|first|시작", title(nid), re.IGNORECASE)]
+    positive, _ = text_encoders(api)
+    numbered = {}
+    for nid in positive:
+        m = _SEGMENT.search(title(nid))
+        number = ordinal_of(title(nid)) or (int(m.group(1)) if m else None)
+        if number is not None:
+            numbered.setdefault(number, []).append(nid)
+    plain = sorted(positive - {nid for ids in numbered.values() for nid in ids})
+    prompts = [sorted(numbered[k]) for k in sorted(numbered)] if len(numbered) > 1 else ([sorted(positive)] if positive else [])
+    if len(numbered) > 1 and plain:      # an unnumbered one next to numbered ones: a common prompt, left as the workflow has it
+        pass
+    classes = {n["class_type"] for n in api.values()}
+    return {
+        "load": (first or loads or [None])[0], "loads": loads, "prompts": prompts,
+        "sizes": [nid for nid, n in api.items() if re.match(r"Empty.*Latent", n["class_type"])
+                  and all(isinstance(n["inputs"].get(k), int) for k in ("width", "height"))],
+        "video": bool(classes & set(VIDEO_OUT)),
+        "saves": [nid for nid, n in api.items() if n["class_type"] == "SaveImage"],
+    }
+
+
 def randomize_seeds(api):
     """New random value for every literal seed (what 'randomize' does in the UI). Samplers that add no noise
     keep theirs."""

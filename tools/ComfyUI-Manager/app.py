@@ -507,7 +507,7 @@ class App:
         self.by_prompt = {}
         self.lock = asyncio.Lock()       # one stage at a time: the stages hand VRAM over to each other
         self.last_stage = None
-        self._svi_cache = None
+        self._workflows = {}             # name -> ((file, mtime, node definitions), API prompt, warnings)
         self._chat_models = (0, None)
         self._combos = {}
         self._llm = (0, None)
@@ -710,7 +710,7 @@ class App:
         """Point the tool at another ComfyUI (local or on another machine) and remember it."""
         self.comfy.url = url
         self.comfy._object_info = None
-        self._combos, self._chat_models, self._svi_cache, self.last_stage = {}, (0, None), None, None
+        self._combos, self._chat_models, self._workflows, self.last_stage = {}, (0, None), {}, None
         self._llm = (0, None)
         self.remember(comfy_url=url)
         self.comfy_output = ""
@@ -938,27 +938,133 @@ class App:
         return job
 
     # ---- stage 1: image ----------------------------------------------------------------------
+    # ---- workflows: which files the steps can run, and where each takes its inputs -------------------
+    BUILTIN_IMAGE = "기본 (z-image turbo)"
+
+    @staticmethod
+    def workflow_label(name):
+        return re.sub(r"(\.api)?\.json$", "", name) if name else App.BUILTIN_IMAGE
+
+    def default_video(self):
+        """The configured SVI workflow, as a name inside workflow/."""
+        return re.sub(r"^workflow[\\/]", "", self.cfg["svi_workflow"]).replace("\\", "/")
+
+    def workflow_names(self):
+        """Every workflow file under workflow/ ('x.api.json', the exact export, hides its 'x.json')."""
+        base, names = os.path.join(ROOT, "workflow"), []
+        for folder, _, files in os.walk(base):
+            for f in files:
+                if f.lower().endswith(".json"):
+                    names.append(os.path.relpath(os.path.join(folder, f), base).replace("\\", "/"))
+        exports = {n[:-len(".api.json")] + ".json" for n in names if n.lower().endswith(".api.json")}
+        return sorted((n for n in names if n not in exports), key=str.lower)
+
+    async def workflow_api(self, name):
+        """(API prompt, warnings) of a workflow: '' is the built-in image template, anything else a file under
+        workflow/. A workflow saved from the UI is converted with ComfyUI's node definitions."""
+        if not name:
+            path = os.path.join(TEMPLATES, "image_zimage.api.json")
+        else:
+            base = os.path.realpath(os.path.join(ROOT, "workflow"))
+            path = os.path.realpath(os.path.join(base, name))
+            if os.path.commonpath([path, base]) != base:
+                raise AppError("workflow 폴더 밖의 파일은 쓸 수 없습니다")
+            override = os.path.join(TEMPLATES, "video_svi.api.json")      # an exact export of the SVI workflow, when given
+            if name == self.default_video() and os.path.isfile(override):
+                path = override
+        if not os.path.isfile(path):
+            raise AppError(f"워크플로우 파일이 없습니다: {path}")
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise AppError(f"워크플로우 파일이 아닙니다: {name}")
+        ui = not comfy_convert.is_api_format(data)
+        key = (path, os.path.getmtime(path), id(await self.comfy.object_info()) if ui else 0)
+        cached = self._workflows.get(name)
+        if cached is None or cached[0] != key:
+            warnings = []
+            if ui:
+                data, warnings = comfy_convert.workflow_to_api(data, await self.comfy.object_info())
+            cached = self._workflows[name] = (key, data, warnings)
+        return copy.deepcopy(cached[1]), list(cached[2])
+
+    @staticmethod
+    def usable(api, kind):
+        """'' when the step can run this workflow, else why not."""
+        slots, classes = comfy_convert.find_slots(api), {n["class_type"] for n in api.values()}
+        if not slots["prompts"]:
+            return "프롬프트 노드(CLIP Text Encode)를 찾지 못했습니다"
+        if kind == "image":
+            return ("영상을 만드는 워크플로우입니다" if slots["video"] else "입력 이미지가 필요한 워크플로우입니다" if slots["loads"]
+                    else "" if slots["saves"] else "이미지를 저장하는 노드(Save Image)가 없습니다")
+        if not slots["video"]:
+            return "영상을 저장하는 노드가 없습니다"
+        if any("LoadVideo" in c for c in classes):
+            return "원본 영상이 필요한 워크플로우입니다"
+        return "" if slots["load"] else "시작 이미지 노드(Load Image)가 없습니다"
+
+    async def workflows(self, kind):
+        """The workflows the image / video step can run, for the list on the page."""
+        items = [{"name": "", "label": self.BUILTIN_IMAGE, "segments": 1, "missing": []}] if kind == "image" else []
+        unread = 0
+        for name in self.workflow_names():
+            try:
+                api, warnings = await self.workflow_api(name)
+            except (AppError, aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError):
+                unread += 1      # not a workflow, or one from the UI while ComfyUI is away
+                continue
+            if self.usable(api, kind):
+                continue
+            items.append({"name": name, "label": self.workflow_label(name),
+                          "segments": 6 if self.has_fanout(api) else len(comfy_convert.find_slots(api)["prompts"]),
+                          "missing": sorted({w.split("'")[1] for w in warnings if "unknown type" in w})})
+        return {"items": items, "default": "" if kind == "image" else self.default_video(), "unread": unread}
+
+    @staticmethod
+    def has_fanout(api):
+        return any(n["class_type"] == "ShortsPromptsFanout" for n in api.values())
+
+    # ---- stage 1: image ----------------------------------------------------------------------
     async def stage_image(self, job, p):
-        with open(os.path.join(TEMPLATES, "image_zimage.api.json"), encoding="utf-8") as f:
-            prompt = json.load(f)
         text = (p.get("prompt") or "").strip()
         if not text:
             raise AppError("이미지 프롬프트를 입력하세요")
+        name = p.get("workflow") or ""
+        prompt, warnings = await self.workflow_api(name)
+        problem = self.usable(prompt, "image")
+        if problem:
+            raise AppError(f"이 워크플로우로는 이미지를 만들 수 없습니다 ({self.workflow_label(name)}): {problem}")
+        slots = comfy_convert.find_slots(prompt)
+        for nid in slots["prompts"][0]:
+            prompt[nid]["inputs"]["text"] = text
+        width, height = int(p.get("width") or 960) // 16 * 16, int(p.get("height") or 1424) // 16 * 16
+        for nid in slots["sizes"]:
+            prompt[nid]["inputs"].update(width=width, height=height)
         seed = int(p.get("seed") or 0) or random.randint(1, 2 ** 48)
-        prompt["103"]["inputs"]["text"] = text
-        prompt["105"]["inputs"].update(width=int(p.get("width") or 960) // 16 * 16, height=int(p.get("height") or 1424) // 16 * 16)
-        prompt["107"]["inputs"].update(seed=seed, steps=int(p.get("steps") or 8))
-        prompt["120"]["inputs"]["filename_prefix"] = "webapp/zimage_" + time.strftime("%Y%m%d")
+        for node in prompt.values():
+            for key in ("seed", "noise_seed"):
+                if isinstance(node["inputs"].get(key), int) and not isinstance(node["inputs"][key], bool):
+                    node["inputs"][key] = seed
+            if p.get("steps") and isinstance(node["inputs"].get("steps"), int) and "seed" in node["inputs"]:
+                node["inputs"]["steps"] = int(p["steps"])      # only when asked: every workflow has its own number
+        short = "zimage" if not name else re.sub(r"[^A-Za-z0-9]+", "_", self.workflow_label(name).rsplit("/", 1)[-1]).strip("_")[:40] or "image"
+        for nid in slots["saves"]:
+            prompt[nid]["inputs"]["filename_prefix"] = f"webapp/{short}_" + time.strftime("%Y%m%d")
+        comfy_convert.apply_text_replacements(prompt)
         await self.hand_over("image", job)
-        outputs = await self.run_prompt(job, prompt)
-        images = (outputs.get("120") or {}).get("images") or []
+        await self.run_prompt(job, prompt)
+        images = [f for f in job.outputs if f["kind"] == "image"]
         if not images:
             raise AppError("이미지가 만들어지지 않았습니다")
         unseen = await self.find_outputs(job)
-        ref = {k: images[0].get(k, "") for k in ("filename", "subfolder", "type")}
-        saved = next((" · ".join(filter(None, (self.saved_text(f), unseen))) for f in job.outputs
-                      if f["type"] == "output" and f["filename"] == ref["filename"]), "")
-        return {"image": ref, "saved": saved, "seed": seed, "width": prompt["105"]["inputs"]["width"], "height": prompt["105"]["inputs"]["height"]}
+        made = ([f for f in images if f["type"] == "output"] or images)[-1]
+        ref = {k: made[k] for k in ("filename", "subfolder", "type")}
+        saved = " · ".join(filter(None, (self.saved_text(made) if made["type"] == "output" else "", unseen)))
+        if not slots["sizes"]:
+            saved = " · ".join(filter(None, (saved, "이 워크플로우는 크기를 워크플로우 값 그대로 씁니다")))
+        size = prompt[slots["sizes"][0]]["inputs"] if slots["sizes"] else {"width": 0, "height": 0}
+        return {"image": ref, "saved": saved, "seed": seed, "width": size["width"], "height": size["height"],
+                "workflow": self.workflow_label(name), "missing": sorted({w.split("'")[1] for w in warnings if "unknown type" in w})}
 
     # ---- stage 2: scenario -------------------------------------------------------------------
     async def stage_scenario(self, job, p):
@@ -1064,57 +1170,43 @@ class App:
         return text[0] if text and isinstance(text[0], str) else ""
 
     # ---- stage 3: video ----------------------------------------------------------------------
-    async def svi_api(self):
-        """The SVI workflow as an API prompt: templates/video_svi.api.json (exported from the UI) when it exists,
-        otherwise the UI workflow converted with ComfyUI's node definitions."""
-        override = os.path.join(TEMPLATES, "video_svi.api.json")
-        path = override if os.path.isfile(override) else self.path(self.cfg["svi_workflow"])
-        if not os.path.isfile(path):
-            raise AppError(f"SVI 워크플로우 파일이 없습니다: {path}")
-        key = (path, os.path.getmtime(path))
-        if self._svi_cache is None or self._svi_cache[0] != key or self.comfy._object_info is None:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            warnings = []
-            if not comfy_convert.is_api_format(data):
-                data, warnings = comfy_convert.workflow_to_api(data, await self.comfy.object_info())
-            self._svi_cache = (key, data, warnings)
-        return copy.deepcopy(self._svi_cache[1]), list(self._svi_cache[2])
+    def video_workflow(self, p):
+        """The workflow a video request names; requests of an earlier version said 'svi' / 'i2v'."""
+        if p.get("workflow"):
+            return p["workflow"]
+        if p.get("backend") == "i2v":
+            return re.sub(r"^workflow[\\/]", "", self.cfg["i2v_api"]).replace("\\", "/")
+        return self.default_video()
 
     @staticmethod
-    def svi_slots(api):
-        """(start image node id, [prompt node ids in section order], {param node id: node})."""
-        loads = [nid for nid, n in api.items() if n["class_type"] == "LoadImage"]
-        first = [nid for nid in loads if "1st" in api[nid]["_meta"]["title"].lower()]
-        prompts = sorted(((comfy_convert.ordinal_of(n["_meta"]["title"]), nid) for nid, n in api.items()
-                          if n["class_type"] == "CLIPTextEncode" and comfy_convert.ordinal_of(n["_meta"]["title"])))
-        params = {nid: n for nid, n in api.items()
-                  if n["class_type"] in ("INTConstant", "PrimitiveInt", "PrimitiveFloat", "FloatConstant")
-                  and not isinstance(n["inputs"].get("value"), list)}
-        return (first or loads or [None])[0], [nid for _, nid in prompts], params
+    def numbers(api):
+        """{node id: node} of the number constants a workflow exposes (segment length, size, steps...)."""
+        return {nid: n for nid, n in api.items()
+                if n["class_type"] in ("INTConstant", "PrimitiveInt", "PrimitiveFloat", "FloatConstant")
+                and not isinstance(n["inputs"].get("value"), list)}
 
-    async def video_info(self, backend):
-        if backend != "svi":
-            return {"backend": backend, "slots": 6, "params": [], "warnings": []}
-        api, warnings = await self.svi_api()
-        load, prompts, params = self.svi_slots(api)
-        if load is None or not prompts:
-            warnings.append("워크플로우에서 시작 이미지(Load Image) 또는 '1st_…' 프롬프트 노드를 찾지 못했습니다")
+    async def video_info(self, name):
+        api, warnings = await self.workflow_api(name)
+        problem = self.usable(api, "video")
+        if problem:
+            warnings.append(problem)
+        if self.has_fanout(api):
+            return {"workflow": name, "slots": 6, "params": [], "warnings": warnings}
         items = [{"id": nid, "title": n["_meta"]["title"], "value": n["inputs"].get("value"),
-                  "float": n["class_type"] in ("PrimitiveFloat", "FloatConstant")} for nid, n in params.items()]
+                  "float": n["class_type"] in ("PrimitiveFloat", "FloatConstant")} for nid, n in self.numbers(api).items()]
         items.sort(key=lambda p: (comfy_convert.ordinal_of(p["title"]) or 0, p["title"].lower()))
-        return {"backend": backend, "slots": len(prompts), "warnings": warnings, "params": items}
+        return {"workflow": name, "slots": len(comfy_convert.find_slots(api)["prompts"]), "warnings": warnings, "params": items}
 
     def build_svi(self, api, doc, texts, image_name, p, job):
-        load, prompt_nodes, params = self.svi_slots(api)
-        if load is None or not prompt_nodes:
-            raise AppError("SVI 워크플로우에서 시작 이미지 노드나 '1st_…' 프롬프트 노드를 찾지 못했습니다")
+        slots, params = comfy_convert.find_slots(api), self.numbers(api)
+        load, prompt_nodes = slots["load"], slots["prompts"]
         api[load]["inputs"]["image"] = image_name
         if len(texts) != len(prompt_nodes):
             job.notes.append(f"시나리오 구간 {len(texts)}개, 워크플로우 구간 {len(prompt_nodes)}개: "
                              + ("남는 구간은 마지막 프롬프트를 반복합니다" if len(texts) < len(prompt_nodes) else "뒤쪽 프롬프트는 쓰지 않습니다"))
-        for i, nid in enumerate(prompt_nodes):
-            api[nid]["inputs"]["text"] = texts[min(i, len(texts) - 1)]
+        for i, group in enumerate(prompt_nodes):
+            for nid in group:
+                api[nid]["inputs"]["text"] = texts[min(i, len(texts) - 1)]
         for nid, value in (p.get("params") or {}).items():
             if nid in params and value not in ("", None):
                 api[nid]["inputs"]["value"] = float(value) if params[nid]["class_type"] in ("PrimitiveFloat", "FloatConstant") else int(float(value))
@@ -1172,17 +1264,17 @@ class App:
             uploaded = await self.comfy.upload_image(f.read(), upload_name(name))
         image_name = (uploaded["subfolder"] + "/" if uploaded["subfolder"] else "") + uploaded["filename"]
 
-        backend = p.get("backend") or "svi"
-        if backend == "svi":
-            api, warnings = await self.svi_api()
-            job.notes.extend(warnings)
-            api = self.build_svi(api, doc, texts, image_name, p, job)
+        workflow = self.video_workflow(p)
+        api, warnings = await self.workflow_api(workflow)
+        problem = self.usable(api, "video")
+        if problem:
+            raise AppError(f"이 워크플로우로는 영상을 만들 수 없습니다 ({self.workflow_label(workflow)}): {problem}")
+        job.notes.append("워크플로우: " + self.workflow_label(workflow))
+        job.notes.extend(warnings)
+        if self.has_fanout(api):      # reads prompts.json through a node: give it the values themselves
+            api = self.build_i2v(api, doc, texts, image_name)
         else:
-            path = self.path(self.cfg["i2v_api"])
-            if not os.path.isfile(path):
-                raise AppError(f"I2V 템플릿이 없습니다: {path}")
-            with open(path, encoding="utf-8") as f:
-                api = self.build_i2v(json.load(f), doc, texts, image_name)
+            api = self.build_svi(api, doc, texts, image_name, p, job)
         if p.get("random_seed", True):
             comfy_convert.randomize_seeds(api)
         comfy_convert.apply_text_replacements(api)
@@ -1197,7 +1289,7 @@ class App:
             job.notes.append("저장: " + self.saved_text(final[-1]))
         if unseen:
             job.notes.append(unseen)
-        return {"dir": name, "final": final[-1]}
+        return {"dir": name, "final": final[-1], "workflow": self.workflow_label(workflow)}
 
 
 # ---------------------------------------------------------------------------------------------- #
@@ -1369,7 +1461,7 @@ async def api_comfy_restart(request):
         raise AppError(f"재시작 요청이 거부되었습니다 ({status}): {text}")
     # what was known about that ComfyUI belongs to the process that is gone
     app.comfy._object_info = None
-    app._combos, app._chat_models, app._llm, app._svi_cache, app.last_stage, app._followed = {}, (0, None), (0, None), None, None, None
+    app._combos, app._chat_models, app._llm, app._workflows, app.last_stage, app._followed = {}, (0, None), (0, None), {}, None, None
     return web.json_response({"message": "ComfyUI에 재시작을 요청했습니다. 다시 연결될 때까지 1~2분 걸립니다 (연결 표시가 파란색으로 돌아오면 끝난 것입니다)"})
 
 
@@ -1441,7 +1533,14 @@ async def api_scenario_image(request):
 
 
 async def api_video_info(request):
-    return web.json_response(await request.app["app"].video_info(request.query.get("backend", "svi")))
+    app = request.app["app"]
+    return web.json_response(await app.video_info(request.query.get("workflow") or app.default_video()))
+
+
+async def api_workflows(request):
+    """The workflows a step can run (?kind=image | video)."""
+    kind = request.query.get("kind", "video")
+    return web.json_response(await request.app["app"].workflows("image" if kind == "image" else "video"))
 
 
 # ---- library ---------------------------------------------------------------------------------------
@@ -1671,6 +1770,7 @@ def make_app(cfg):
         web.post("/api/scenario", api_scenario_save),
         web.get("/api/scenario/image", api_scenario_image),
         web.get("/api/video/info", api_video_info),
+        web.get("/api/workflows", api_workflows),
         web.get("/api/view", api_view),
         web.get("/api/library", api_library),
         web.get("/api/library/item", api_library_item),

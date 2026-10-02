@@ -27,7 +27,7 @@
   @media (max-width:760px) { body { flex-direction:column; } aside { width:auto; height:auto; position:static; border-right:0; border-bottom:1px solid var(--line); } }
   header { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; padding:10px 18px; background:#101216; border-bottom:1px solid var(--line); }
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--bad); margin-right:6px; }
-  .dot.on { background:var(--accent); }      /* connected: blue, not connected: red */
+  .dot.on { background:var(--ok); }      /* connected: green, not connected: red */
   .status { color:var(--dim); font-size:13px; }
   .spacer { flex:1; }
   main { max-width:1280px; margin:0 auto; padding:16px 18px 60px; display:flex; flex-direction:column; gap:16px; }
@@ -160,7 +160,7 @@
     <button id="btnAll" title="이미지 → 시나리오 → 영상을 현재 입력값으로 이어서 실행">한 번에 실행</button>
     <button id="btnCancel" class="danger" disabled>중단</button>
   </span>
-  <span class="status" title="ComfyUI 연결 상태 (파란색: 연결됨, 빨간색: 연결 안 됨)"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></span>
+  <span class="status" title="ComfyUI 연결 상태 (초록색: 연결됨, 빨간색: 연결 안 됨)"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></span>
   <button class="sub gear" id="btnSettings" title="설정: 서버 연결, 서버 결과 폴더, VRAM 비우기, ComfyUI 재시작" aria-label="설정">&#9881;</button>
 </header>
 
@@ -189,9 +189,12 @@
 
 <main id="tabCreate">
   <section id="stepImage">
-    <h2>이미지 생성 · 입력 <span>z-image turbo로 영상의 첫 프레임을 만듭니다 (또는 가지고 있는 이미지를 올립니다)</span></h2>
+    <h2>이미지 생성 · 입력 <span>고른 워크플로우로 영상의 첫 프레임을 만듭니다 (또는 가지고 있는 이미지를 올립니다)</span></h2>
     <div class="cols">
       <div>
+        <label>이미지 워크플로우</label>
+        <select id="imgWorkflow" title="workflow 폴더에서 글로 이미지를 만드는 워크플로우입니다. 프롬프트, 크기, seed를 넣어 실행합니다"><option value="">기본 (z-image turbo)</option></select>
+        <div class="hint" id="imgWorkflowInfo"></div>
         <label>이미지 프롬프트</label>
         <textarea id="imgPrompt" rows="6" placeholder="예: A young woman standing in a bright cafe by the window, full body, natural daylight, photorealistic"></textarea>
         <div class="row">
@@ -207,7 +210,7 @@
             </select>
           </div>
           <div><label>seed (0 = 랜덤)</label><input type="number" id="imgSeed" value="0" min="0"></div>
-          <div><label>steps</label><input type="number" id="imgSteps" value="8" min="1" max="50"></div>
+          <div><label>steps (비우면 워크플로우 값)</label><input type="number" id="imgSteps" min="1" max="100" placeholder="워크플로우 값"></div>
         </div>
         <div class="actions">
           <button id="btnImage">이미지 생성</button>
@@ -278,22 +281,20 @@
   </section>
 
   <section id="stepVideo" hidden>
-    <h2>영상 제작 <span>시작 이미지와 구간 프롬프트를 Wan 2.2 워크플로우에 넣어 영상을 만듭니다</span></h2>
+    <h2>영상 제작 <span>시작 이미지와 구간 프롬프트를 고른 워크플로우에 넣어 영상을 만듭니다</span></h2>
     <div class="ctx" id="ctxVideo"></div>
     <div class="row">
       <div style="flex:2">
         <label>영상 워크플로우</label>
-        <select id="backend">
-          <option value="svi">Wan 2.2 SVI (Kenpechi v3.5 워크플로우)</option>
-          <option value="i2v">Wan 2.2 I2V 6구간 (5번 워크플로우)</option>
-        </select>
+        <select id="videoWorkflow" title="workflow 폴더에서 시작 이미지와 프롬프트로 영상을 만드는 워크플로우입니다"></select>
+        <div class="hint" id="videoWorkflowInfo"></div>
       </div>
       <div><label class="check"><input type="checkbox" id="randomSeed" checked>매번 새 seed</label></div>
-      <div><label class="check"><input type="checkbox" id="matchSize" checked>시작 이미지 비율에 맞춤 (SVI)</label></div>
+      <div><label class="check"><input type="checkbox" id="matchSize" checked>시작 이미지 비율에 맞춤</label></div>
       <div><label class="check"><input type="checkbox" id="prependCommon">공통 프롬프트를 구간 앞에 붙이기</label></div>
     </div>
     <details id="paramBox">
-      <summary>워크플로우 설정 (SVI: 구간 길이, 크기, 스텝 등. 비워 두면 워크플로우 값 그대로)</summary>
+      <summary>워크플로우 설정 (구간 길이, 크기, 스텝 등 워크플로우에 있는 숫자. 비워 두면 워크플로우 값 그대로)</summary>
       <div class="hint" id="paramInfo">ComfyUI에 연결되면 워크플로우에서 읽어 옵니다.</div>
       <div class="params" id="params"></div>
     </details>
@@ -418,7 +419,7 @@
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const state = { image: null, dir: null, segCount: 0, currentJob: null, busy: false, status: null, paramsLoaded: null };
-const SAVED = ['imgPrompt', 'imgSize', 'imgSteps', 'direction', 'segments', 'seconds', 'scName', 'analyzer', 'model', 'detail', 'backend'];
+const SAVED = ['imgPrompt', 'imgSize', 'direction', 'segments', 'seconds', 'scName', 'analyzer', 'model', 'detail'];
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -487,9 +488,44 @@ function markThumb(el) { for (const t of $('gallery').children) t.classList.togg
 
 async function genImage() {
   const [w, h] = $('imgSize').value.split('x').map(Number);
-  const j = await runJob('image', { prompt: $('imgPrompt').value, width: w, height: h, seed: Number($('imgSeed').value) || 0, steps: Number($('imgSteps').value) || 8 }, $('jobImage'));
-  setImage(j.result.image, j.result.width + ' × ' + j.result.height + ' · seed ' + j.result.seed + (j.result.saved ? ' · ' + j.result.saved : ''));
+  const j = await runJob('image', { workflow: $('imgWorkflow').value, prompt: $('imgPrompt').value, width: w, height: h,
+                                    seed: Number($('imgSeed').value) || 0, steps: Number($('imgSteps').value) || 0 }, $('jobImage'));
+  setImage(j.result.image, imageInfo(j.result));
 }
+// What is said under a generated image: size, seed, the workflow it was made with, where it was saved.
+const imageInfo = r => [r.width ? r.width + ' × ' + r.height : '', 'seed ' + r.seed, r.workflow ? '워크플로우: ' + r.workflow : '', r.saved]
+  .filter(Boolean).join(' · ');
+
+// ---- the workflows a step can run (files of the workflow folder) ----
+const workflows = { image: null, video: null };
+async function loadWorkflows(kind, force) {
+  const sel = $(kind === 'image' ? 'imgWorkflow' : 'videoWorkflow'), info = $(kind === 'image' ? 'imgWorkflowInfo' : 'videoWorkflowInfo');
+  if (workflows[kind] && !force) return;
+  let res;
+  try { res = await api('/api/workflows?kind=' + kind); }
+  catch (e) { info.textContent = '워크플로우 목록을 읽지 못했습니다: ' + e.message; return; }
+  workflows[kind] = res.items;
+  const keep = sel.value || localStorage.getItem('vw_' + sel.id) || res.default;
+  sel.innerHTML = '';
+  for (const w of res.items) {
+    const o = el('option', '', w.label + (kind === 'video' ? ' · 구간 ' + w.segments + '개' : '') + (w.missing.length ? ' · 서버에 없는 노드 있음' : ''));
+    o.value = w.name; sel.append(o);
+  }
+  sel.value = res.items.some(w => w.name === keep) ? keep : res.items.some(w => w.name === res.default) ? res.default : (res.items[0] || {}).name || '';
+  if (res.unread) info.dataset.note = 'ComfyUI에 연결되면 workflow 폴더의 나머지 파일 ' + res.unread + '개도 확인합니다.';
+  else delete info.dataset.note;
+  workflowChosen(kind);
+}
+function workflowChosen(kind) {
+  const sel = $(kind === 'image' ? 'imgWorkflow' : 'videoWorkflow'), info = $(kind === 'image' ? 'imgWorkflowInfo' : 'videoWorkflowInfo');
+  const w = (workflows[kind] || []).find(x => x.name === sel.value);
+  info.textContent = [w && w.missing.length ? '이 서버에 없는 노드가 들어 있어 실행이 안 될 수 있습니다: ' + w.missing.join(', ') : '',
+                      !(workflows[kind] || []).length && kind === 'video' ? '쓸 수 있는 영상 워크플로우를 찾지 못했습니다.' : '', info.dataset.note || '']
+    .filter(Boolean).join(' ');
+  if (kind === 'video') { state.paramsLoaded = null; if ($('paramBox').open) loadParams(); }
+}
+for (const [kind, id] of [['image', 'imgWorkflow'], ['video', 'videoWorkflow']])
+  $(id).addEventListener('change', () => { localStorage.setItem('vw_' + id, $(id).value); workflowChosen(kind); });
 
 async function uploadImage(file) {
   const form = new FormData(); form.append('image', file);
@@ -585,13 +621,13 @@ async function loadScenarioList() {
 
 // ---- 3. video ----
 async function loadParams() {
-  const backend = $('backend').value;
-  if (state.paramsLoaded === backend) return;
+  const backend = $('videoWorkflow').value;
+  if (state.paramsLoaded === backend || !backend) return;
   const box = $('params'); box.innerHTML = '';
-  if (backend !== 'svi') { $('paramInfo').textContent = '이 방식은 설정할 항목이 없습니다 (해상도는 시작 이미지 비율로 자동).'; state.paramsLoaded = backend; return; }
   try {
-    const info = await api('/api/video/info?backend=svi');
-    $('paramInfo').textContent = '워크플로우 구간 ' + info.slots + '개. ' + (info.warnings || []).join(' ');
+    const info = await api('/api/video/info?workflow=' + encodeURIComponent(backend));
+    $('paramInfo').textContent = '워크플로우 구간 ' + info.slots + '개. ' + (info.params.length ? '' : '바꿀 수 있는 숫자 설정이 없는 워크플로우입니다. ')
+      + (info.warnings || []).join(' ');
     for (const p of info.params) {
       const d = document.createElement('div');
       const l = document.createElement('label'); l.textContent = p.title;
@@ -633,7 +669,7 @@ async function genVideo() {
   const params = {};
   for (const i of $('params').querySelectorAll('input')) if (i.value !== '') params[i.dataset.node] = i.value;
   $('videos').innerHTML = '';
-  await runJob('video', { dir: state.dir, backend: $('backend').value, random_seed: $('randomSeed').checked,
+  await runJob('video', { dir: state.dir, workflow: $('videoWorkflow').value, random_seed: $('randomSeed').checked,
                           match_size: $('matchSize').checked, prepend_common: $('prependCommon').checked, params }, $('jobVideo'), renderOutputs);
 }
 
@@ -655,7 +691,7 @@ async function refreshStatus() {
     if (first) {
       if (s.comfy_ok && !localStorage.getItem('vw_analyzer')) $('analyzer').value = count(s) ? 'gguf' : s.chat ? 'chat' : 'node';
       fillModels();
-      if (s.comfy_ok && $('paramBox').open) loadParams();
+      loadWorkflows('image', true); loadWorkflows('video', true);      // workflows saved from the UI need ComfyUI to be read
     }
   } catch (e) { $('dot').classList.remove('on'); $('statusText').textContent = '웹 프로그램 서버에 연결할 수 없음'; }
 }
@@ -686,7 +722,6 @@ $('loadScenario').onchange = e => {
   const dir = e.target.value; e.target.value = '';
   if (dir) openScenario(dir).catch(err => { $('jobScenario').className = 'job err'; $('jobScenario').textContent = err.message; });
 };
-$('backend').addEventListener('change', () => { if ($('paramBox').open) loadParams(); });
 $('paramBox').addEventListener('toggle', () => { if ($('paramBox').open) loadParams(); });
 $('btnVideo').onclick = () => guarded($('jobVideo'), genVideo);
 $('btnAll').onclick = () => {
@@ -849,20 +884,24 @@ const KIND = { image: '이미지', scenario: '시나리오', video: '영상' };
 const STATE = { done: '완료', error: '오류', cancelled: '중단됨', running: '실행 중', queued: '대기 중' };
 function historyText(h) {
   const p = h.params || {}, r = h.result || {};
-  if (h.kind === 'image') return p.prompt || '';
+  const used = r.workflow || (p.workflow || '').replace(/(\.api)?\.json$/, '');      // the workflow it was made with
+  if (h.kind === 'image') return [p.prompt, '워크플로우: ' + (used || '기본 (z-image turbo)')].filter(Boolean).join('\n');
   if (h.kind === 'scenario') return [r.dir, r.summary_ko, p.direction ? '연출 방향: ' + p.direction : ''].filter(Boolean).join('\n');
-  return [p.dir, p.backend === 'i2v' ? 'Wan 2.2 I2V 6구간' : 'Wan 2.2 SVI'].filter(Boolean).join(' · ');
+  return [p.dir, '워크플로우: ' + (used || (p.backend === 'i2v' ? 'Wan 2.2 I2V 6구간' : 'Wan 2.2 SVI'))].filter(Boolean).join('\n');
 }
 // Puts what a past job was given back into the steps of 새 작업.
 async function reuseJob(h) {
   const p = h.params || {}, r = h.result || {}, dir = r.dir || p.dir;
   const set = (id, v) => { if (v != null && v !== '') { $(id).value = v; localStorage.setItem('vw_' + id, $(id).value); } };
-  if (dir) { await openScenario(dir); showTab(h.kind === 'video' ? 'video' : 'scenario'); return; }
+  const choose = (id, kind) => {      // the workflow it was made with, when the list still has it
+    if (p.workflow != null && [...$(id).options].some(o => o.value === p.workflow)) { set(id, p.workflow || ' '); $(id).value = p.workflow; localStorage.setItem('vw_' + id, p.workflow); workflowChosen(kind); }
+  };
+  if (dir) { await openScenario(dir); if (h.kind === 'video') choose('videoWorkflow', 'video'); showTab(h.kind === 'video' ? 'video' : 'scenario'); return; }
   if (h.kind === 'image') {
-    set('imgPrompt', p.prompt); set('imgSteps', p.steps);
+    set('imgPrompt', p.prompt); $('imgSteps').value = p.steps || ''; choose('imgWorkflow', 'image');
     if ([...$('imgSize').options].some(o => o.value === p.width + 'x' + p.height)) set('imgSize', p.width + 'x' + p.height);
     $('imgSeed').value = r.seed || p.seed || 0;
-    if (r.image) setImage(r.image, r.width + ' × ' + r.height + ' · seed ' + r.seed + (r.saved ? ' · ' + r.saved : ''));
+    if (r.image) setImage(r.image, imageInfo(r));
     showTab('image');
   } else if (h.kind === 'scenario') {      // one that did not get as far as a scenario folder
     set('direction', p.direction); set('segments', p.segments); set('seconds', p.seconds); set('scName', p.name);
