@@ -648,7 +648,12 @@ class App:
                     raise asyncio.CancelledError()
                 if name == "execution_error":
                     title = job.titles.get(str(data.get("node_id")), data.get("node_type", ""))
-                    raise AppError(f"[{data.get('node_id')} {title}] {data.get('exception_type', '')}: {data.get('exception_message', '')}")
+                    message = str(data.get("exception_message", ""))
+                    if "CUDA error: invalid argument" in message:      # not this node: nothing big loads to the GPU any more
+                        message = ("ComfyUI 서버의 GPU 메모리 상태가 깨져 큰 모델을 GPU에 올리지 못합니다 (CUDA error: invalid argument). "
+                                   "이 상태에서는 다시 실행해도 같은 오류가 나니 서버에서 ComfyUI를 재시작하세요. 영상 작업 뒤에 반복되면 "
+                                   "서버의 ComfyUI 실행 옵션에 --disable-pinned-memory 가 있는지 확인하세요 (Start_ComfyUI_L40S.bat).")
+                    raise AppError(f"[{data.get('node_id')} {title}] {data.get('exception_type', '')}: {message}")
             raise AppError("ComfyUI 실행 중 오류가 났습니다 (ComfyUI 콘솔을 확인하세요)")
         return entry.get("outputs") or {}
 

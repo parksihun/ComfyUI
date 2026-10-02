@@ -12,11 +12,16 @@ REM  (--highvram 은 아래 주석 참고, 제거됨)
 REM  --bf16-vae            : Ada 네이티브 bf16, VAE 검은 화면 방지
 REM  --listen 0.0.0.0      : 외부 PC 브라우저 접속 허용
 REM  --disable-auto-launch : 헤드리스 - 브라우저 자동 실행 안 함
+REM  --disable-pinned-memory : 아래 주석 참고
 REM ============================================================
 
 REM  --highvram 제거 (2026-09-29): Wan 2.2 14B high/low 두 모델 + Qwen3-VL 을 번갈아 쓰는 Shorts 파이프라인에서는
 REM  모델을 전부 VRAM 에 상주시키면 46GB 를 넘겨 "Not enough GPU memory" 가 남. 기본(normal) 모드는 안 쓰는 모델을 RAM 으로 내림.
-set "COMFY_ARGS=--windows-standalone-build --use-sage-attention --disable-cuda-malloc --bf16-vae --preview-method auto --listen 0.0.0.0 --port 8188 --disable-auto-launch"
+REM  --disable-pinned-memory 추가 (2026-10-02): Wan 2.2 영상을 한 번 만든 뒤에는 큰 모델(z-image, Qwen 텍스트 인코더)을 GPU 에 올릴 때마다
+REM  "CUDA error: invalid argument" 가 나고 ComfyUI 를 재시작할 때까지 계속됨 (작은 VAE 는 올라감, /free 로도 안 풀림).
+REM  가중치를 GPU 로 복사하는 단계에서 나는 오류라, ComfyUI 가 RAM 을 CUDA 에 고정 등록(pinned memory)해 두는 기능을 끔.
+REM  끄면 모델을 올리고 내리는 속도만 조금 느려짐. 이 옵션으로도 같은 오류가 나면 --disable-dynamic-vram 을 추가해 볼 것.
+set "COMFY_ARGS=--windows-standalone-build --use-sage-attention --disable-cuda-malloc --disable-pinned-memory --bf16-vae --preview-method auto --listen 0.0.0.0 --port 8188 --disable-auto-launch"
 
 REM  input / output / temp live on E:\ComfyUI on this server (kept there on purpose; do not point them back at the install folder)
 REM  --temp-directory : ComfyUI appends \temp itself, so E:\ComfyUI is passed and the files go to E:\ComfyUI\temp
