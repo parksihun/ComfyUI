@@ -193,7 +193,7 @@
     <div class="cols">
       <div>
         <label>이미지 워크플로우</label>
-        <select id="imgWorkflow" title="연결된 ComfyUI 서버에 저장된 워크플로우 중 글로 이미지를 만드는 것입니다. 프롬프트, 크기, seed를 넣어 실행합니다"><option value="">기본 (z-image turbo)</option></select>
+        <select id="imgWorkflow" title="연결된 ComfyUI 서버에 저장된 워크플로우입니다. 글로 이미지를 만드는 워크플로우에 프롬프트, 크기, seed를 넣어 실행합니다"></select>
         <div class="hint" id="imgWorkflowInfo"></div>
         <label>이미지 프롬프트</label>
         <textarea id="imgPrompt" rows="6" placeholder="예: A young woman standing in a bright cafe by the window, full body, natural daylight, photorealistic"></textarea>
@@ -201,6 +201,7 @@
           <div>
             <label>크기</label>
             <select id="imgSize">
+              <option value="0x0">워크플로우에 적힌 크기 그대로</option>
               <option value="960x1424">세로 960 × 1424 (2:3)</option>
               <option value="720x1280">세로 720 × 1280 (9:16)</option>
               <option value="832x1248">세로 832 × 1248 (2:3)</option>
@@ -286,7 +287,7 @@
     <div class="row">
       <div style="flex:2">
         <label>영상 워크플로우</label>
-        <select id="videoWorkflow" title="연결된 ComfyUI 서버에 저장된 워크플로우 중 시작 이미지와 프롬프트로 영상을 만드는 것입니다"></select>
+        <select id="videoWorkflow" title="연결된 ComfyUI 서버에 저장된 워크플로우입니다. 시작 이미지와 프롬프트로 영상을 만드는 워크플로우에 값을 넣어 실행합니다"></select>
         <div class="hint" id="videoWorkflowInfo"></div>
       </div>
       <div><label class="check"><input type="checkbox" id="randomSeed" checked>매번 새 seed</label></div>
@@ -496,7 +497,7 @@ async function genImage() {
 const imageInfo = r => [r.width ? r.width + ' × ' + r.height : '', 'seed ' + r.seed, r.workflow ? '워크플로우: ' + r.workflow : '', r.saved]
   .filter(Boolean).join(' · ');
 
-// ---- the workflows of the connected ComfyUI: all of them; the ones a step cannot run come last and say why ----
+// ---- the workflows of the connected ComfyUI: all of them, named and ordered as on that server ----
 const workflows = { image: null, video: null };
 async function loadWorkflows(kind, force) {
   const sel = $(kind === 'image' ? 'imgWorkflow' : 'videoWorkflow'), info = $(kind === 'image' ? 'imgWorkflowInfo' : 'videoWorkflowInfo');
@@ -507,15 +508,11 @@ async function loadWorkflows(kind, force) {
   workflows[kind] = res.items;
   const keep = sel.value || localStorage.getItem('vw_' + sel.id) || res.default;
   sel.innerHTML = '';
-  const ready = res.items.filter(w => !w.reason), rest = res.items.filter(w => w.reason);
-  for (const w of ready) {
-    const o = el('option', '', w.label + (kind === 'video' ? ' · 구간 ' + w.segments + '개' : '') + (w.missing.length ? ' · 서버에 없는 노드 있음' : ''));
+  const ready = res.items.filter(w => !w.reason);
+  for (const w of res.items) {      // what this step cannot run is marked, not moved or hidden
+    const o = el('option', '', w.label + (w.reason ? ' (이 단계에서 실행 불가)' : (kind === 'video' ? ' · 구간 ' + w.segments + '개' : '')
+      + (w.missing.length ? ' · 서버에 없는 노드 있음' : '')));
     o.value = w.name; sel.append(o);
-  }
-  if (rest.length) {
-    const group = el('optgroup'); group.label = '이 단계에서 실행할 수 없는 워크플로우';
-    for (const w of rest) { const o = el('option', '', w.label); o.value = w.name; group.append(o); }
-    sel.append(group);
   }
   sel.value = res.items.some(w => w.name === keep) ? keep : ready.some(w => w.name === res.default) ? res.default : (ready[0] || res.items[0] || {}).name || '';
   if (!res.connected) info.dataset.note = 'ComfyUI에 연결되면 그 서버의 워크플로우 목록을 읽습니다.';
@@ -892,7 +889,7 @@ const KIND = { image: '이미지', scenario: '시나리오', video: '영상' };
 const STATE = { done: '완료', error: '오류', cancelled: '중단됨', running: '실행 중', queued: '대기 중' };
 function historyText(h) {
   const p = h.params || {}, r = h.result || {};
-  const used = r.workflow || (p.workflow || '').replace(/(\.api)?\.json$/, '');      // the workflow it was made with
+  const used = r.workflow || (p.workflow || '').replace(/\.json$/, '');      // the workflow it was made with
   if (h.kind === 'image') return [p.prompt, '워크플로우: ' + (used || '기본 (z-image turbo)')].filter(Boolean).join('\n');
   if (h.kind === 'scenario') return [r.dir, r.summary_ko, p.direction ? '연출 방향: ' + p.direction : ''].filter(Boolean).join('\n');
   return [p.dir, '워크플로우: ' + (used || (p.backend === 'i2v' ? 'Wan 2.2 I2V 6구간' : 'Wan 2.2 SVI'))].filter(Boolean).join('\n');
@@ -1130,7 +1127,7 @@ async function openDetail(ref, shownName) {
     media.append(frames);
   }
   $('dWorkflow').textContent = d.workflow;
-  $('dMatch').textContent = !d.has_prompt && !d.has_workflow ? 'ComfyUI 정보가 들어 있지 않은 파일입니다 (다른 곳에서 만들었거나 메타데이터 저장을 끈 경우).'
+  $('dMatch').textContent = d.match === 'job' ? '이 프로그램으로 실행한 작업 기록에 남은 워크플로우입니다.' : !d.has_prompt && !d.has_workflow ? 'ComfyUI 정보가 들어 있지 않은 파일입니다 (다른 곳에서 만들었거나 메타데이터 저장을 끈 경우).'
     : d.match === 'id' ? '서버 워크플로우 폴더의 같은 워크플로우(ID 일치)입니다.'
     : d.match === 'similar' ? '노드 구성이 같은 워크플로우를 서버 워크플로우 폴더에서 찾았습니다.'
     : '서버 워크플로우 폴더에 같은 워크플로우가 없습니다. 아래에서 저장하면 이름이 붙습니다.';

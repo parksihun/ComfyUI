@@ -480,7 +480,7 @@ class Library:
     def listing(self, sort="new", workflow="", query="", kind="", show_sidecars=False, favorite=False, tag=""):
         """(rows, workflows with counts, tags with counts). The counts are of everything, not of the filtered rows."""
         root = self.root
-        items, marks, made = self.store.files(root), self.store.marks(root), self.store.rels_with_job(root)
+        items, marks, made = self.store.files(root), self.store.marks(root), self.store.workflows_of_files(root)
         videos = {os.path.splitext(rel)[0].lower() for rel, e in items.items() if e["kind"] == "video"}
         rows = []
         for rel, e in items.items():
@@ -489,6 +489,8 @@ class Library:
             if e["kind"] == "image" and stem in videos and not show_sidecars:
                 continue
             name, how = name_workflow(e["types"], e["workflow_id"], e["models"], self.catalogue)
+            if made.get(rel.lower()):      # made by a recorded job: what it ran is known, no need to guess from the nodes
+                name, how = made[rel.lower()], "job"
             rows.append({"ref": "output:" + rel, "name": os.path.basename(rel), "folder": os.path.dirname(rel),
                          "kind": e["kind"], "mtime": e["mtime"], "size": e["size"], "width": e["width"], "height": e["height"],
                          "duration": e["duration"], "workflow": name, "match": how, "prompt_count": e["prompt_count"],

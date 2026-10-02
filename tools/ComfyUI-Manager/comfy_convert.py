@@ -1,8 +1,10 @@
 """UI workflow JSON (what ComfyUI saves) -> API prompt JSON (what POST /prompt takes).
 
 Does what the frontend does at queue time, for the node kinds used by the workflows in this repo:
-  - widget values become named inputs (names and order come from ComfyUI's /object_info)
-  - subgraphs are flattened (inner node ids become "<instance id>:<inner id>")
+  - widget values become named inputs (names and order come from ComfyUI's /object_info); a choice that brings
+    its own inputs (SaveVideo's format, the resize node's resize_type) is followed by them as "<input>.<sub input>"
+  - subgraphs are flattened (inner node ids become "<instance id>:<inner id>"); a value typed on the subgraph
+    node itself (model, size, prompt...) replaces the value of the inner node it stands for
   - Get/Set nodes (KJNodes) and Reroute are resolved to the real source
   - bypassed nodes are passed through by type, muted nodes are dropped
   - frontend-only nodes (notes, labels, group bypassers) are skipped
@@ -12,6 +14,7 @@ import random
 import re
 
 WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
+DYNAMIC_COMBO = "COMFY_DYNAMICCOMBO_V3"      # a choice that brings its own inputs, named "<input>.<sub input>"
 SUBGRAPH_IN, SUBGRAPH_OUT = -10, -20
 MODE_MUTED, MODE_BYPASS = 2, 4
 MAX_DEPTH = 200
@@ -58,6 +61,55 @@ def widget_default(info, name):
     if choices:
         return choices[0]
     return {"INT": 0, "FLOAT": 0.0, "BOOLEAN": False}.get(typ, "")
+
+
+def _options(spec):
+    return spec[1] if len(spec) > 1 and isinstance(spec[1], dict) else {}
+
+
+def _has_widget(spec):
+    typ, opts = spec[0], _options(spec)
+    if opts.get("forceInput") or opts.get("hidden"):
+        return False
+    return isinstance(typ, list) or typ in WIDGET_TYPES or typ == DYNAMIC_COMBO
+
+
+def _spec_default(spec):
+    typ, opts = spec[0], _options(spec)
+    if "default" in opts:
+        return opts["default"]
+    choices = typ if isinstance(typ, list) else opts.get("options")
+    if choices:
+        return choices[0]["key"] if isinstance(choices[0], dict) else choices[0]
+    return {"INT": 0, "FLOAT": 0.0, "BOOLEAN": False}.get(typ, "")
+
+
+def named_widgets(info, values):
+    """{input name: value} out of a node's widgets_values, in the order the frontend keeps them. Values that are
+    missing at the end (the node got widgets since the workflow was saved) take their defaults, as in the frontend."""
+    out, rest = {}, list(values)
+
+    def take(name, spec):
+        typ, opts = spec[0], _options(spec)
+        out[name] = rest.pop(0) if rest else _spec_default(spec)
+        if opts.get("control_after_generate") or (typ == "INT" and name.rsplit(".", 1)[-1] in ("seed", "noise_seed")):
+            rest[:1] = []      # the 'randomize / fixed' choice next to a seed is not an input
+        if opts.get("image_upload") or opts.get("audio_upload"):
+            rest[:1] = []
+        if typ == DYNAMIC_COMBO:
+            chosen = next((o for o in opts.get("options") or [] if isinstance(o, dict) and o.get("key") == out[name]), None)
+            for section in ("required", "optional"):
+                for sub, subspec in (((chosen or {}).get("inputs") or {}).get(section) or {}).items():
+                    if _has_widget(subspec):
+                        take(f"{name}.{sub}", subspec)
+
+    inputs, order = info.get("input", {}), info.get("input_order") or {}
+    for section in ("required", "optional"):
+        specs = inputs.get(section) or {}
+        for name in order.get(section) or list(specs):
+            if specs.get(name) and _has_widget(specs[name]):
+                take(name, specs[name])
+    return out
 
 
 class _Scope:
@@ -120,7 +172,8 @@ class Converter:
         if origin_id == SUBGRAPH_IN:
             if scope.parent is None:
                 return None
-            return self._input_source(scope.parent, scope.instance, slot, depth)
+            _, index = self._instance_input(scope, slot)
+            return None if index is None else self._input_source(scope.parent, scope.instance, index, depth)
         node = scope.nodes.get(origin_id)
         if node is None or node.get("mode") == MODE_MUTED:
             return None
@@ -163,6 +216,51 @@ class Converter:
                 return self._input_source(scope, node, i, depth)
         return None
 
+    def _instance_input(self, scope, slot):
+        """(input, its index) on the subgraph node for input `slot` of the subgraph definition. The node lists only
+        the inputs that have a socket, so they are matched by name, not by position."""
+        declared = scope.definition.get("inputs") or []
+        inputs = (scope.instance or {}).get("inputs") or []
+        if slot < len(declared):
+            for i, x in enumerate(inputs):
+                if x.get("name") == declared[slot].get("name"):
+                    return x, i
+            return None, None
+        return (inputs[slot], slot) if slot < len(inputs) else (None, None)
+
+    def _is_widget_input(self, scope, slot):
+        """Input `slot` of the subgraph feeds a widget of an inner node (so the subgraph node shows it as a widget)."""
+        declared = (scope.definition.get("inputs") or [])[slot]
+        for lid in declared.get("linkIds") or []:
+            link = scope.links.get(lid)
+            target = scope.nodes.get(link[2]) if link is not None else None
+            inputs = (target or {}).get("inputs") or []
+            if link is not None and link[3] < len(inputs):
+                return bool(inputs[link[3]].get("widget"))
+        return declared.get("type") in WIDGET_TYPES
+
+    def _promoted(self, scope, slot, depth=0):
+        """(True, value) when input `slot` of the subgraph this scope is an instance of has nothing connected and the
+        subgraph node carries the value itself: the inputs that feed inner widgets own the entries of the node's
+        widgets_values, in the order the subgraph declares them."""
+        declared = scope.definition.get("inputs") or [] if scope.definition else []
+        if scope.instance is None or slot >= len(declared) or depth > MAX_DEPTH:
+            return False, None
+        own, _ = self._instance_input(scope, slot)
+        if own is not None and own.get("link") is not None:      # connected outside; one level up it may again be such an input
+            link = scope.parent.links.get(own["link"])
+            if link is not None and link[0] == SUBGRAPH_IN:
+                return self._promoted(scope.parent, link[1], depth + 1)
+            return False, None
+        values = scope.instance.get("widgets_values")
+        if isinstance(values, dict):
+            name = declared[slot].get("name")
+            return (True, values[name]) if name in values else (False, None)
+        widgets = [i for i in range(len(declared)) if self._is_widget_input(scope, i)]
+        if not isinstance(values, list) or slot not in widgets or widgets.index(slot) >= len(values):
+            return False, None
+        return True, values[widgets.index(slot)]
+
     # ---- node -> api entry -------------------------------------------------------------------------
     def _widget_inputs(self, node):
         wv = node.get("widgets_values")
@@ -171,15 +269,9 @@ class Converter:
         if not wv:
             return {}
         if node["type"] == "Power Lora Loader (rgthree)":
-            loras = [v for v in wv if isinstance(v, dict) and "lora" in v]
-            return {f"lora_{i + 1}": v for i, v in enumerate(loras)}
-        names = widget_names(self.info[node["type"]])
-        out = {name: value for name, value in zip(names, wv) if name is not None}
-        # saved with an older version of the node: the frontend gives the widgets added since their defaults
-        for name in names[len(wv):]:
-            if name is not None:
-                out[name] = widget_default(self.info[node["type"]], name)
-        return out
+            loras = [v for v in wv if isinstance(v, dict) and "lora" in v]      # as the frontend sends them: no empty fields
+            return {f"lora_{i + 1}": {k: x for k, x in v.items() if x is not None} for i, v in enumerate(loras)}
+        return named_widgets(self.info[node["type"]], wv)
 
     def _emit(self, scope, api):
         for nid, node in scope.nodes.items():
@@ -200,6 +292,12 @@ class Converter:
                 src = self._input_source(scope, node, i, 0)
                 if src is not None:          # an unresolved link on a widget input keeps the widget value
                     inputs[inp["name"]] = src
+                    continue
+                link = scope.links.get(inp["link"])
+                if link is not None and link[0] == SUBGRAPH_IN:      # ...unless the subgraph node gives the value
+                    found, value = self._promoted(scope, link[1])
+                    if found:
+                        inputs[inp["name"]] = value
             title = node.get("title") or self.info[ntype].get("display_name") or ntype
             if scope.instance is not None:      # "2nd_Section > KSampler": tells the sections' inner nodes apart
                 title = f"{scope.instance.get('title') or scope.definition.get('name', '')} > {title}"

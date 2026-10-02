@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS workflow_index (
 """
 
 
+def job_workflow(entry):
+    """The name of the workflow a recorded job ran ('' when the record does not say)."""
+    named = (entry.get("result") or {}).get("workflow") or (entry.get("params") or {}).get("workflow") or ""
+    return named[:-len(".json")] if named.lower().endswith(".json") else named
+
+
 def root_key(folder):
     """A result folder as it is written in the store."""
     return os.path.normcase(os.path.normpath(folder))
@@ -45,6 +51,11 @@ class Store:
         self.db.row_factory = sqlite3.Row
         with self.lock, self.db:
             self.db.executescript(SCHEMA)
+            if "workflow" not in {r["name"] for r in self.db.execute("PRAGMA table_info(jobs)")}:
+                # the workflow a job ran, as a column: the library names a job's files by it
+                self.db.execute("ALTER TABLE jobs ADD COLUMN workflow TEXT NOT NULL DEFAULT ''")
+                for r in self.db.execute("SELECT id, entry FROM jobs").fetchall():
+                    self.db.execute("UPDATE jobs SET workflow = ? WHERE id = ?", (job_workflow(json.loads(r["entry"])), r["id"]))
 
     def _all(self, sql, args=()):
         with self.lock:
@@ -125,9 +136,9 @@ class Store:
     # ---- jobs and what they made ---------------------------------------------------------------------
     def add_job(self, entry, root, scenario_dir, source_rel, rels):
         """rels: for each of entry['outputs'], its path inside the result folder, or None when it is not kept there."""
-        self._run([("INSERT OR REPLACE INTO jobs (id, time, kind, state, root, scenario_dir, source_rel, entry) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        self._run([("INSERT OR REPLACE INTO jobs (id, time, kind, state, root, scenario_dir, source_rel, entry, workflow) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (entry["id"], entry["time"], entry["kind"], entry["state"], root, scenario_dir or "", source_rel or "",
-                     json.dumps(entry, ensure_ascii=False))),
+                     json.dumps(entry, ensure_ascii=False), job_workflow(entry))),
                    ("DELETE FROM job_files WHERE job_id = ?", (entry["id"],))]
                   + [("INSERT INTO job_files (job_id, n, root, rel) VALUES (?, ?, ?, ?)", (entry["id"], n, root, rel))
                      for n, rel in enumerate(rels) if rel])
@@ -159,5 +170,7 @@ class Store:
         where = " AND ".join(["kind = ?"] + [f"{name} = ?" for name in columns])
         return self._jobs("WHERE " + where, (kind, *columns.values()), limit)
 
-    def rels_with_job(self, root):
-        return {r["rel"].lower() for r in self._all("SELECT DISTINCT rel FROM job_files WHERE root = ?", (root,))}
+    def workflows_of_files(self, root):
+        """{path in lower case: the workflow its job ran} for every file a recorded job made ('' when not recorded)."""
+        return {r["rel"].lower(): r["workflow"] for r in self._all(
+            "SELECT f.rel, j.workflow FROM job_files f JOIN jobs j ON j.id = f.job_id WHERE f.root = ? ORDER BY j.time", (root,))}

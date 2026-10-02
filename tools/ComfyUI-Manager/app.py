@@ -56,6 +56,7 @@ DEFAULT_CONFIG = {
     "output_dir": "",                                     # empty = picked on the page, else found (see follow_comfy_output)
     "svi_workflow": "workflow/Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5.json",
     "i2v_api": "workflow/5_I2V_6seg_from_prompts.api.json",
+    "image_workflow": "image_z_image_turbo.json",       # the image workflow picked at first
 }
 
 DEFAULT_NEGATIVE = (
@@ -812,14 +813,11 @@ class App:
                 "설정의 서버 결과 폴더가 그 서버의 출력 폴더가 맞는지 확인하세요")
 
     def saved_text(self, f):
-        """Where a saved file is: the path on ComfyUI's machine, with the path on this PC when that is a different one."""
-        local = f.get("saved", "")
-        if f["type"] != "output" or not self.comfy_output:
-            return local
-        there = path_module(self.comfy_output).join(self.comfy_output, *re.split(r"[\\/]", f["subfolder"]), f["filename"])
-        if not local or os.path.normcase(there) == os.path.normcase(local):
-            return there
-        return f"{there} (이 PC에서는 {local})"
+        """Where a saved file is, as this PC reaches it (the result folder); only when it cannot be seen from here,
+        the path on ComfyUI's own machine."""
+        if f.get("saved") or f["type"] != "output" or not self.comfy_output:
+            return f.get("saved", "")
+        return path_module(self.comfy_output).join(self.comfy_output, *re.split(r"[\\/]", f["subfolder"]), f["filename"])
 
     def history_entry(self, job):
         """A job as the history shows it: what was asked, how it ended, and what it left behind."""
@@ -948,7 +946,8 @@ class App:
 
     @staticmethod
     def workflow_label(name):
-        return re.sub(r"(\.api)?\.json$", "", name) if name else App.BUILTIN_IMAGE
+        """A workflow as it is shown: the server's file name without '.json' (so 'x.api' and 'x' stay apart)."""
+        return re.sub(r"\.json$", "", name) if name else App.BUILTIN_IMAGE
 
     def default_video(self):
         """The configured SVI workflow, as a name inside the workflow folder."""
@@ -985,10 +984,8 @@ class App:
         return cached[1]
 
     async def workflow_names(self):
-        """The server's workflow files ('x.api.json', the exact export, hides its 'x.json')."""
-        names = list(await self.server_workflows())
-        exports = {n[:-len(".api.json")] + ".json" for n in names if n.lower().endswith(".api.json")}
-        return sorted((n for n in names if n not in exports), key=str.lower)
+        """The server's workflow files, every one, in name order."""
+        return sorted(await self.server_workflows(), key=str.lower)
 
     async def workflow_api(self, name):
         """(API prompt, warnings) of a workflow: '' is the built-in image template, anything else one of the server's
@@ -1029,13 +1026,14 @@ class App:
         return "" if slots["load"] else "시작 이미지 노드(Load Image)가 없습니다"
 
     async def workflows(self, kind):
-        """Every workflow the server keeps, for the list of the image / video step. 'reason' says why the step cannot
-        run one (it has nowhere to put the prompt or the start image); those stay in the list, after the others."""
-        items = [{"name": "", "label": self.BUILTIN_IMAGE, "segments": 1, "missing": [], "reason": ""}] if kind == "image" else []
+        """The workflows the server keeps, all of them and under their names there, for the list of the image / video
+        step. 'reason' says why the step cannot run one (it has nowhere to put the prompt or the start image)."""
+        wanted = self.cfg["image_workflow"] if kind == "image" else self.default_video()
         try:
             names = await self.workflow_names()
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError):
-            return {"items": items, "default": "" if kind == "image" else self.default_video(), "connected": False}
+            return {"items": [], "default": wanted, "connected": False}
+        items = []
         for name in names:
             try:
                 api, warnings = await self.workflow_api(name)
@@ -1044,8 +1042,9 @@ class App:
                               "missing": sorted({w.split("'")[1] for w in warnings if "unknown type" in w}),
                               "reason": self.usable(api, kind)})
             except (AppError, aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError, IndexError):
-                continue      # not a workflow file
-        return {"items": items, "default": "" if kind == "image" else self.default_video(), "connected": True}
+                items.append({"name": name, "label": self.workflow_label(name), "segments": 0, "missing": [],
+                              "reason": "워크플로우로 읽지 못한 파일입니다"})
+        return {"items": items, "default": wanted, "connected": True}
 
     # ---- the names the library gives: from the server's workflows, remembered in the store ----------
     def use_catalogue(self):
@@ -1097,9 +1096,10 @@ class App:
         slots = comfy_convert.find_slots(prompt)
         for nid in slots["prompts"][0]:
             prompt[nid]["inputs"]["text"] = text
-        width, height = int(p.get("width") or 960) // 16 * 16, int(p.get("height") or 1424) // 16 * 16
-        for nid in slots["sizes"]:
-            prompt[nid]["inputs"].update(width=width, height=height)
+        width, height = int(p.get("width") or 0) // 16 * 16, int(p.get("height") or 0) // 16 * 16
+        if width and height:      # no size given: the size the workflow has
+            for nid in slots["sizes"]:
+                prompt[nid]["inputs"].update(width=width, height=height)
         seed = int(p.get("seed") or 0) or random.randint(1, 2 ** 48)
         for node in prompt.values():
             for key in ("seed", "noise_seed"):
@@ -1120,7 +1120,7 @@ class App:
         made = ([f for f in images if f["type"] == "output"] or images)[-1]
         ref = {k: made[k] for k in ("filename", "subfolder", "type")}
         saved = " · ".join(filter(None, (self.saved_text(made) if made["type"] == "output" else "", unseen)))
-        if not slots["sizes"]:
+        if not slots["sizes"] and width and height:
             saved = " · ".join(filter(None, (saved, "이 워크플로우는 크기를 워크플로우 값 그대로 씁니다")))
         size = prompt[slots["sizes"][0]]["inputs"] if slots["sizes"] else {"width": 0, "height": 0}
         return {"image": ref, "saved": saved, "seed": seed, "width": size["width"], "height": size["height"],
@@ -1636,6 +1636,8 @@ async def api_library_item(request):
             info["job"] = app.stored_entry(row)
             info["job"]["links"] = [x for x in info["job"]["links"] if x.get("ref", "").lower() != ("output:" + rel).lower()]
         info["mark"] = app.store.mark(lib.root, rel)
+        if row and row.get("workflow"):      # what the job ran is known; the nodes only allow a guess
+            info["workflow"], info["match"] = row["workflow"], "job"
     return web.json_response(info)
 
 
