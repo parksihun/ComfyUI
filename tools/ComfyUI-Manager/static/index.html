@@ -104,14 +104,24 @@
   .folders button:hover { background:#2b313b; }
   .folders button i { color:var(--dim); font-style:normal; margin-left:8px; font-size:12px; }
   .folders .hint { padding:6px 10px; margin:0; }
+  .star { background:transparent; color:var(--dim); font-size:20px; line-height:1; padding:2px 6px; font-weight:normal; }
+  .star.on { color:var(--warn); }
+  .card .fav { position:absolute; right:6px; top:4px; color:var(--warn); font-size:16px; text-shadow:0 0 3px #000; }
+  .card .meta .tags { display:block; color:var(--warn); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .links { display:flex; flex-direction:column; gap:3px; margin-top:6px; font-size:13px; }
+  .links span { color:var(--dim); }
+  .links a { color:var(--accent); cursor:pointer; word-break:break-all; }
+  .jobbox { background:#12141a; border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:13px; }
+  .jobbox .text { margin-top:4px; white-space:pre-wrap; word-break:break-word; max-height:6em; overflow:auto; }
+  .hist.flash { background:#18263a; }
   .hist { display:flex; gap:12px; padding:12px 0; border-top:1px solid var(--line); }
   .hist .thumbs { flex:none; width:84px; display:flex; flex-direction:column; gap:6px; }
   .hist .thumbs img { width:84px; height:84px; object-fit:cover; border-radius:6px; cursor:pointer; background:#000; }
   .hist .body { flex:1; min-width:0; }
-  .hist .head { font-size:13px; color:var(--dim); }
-  .hist .head b { color:var(--text); }
-  .hist .state.done { color:var(--ok); } .hist .state.error { color:var(--bad); } .hist .state.cancelled { color:var(--warn); }
-  .hist .state.running, .hist .state.queued { color:var(--accent); }
+  .jobhead { font-size:13px; color:var(--dim); }
+  .jobhead b { color:var(--text); }
+  .state.done { color:var(--ok); } .state.error { color:var(--bad); } .state.cancelled { color:var(--warn); }
+  .state.running, .state.queued { color:var(--accent); }
   .hist .text { margin-top:4px; font-size:13px; white-space:pre-wrap; word-break:break-word; max-height:4.5em; overflow:hidden; cursor:pointer; }
   .hist .text.open { max-height:none; }
   .hist .text.err { color:var(--bad); cursor:default; }
@@ -325,10 +335,12 @@
       <div><label>종류</label>
         <select id="libKind"><option value="">전체</option><option value="video">영상</option><option value="image">이미지</option></select></div>
       <div style="flex:2"><label>프롬프트 / 파일명 검색</label><input type="text" id="libSearch" placeholder="예: cafe, walking"></div>
+      <div><label class="check"><input type="checkbox" id="libFav">즐겨찾기만</label></div>
       <div><label class="check"><input type="checkbox" id="libSidecars">영상의 미리보기 PNG도 표시</label></div>
       <div style="flex:0"><button class="sub" id="btnLibReload">새로 고침</button></div>
     </div>
     <div class="chips" id="wfChips"></div>
+    <div class="chips" id="tagChips" style="margin-top:6px"></div>
     <div class="hint" id="libInfo"></div>
     <div class="grid" id="libGrid"></div>
   </section>
@@ -366,6 +378,19 @@
         <button class="danger" id="dDelete" title="서버 결과 폴더에서 파일을 지웁니다. 되돌릴 수 없습니다">삭제</button>
       </div>
       <div class="job" id="dFileInfo"></div>
+      <div id="dMarkBox">
+        <h3>즐겨찾기 · 태그 · 메모</h3>
+        <div class="actions" style="margin-top:0">
+          <button class="star" id="dStar" title="즐겨찾기">☆</button>
+          <input type="text" id="dTags" style="flex:1;width:auto;min-width:160px" placeholder="태그 (쉼표로 구분: 인물, 실내, 좋음)">
+        </div>
+        <textarea id="dNote" rows="2" style="margin-top:6px;min-height:0" placeholder="메모"></textarea>
+        <div class="actions" style="margin-top:6px"><button class="sub" id="dMarkSave">태그 · 메모 저장</button><span class="hint" id="dMarkInfo" style="margin:0"></span></div>
+      </div>
+      <div id="dJobBox">
+        <h3>이 파일을 만든 작업</h3>
+        <div class="jobbox" id="dJob"></div>
+      </div>
       <h3>워크플로우</h3>
       <div class="wfname" id="dWorkflow"></div>
       <div class="hint" id="dMatch"></div>
@@ -830,6 +855,35 @@ async function reuseJob(h) {
     showTab('scenario');
   } else throw new Error('이 작업에는 불러올 내용이 없습니다');
 }
+// What a job is connected to (start image, scenario, videos made from it), as a list of things to open.
+function linkList(links) {
+  const box = el('div', 'links');
+  for (const x of links || []) {
+    const row = el('div'); row.append(el('span', '', x.label + ': '));
+    if (x.dir) {
+      const a = el('a', '', x.dir); a.title = '이 시나리오를 새 작업으로 불러옵니다';
+      a.onclick = () => openScenario(x.dir).then(() => { $('dClose').onclick(); showTab('scenario'); })
+        .catch(e => { const b = $('viewer').hidden ? $('histInfo') : $('dFileInfo'); b.className = 'job err'; b.textContent = e.message; });
+      row.append(a);
+    } else if (x.ref) { const a = el('a', '', x.name); a.title = '보관함의 이 파일을 엽니다'; a.onclick = () => openDetail(x.ref); row.append(a); }
+    else row.append(x.name + ' (다른 서버의 폴더에 있는 파일)');
+    box.append(row);
+  }
+  return box;
+}
+function jobHead(h) {
+  const head = el('div', 'jobhead');
+  head.append(el('b', '', KIND[h.kind] || h.kind), ' · ', el('span', 'state ' + h.state, STATE[h.state] || h.state),
+              ' · ' + fmtDate(h.time) + ' · ' + fmtSec(h.elapsed));
+  return head;
+}
+// Shows the job in the history list, scrolled to and lit up for a moment.
+async function showInHistory(id) {
+  $('dClose').onclick(); $('histKind').value = ''; $('histState').value = '';
+  showTab('history'); await loadHistory(true);
+  const row = document.getElementById('hist-' + id);
+  if (row) { row.scrollIntoView({ block: 'center' }); row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 2500); }
+}
 async function loadHistory(force) {
   const info = $('histInfo');
   let res;
@@ -837,14 +891,15 @@ async function loadHistory(force) {
   catch (e) { info.className = 'job err'; info.textContent = e.message; return; }
   const kind = $('histKind').value, st = $('histState').value;
   const items = res.items.filter(h => (!kind || h.kind === kind) && (!st || (st === 'done' ? h.state === 'done' : h.state === 'error' || h.state === 'cancelled')));
-  const sig = kind + st + items.map(h => h.id + h.state + h.outputs.length).join();
+  const sig = kind + st + items.map(h => h.id + h.state + h.outputs.map(f => f.ref).join() + (h.links || []).length).join();
   if (sig === loadHistory.sig && !force) return;      // the periodic refresh leaves an unchanged list (and what was opened in it) alone
   loadHistory.sig = sig;
   info.className = 'hint';
   info.textContent = items.length ? items.length + '건' : res.items.length ? '조건에 맞는 기록이 없습니다.' : '아직 실행한 작업이 없습니다. 새 작업에서 실행하면 여기에 남습니다.';
   const list = $('histList'); list.innerHTML = '';
   for (const h of items) {
-    const row = el('div', 'hist'), thumbs = el('div', 'thumbs'), body = el('div', 'body'), head = el('div', 'head');
+    const row = el('div', 'hist'), thumbs = el('div', 'thumbs'), body = el('div', 'body');
+    row.id = 'hist-' + h.id;
     const shown = h.outputs.filter(f => f.ref), final = (h.result || {}).final;
     for (const f of (final ? shown.filter(f => f.filename === final.filename) : shown).slice(0, 3)) {
       const img = el('img'); img.loading = 'lazy'; img.alt = ''; img.src = refUrl('thumb', f.ref); img.title = f.filename;
@@ -852,14 +907,13 @@ async function loadHistory(force) {
       img.onclick = () => openDetail(f.ref);
       thumbs.append(img);
     }
-    head.append(el('b', '', KIND[h.kind] || h.kind), ' · ', el('span', 'state ' + h.state, STATE[h.state] || h.state),
-                ' · ' + fmtDate(h.time) + ' · ' + fmtSec(h.elapsed));
-    body.append(head);
+    body.append(jobHead(h));
     const text = historyText(h);
     if (text) { const t = el('div', 'text', text); t.title = '누르면 전체를 봅니다'; t.onclick = () => t.classList.toggle('open'); body.append(t); }
     if (h.error) body.append(el('div', 'text open err', h.error));
     const where = h.outputs.filter(f => f.saved).map(f => f.saved);
     if (where.length) body.append(el('div', 'hint', where.slice(-2).join('\n')));
+    if ((h.links || []).length) body.append(linkList(h.links));
     if (h.state !== 'running' && h.state !== 'queued') {
       const again = el('button', 'mini', '새 작업으로 불러오기');
       again.onclick = () => reuseJob(h).catch(e => { info.className = 'job err'; info.textContent = e.message; window.scrollTo(0, 0); });
@@ -872,7 +926,7 @@ for (const id of ['histKind', 'histState']) $(id).onchange = () => loadHistory(t
 $('btnHistReload').onclick = () => loadHistory(true);
 
 // ---- library ----
-const lib = { workflow: '' };
+const lib = { workflow: '', tag: '' };
 const refUrl = (kind, ref) => '/api/library/' + kind + '?ref=' + encodeURIComponent(ref);
 const fmtDate = t => new Date(t * 1000).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
@@ -880,7 +934,8 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 
 async function loadLibrary() {
   const q = new URLSearchParams({ sort: $('libSort').value, kind: $('libKind').value, q: $('libSearch').value,
-                                  workflow: lib.workflow, sidecars: $('libSidecars').checked ? '1' : '' });
+                                  workflow: lib.workflow, sidecars: $('libSidecars').checked ? '1' : '',
+                                  fav: $('libFav').checked ? '1' : '', tag: lib.tag });
   $('libInfo').textContent = '폴더를 읽는 중… (처음에는 파일마다 정보를 읽어서 시간이 걸립니다)';
   let res;
   try { res = await api('/api/library?' + q); }
@@ -893,6 +948,14 @@ async function loadLibrary() {
     c.append(el('i', '', w.count));
     c.onclick = () => { lib.workflow = w.name; loadLibrary(); };
     chips.append(c);
+  }
+  const tagBox = $('tagChips'); tagBox.innerHTML = '';
+  if (lib.tag && !res.tags.some(t => t.name === lib.tag)) res.tags.push({ name: lib.tag, count: 0 });      // the last file lost the tag
+  for (const t of res.tags) {
+    const c = el('button', 'chip' + (lib.tag === t.name ? ' on' : ''), '#' + t.name);
+    c.append(el('i', '', t.count));
+    c.onclick = () => { lib.tag = lib.tag === t.name ? '' : t.name; loadLibrary(); };
+    tagBox.append(c);
   }
   $('libInfo').textContent = res.total ? res.total + '개' + (res.total > res.items.length ? ' (앞의 ' + res.items.length + '개만 표시)' : '')
                                        : '표시할 파일이 없습니다.';
@@ -907,8 +970,10 @@ async function loadLibrary() {
     img.loading = 'lazy'; img.src = refUrl('thumb', it.ref); img.alt = '';
     pic.append(img);
     if (it.kind === 'video') pic.append(el('span', 'tag', '영상' + (it.duration ? ' ' + Math.round(it.duration) + '초' : '')));
+    if (it.favorite) pic.append(el('span', 'fav', '★'));
     meta.append(el('b', '', it.name), el('span', 'wf', it.workflow),
-                el('span', 'dim', fmtDate(it.mtime) + (it.width ? ' · ' + it.width + '×' + it.height : '')));
+                el('span', 'dim', fmtDate(it.mtime) + (it.width ? ' · ' + it.width + '×' + it.height : '') + (it.has_job ? ' · 작업 이력' : '')));
+    if (it.tags.length) meta.append(el('span', 'tags', it.tags.map(t => '#' + t).join(' ')));
     card.title = it.snippet || (it.generated ? '프롬프트가 실행 중에 만들어진 파일' : '');
     card.append(pic, meta); card.onclick = () => openDetail(it.ref);
     grid.append(card);
@@ -938,6 +1003,33 @@ async function openDetail(ref, shownName) {
   catch (e) { const box = $('tabHistory').hidden ? $('dropInfo') : $('histInfo'); box.className = 'job err'; box.textContent = e.message; return; }
   if (shownName) d.name = shownName;      // a dropped file is stored under a hash
   $('dName').textContent = d.name;
+  // favourite, tags, note and the job that made it: what the store keeps about a file of the output folder
+  $('dMarkBox').hidden = !d.mark; $('dJobBox').hidden = !d.job;
+  if (d.mark) {
+    const star = on => { $('dStar').textContent = on ? '★' : '☆'; $('dStar').classList.toggle('on', on); };
+    const say = (text, bad) => { $('dMarkInfo').textContent = text; $('dMarkInfo').style.color = bad ? 'var(--bad)' : ''; };
+    const save = async body => {
+      try { const m = await post('/api/library/mark', Object.assign({ ref }, body)); d.mark = m;
+            star(m.favorite); $('dTags').value = m.tags.join(', '); $('dNote').value = m.note; say('저장했습니다');
+            if (!$('tabLibrary').hidden) loadLibrary(); }
+      catch (e) { say(e.message, true); }
+    };
+    star(d.mark.favorite); $('dTags').value = d.mark.tags.join(', '); $('dNote').value = d.mark.note; say('');
+    $('dStar').onclick = () => save({ favorite: !d.mark.favorite });
+    $('dMarkSave').onclick = () => save({ tags: $('dTags').value, note: $('dNote').value });
+    $('dTags').onkeydown = e => { if (e.key === 'Enter') $('dMarkSave').onclick(); };
+  }
+  if (d.job) {
+    const box = $('dJob'), text = historyText(d.job), acts = el('div', 'actions'); box.innerHTML = ''; acts.style.marginTop = '6px';
+    box.append(jobHead(d.job));
+    if (text) box.append(el('div', 'text', text));
+    if (d.job.error) box.append(el('div', 'text', d.job.error));
+    box.append(linkList(d.job.links));
+    const again = el('button', 'mini', '새 작업으로 불러오기'), list = el('button', 'mini', '작업 이력에서 보기');
+    again.onclick = () => reuseJob(d.job).then(() => $('dClose').onclick()).catch(e => { $('dFileInfo').className = 'job err'; $('dFileInfo').textContent = e.message; });
+    list.onclick = () => showInHistory(d.job.id);
+    acts.append(again, list); box.append(acts);
+  }
   // rename / delete: only for files of the output folder, not for a file dropped on the page
   const info = $('dFileInfo'); info.className = 'job'; info.textContent = '';
   $('dFileActions').style.display = ref.startsWith('output:') ? 'flex' : 'none';
@@ -1035,7 +1127,7 @@ window.addEventListener('drop', e => {
   e.preventDefault(); $('dropArea').classList.remove('over');
   const f = e.dataTransfer.files[0]; if (f) inspectFile(f);
 });
-for (const id of ['libSort', 'libKind', 'libSidecars']) $(id).onchange = loadLibrary;
+for (const id of ['libSort', 'libKind', 'libSidecars', 'libFav']) $(id).onchange = loadLibrary;
 $('libSearch').onkeydown = e => { if (e.key === 'Enter') loadLibrary(); };
 $('btnLibReload').onclick = loadLibrary;
 

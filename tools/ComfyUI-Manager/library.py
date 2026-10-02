@@ -2,14 +2,13 @@
 
 ComfyUI embeds the queued graph in its outputs (PNG text chunks, WebP/JPEG EXIF, MP4/WebM/MKV container
 tags). This module reads that back and turns it into: which workflow, which prompts, which models. It also
-keeps an index of the output folder so the list can be sorted and filtered without re-reading every file.
+keeps an index of the output folder (in the store) so the list can be sorted and filtered without re-reading every file.
 """
 import hashlib
 import io
 import json
 import os
 import re
-import threading
 import time
 from collections import Counter, defaultdict
 
@@ -17,6 +16,7 @@ import av
 from PIL import Image
 
 import comfy_convert
+from store import root_key
 
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp")
 VIDEO_EXT = (".mp4", ".webm", ".mkv", ".mov")
@@ -393,20 +393,24 @@ def name_workflow(types, workflow_id, models, catalogue):
 # index of the output folder
 # ---------------------------------------------------------------------------------------------- #
 class Library:
-    def __init__(self, output_dir, data_dir, catalogue):
+    def __init__(self, output_dir, data_dir, catalogue, store):
         self.roots = {"output": output_dir, "dropped": os.path.join(data_dir, "dropped")}
         self.data_dir = data_dir
         self.catalogue = catalogue
-        self.index_path = os.path.join(data_dir, "library_index.json")
-        self.lock = threading.Lock()
-        self.items = {}
+        self.store = store
         os.makedirs(self.roots["dropped"], exist_ok=True)
         os.makedirs(os.path.join(data_dir, "thumbs"), exist_ok=True)
-        try:
-            with open(self.index_path, encoding="utf-8") as f:
-                self.items = json.load(f)
-        except (OSError, ValueError):
-            pass
+
+    @property
+    def root(self):
+        """The output folder as the store names it."""
+        return root_key(self.roots["output"])
+
+    def rel_of(self, ref):
+        """'output:sub/file.png' -> 'sub/file.png' as the store keys it; only files of the output folder have one."""
+        if not (ref or "").startswith("output:"):
+            raise ValueError("보관함 목록에 있는 파일에만 쓸 수 있습니다")
+        return os.path.relpath(self.resolve(ref), os.path.realpath(self.roots["output"])).replace("\\", "/")
 
     def resolve(self, ref):
         """'output:sub/file.png' -> absolute path inside that root (nothing outside it)."""
@@ -434,7 +438,11 @@ class Library:
     def scan(self):
         """Bring the index in line with the output folder; only new or changed files are read."""
         base = self.roots["output"]
-        seen, changed = set(), False
+        if not os.path.isdir(base):      # a network drive that is away: keep what is known about its files
+            return
+        root = self.root
+        known = {rel.lower(): (rel, stamp) for rel, stamp in self.store.file_stats(root).items()}
+        seen = set()
         for folder, dirs, files in os.walk(base):
             dirs[:] = [d for d in dirs if not d.startswith(".")]
             for name in files:
@@ -442,13 +450,12 @@ class Library:
                     continue
                 full = os.path.join(folder, name)
                 rel = os.path.relpath(full, base).replace("\\", "/")
-                seen.add(rel)
+                seen.add(rel.lower())
                 try:
                     stat = os.stat(full)
                 except OSError:
                     continue
-                old = self.items.get(rel)
-                if old and old["mtime"] == stat.st_mtime and old["size"] == stat.st_size:
+                if known.get(rel.lower(), ("", None))[1] == (stat.st_mtime, stat.st_size):
                     continue
                 try:
                     entry = self._entry(rel, full, stat)
@@ -458,22 +465,13 @@ class Library:
                              "width": None, "height": None, "duration": None, "has_meta": False, "workflow_id": None,
                              "types": {}, "models": [], "prompt_count": 0, "generated": False, "snippet": "",
                              "search": "", "error": str(e)[:200]}
-                with self.lock:
-                    self.items[rel] = entry
-                changed = True
-        with self.lock:
-            for rel in [r for r in self.items if r not in seen]:
-                del self.items[rel]
-                changed = True
-            if changed:
-                tmp = self.index_path + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(self.items, f, ensure_ascii=False)
-                os.replace(tmp, self.index_path)
+                self.store.put_file(root, rel, entry)
+        self.store.drop_files(root, [rel for key, (rel, _) in known.items() if key not in seen])
 
-    def listing(self, sort="new", workflow="", query="", kind="", show_sidecars=False):
-        with self.lock:
-            items = dict(self.items)
+    def listing(self, sort="new", workflow="", query="", kind="", show_sidecars=False, favorite=False, tag=""):
+        """(rows, workflows with counts, tags with counts). The counts are of everything, not of the filtered rows."""
+        root = self.root
+        items, marks, made = self.store.files(root), self.store.marks(root), self.store.rels_with_job(root)
         videos = {os.path.splitext(rel)[0].lower() for rel, e in items.items() if e["kind"] == "video"}
         rows = []
         for rel, e in items.items():
@@ -486,10 +484,15 @@ class Library:
                          "kind": e["kind"], "mtime": e["mtime"], "size": e["size"], "width": e["width"], "height": e["height"],
                          "duration": e["duration"], "workflow": name, "match": how, "prompt_count": e["prompt_count"],
                          "generated": e["generated"], "snippet": e["snippet"], "_search": e["search"]})
+            mark = marks.get(rel.lower()) or {"favorite": False, "tags": [], "note": ""}
+            rows[-1].update(favorite=mark["favorite"], tags=mark["tags"], has_job=rel.lower() in made,
+                            _mine=(" ".join(mark["tags"]) + " " + mark["note"]).lower())
         counts = Counter(r["workflow"] for r in rows)
+        tags = Counter(t for r in rows for t in r["tags"])
         query = (query or "").strip().lower()
         rows = [r for r in rows if (not workflow or r["workflow"] == workflow) and (not kind or r["kind"] == kind)
-                and (not query or query in r["_search"] or query in r["name"].lower())]
+                and (not favorite or r["favorite"]) and (not tag or tag in r["tags"])
+                and (not query or query in r["_search"] or query in r["name"].lower() or query in r["_mine"])]
         if sort == "workflow":
             rows.sort(key=lambda r: (r["workflow"] == NO_METADATA, r["workflow"].lower(), -r["mtime"]))
         elif sort == "old":
@@ -499,9 +502,10 @@ class Library:
         else:
             rows.sort(key=lambda r: -r["mtime"])
         for r in rows:
-            del r["_search"]
-        return rows, sorted(({"name": n, "count": c} for n, c in counts.items()),
-                            key=lambda w: (w["name"] == NO_METADATA, w["name"].lower()))
+            del r["_search"], r["_mine"]
+        return (rows, sorted(({"name": n, "count": c} for n, c in counts.items()),
+                             key=lambda w: (w["name"] == NO_METADATA, w["name"].lower())),
+                sorted(({"name": n, "count": c} for n, c in tags.items()), key=lambda t: t["name"].lower()))
 
     def thumbnail(self, ref, size=360):
         full = self.resolve(ref)
@@ -581,15 +585,20 @@ class Library:
         for src, dst in moves:
             if os.path.exists(dst) and os.path.normcase(src) != os.path.normcase(dst):
                 raise ValueError("같은 이름의 파일이 이미 있습니다: " + os.path.basename(dst))
-        for src, dst in moves:
+        base = os.path.realpath(self.roots["output"])
+        for src, dst in moves:      # the store follows, so the file keeps its job, its tags and its note
+            old = os.path.relpath(src, base).replace("\\", "/")
             os.rename(src, dst)
-        return "output:" + os.path.relpath(moves[0][1], os.path.realpath(self.roots["output"])).replace("\\", "/")
+            self.store.rename_file(self.root, old, os.path.relpath(dst, base).replace("\\", "/"))
+        return "output:" + os.path.relpath(moves[0][1], base).replace("\\", "/")
 
     def delete(self, ref):
         """Remove the file from the output folder for good. Returns the names removed."""
-        files = self._own(ref)
+        files, base = self._own(ref), os.path.realpath(self.roots["output"])
         for path in files:
             os.remove(path)
+        rels = [os.path.relpath(path, base).replace("\\", "/") for path in files]
+        self.store.forget_files(self.root, rels)
         return [os.path.basename(path) for path in files]
 
     def embedded_workflow(self, ref):

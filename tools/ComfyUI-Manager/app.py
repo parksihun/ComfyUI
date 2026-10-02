@@ -4,6 +4,8 @@ Create: z-image turbo image -> Qwen scenario (N prompts) -> Wan 2.2 video. Nothi
 step is queued on a running ComfyUI through its HTTP API (/prompt, /history, /view, /upload/image, /free, /ws).
 Library: lists the output folder and shows, for any image or video, the workflow and prompts it was made with
 (read from the metadata ComfyUI embeds in the file); works without ComfyUI running.
+History: the jobs that were run. Jobs, the library's index and the user's tags / notes live in one SQLite file
+(data/manager.db, see store.py), which is what connects a job to the files it made.
 
 A small aiohttp server with a one-page UI; it only needs packages ComfyUI already ships (aiohttp, Pillow, PyAV).
 
@@ -39,11 +41,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)      # python_embeded does not put the script's folder on sys.path
 import comfy_convert  # noqa: E402
 import library  # noqa: E402
+import store  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(HERE))
 TEMPLATES = os.path.join(HERE, "templates")
-SETTINGS = os.path.join(HERE, "data", "settings.json")      # what was changed from the page
-HISTORY = os.path.join(HERE, "data", "history.json")        # the jobs that were run
+DATA = os.path.join(HERE, "data")
+SETTINGS = os.path.join(DATA, "settings.json")      # what was changed from the page
 log = logging.getLogger("comfyui_manager")
 
 DEFAULT_CONFIG = {
@@ -451,6 +454,24 @@ class Job:
         }
 
 
+def job_keys(entry):
+    """(scenario folder, start image) a job of the history is connected by: a scenario job made the folder from the
+    image, a video job was made from the folder. The image is its path inside the result folder ('' when it is not there)."""
+    params, result = entry.get("params") or {}, entry.get("result") or {}
+    if entry["kind"] == "scenario":
+        image = params.get("image") or {}
+        rel = "/".join(q for q in re.split(r"[\\/]", image.get("subfolder") or "") + [image.get("filename") or ""] if q)
+        return result.get("dir") or "", rel if image.get("type") == "output" else ""
+    return (params.get("dir") or "" if entry["kind"] == "video" else ""), ""
+
+
+def main_files(row):
+    """The files a stored job is known by: the final video of a video job, everything an image job saved."""
+    outputs, final = row["entry"].get("outputs") or [], (row["entry"].get("result") or {}).get("final") or {}
+    return [rel for n, rel in sorted(row["files"].items()) if n < len(outputs) and (
+        row["kind"] != "video" or (outputs[n]["filename"], outputs[n]["type"]) == (final.get("filename"), final.get("type")))]
+
+
 def output_files(node_id, title, output):
     files = []
     for key in ("images", "gifs", "video", "videos"):
@@ -492,14 +513,9 @@ class App:
         self._llm = (0, None)
         self.ws = None
         self.address_changed = asyncio.Event()
-        self.library = library.Library(self.output_dir, os.path.join(HERE, "data"),
-                                       library.Catalogue(os.path.join(ROOT, "workflow"), TEMPLATES))
-        self.history = []                # finished jobs, newest first (data/history.json)
-        try:
-            with open(HISTORY, encoding="utf-8") as f:
-                self.history = json.load(f)
-        except (OSError, ValueError):
-            pass
+        self.store = store.Store(os.path.join(DATA, "manager.db"))
+        self.library = library.Library(self.output_dir, DATA, library.Catalogue(os.path.join(ROOT, "workflow"), TEMPLATES), self.store)
+        self.import_history(os.path.join(DATA, "history.json"))
 
     # ---- helpers -----------------------------------------------------------------------------
     def path(self, rel):
@@ -814,15 +830,78 @@ class App:
         return entry
 
     def record(self, job):
-        self.history.insert(0, self.history_entry(job))
-        del self.history[500:]
+        """Keep a finished job, connected to the files it made."""
+        entry = self.history_entry(job)
         try:
-            os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
-            with open(HISTORY + ".tmp", "w", encoding="utf-8") as f:
-                json.dump(self.history, f, ensure_ascii=False)
-            os.replace(HISTORY + ".tmp", HISTORY)
-        except OSError:
+            self.store.add_job(entry, store.root_key(self.output_dir), *job_keys(entry),
+                               [f["ref"].partition(":")[2] or None for f in entry["outputs"]])
+        except Exception:      # a job must not fail because its record could not be written
             log.exception("history not saved")
+
+    def import_history(self, path):
+        """The history an earlier version kept in history.json, taken over once."""
+        if not os.path.isfile(path) or self.store.job_count():
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                for entry in reversed(json.load(f)):
+                    self.store.add_job(entry, store.root_key(self.output_dir), *job_keys(entry),
+                                       [(f.get("ref") or "").partition(":")[2] or None for f in entry.get("outputs") or []])
+            os.replace(path, path + ".imported")
+        except (OSError, ValueError, KeyError):
+            log.exception("history.json not imported")
+
+    def stored_entry(self, row):
+        """A job of the store as the page shows it: its files where they are now, and what it is connected to."""
+        entry, here = row["entry"], row["root"] == store.root_key(self.output_dir)
+        for n, f in enumerate(entry.get("outputs") or []):
+            f["ref"] = "output:" + row["files"][n] if here and n in row["files"] else ""
+        entry["links"] = self.links(row)
+        return entry
+
+    def links(self, row):
+        """What a job is connected to: the scenario and start image it used, the scenarios and videos made from it.
+        [{'label', 'ref' + 'name'} for a file | {'label', 'dir'} for a scenario folder]"""
+        here = row["root"] == store.root_key(self.output_dir)
+        out = []
+
+        def file(label, rel):
+            out.append({"label": label, "name": rel.rsplit("/", 1)[-1], "ref": "output:" + rel if here else ""})
+
+        def videos(folder):
+            for video in self.store.jobs_like("video", root=row["root"], scenario_dir=folder, state="done"):
+                for rel in main_files(video):
+                    file("만든 영상", rel)
+
+        folder = row["scenario_dir"]
+        if row["kind"] == "video" and folder:
+            out.append({"label": "시나리오", "dir": folder})
+            made = self.store.jobs_like("scenario", 1, root=row["root"], scenario_dir=folder)
+            source = made[0]["source_rel"] if made else self.scenario_source(folder) if here else ""
+            if source:
+                file("시작 이미지", source)
+        elif row["kind"] == "scenario":
+            if row["source_rel"]:
+                file("시작 이미지", row["source_rel"])
+            if folder:
+                out.append({"label": "시나리오", "dir": folder})
+                videos(folder)
+        elif row["kind"] == "image":
+            for rel in main_files(row):
+                for scenario in self.store.jobs_like("scenario", root=row["root"], source_rel=rel):
+                    if scenario["scenario_dir"]:
+                        out.append({"label": "이 이미지로 만든 시나리오", "dir": scenario["scenario_dir"]})
+                        videos(scenario["scenario_dir"])
+        return out
+
+    def scenario_source(self, folder):
+        """The start image a scenario folder names (for a scenario that was not made through a recorded job)."""
+        try:
+            image = self.load_scenario(folder).get("image_ref") or {}
+        except (AppError, OSError, ValueError):
+            return ""
+        rel = "/".join(q for q in re.split(r"[\\/]", image.get("subfolder") or "") + [image.get("filename") or ""] if q)
+        return rel if image.get("type") == "output" else ""
 
     def start_job(self, kind, label, coro_fn, *args):
         job = Job(kind, label)
@@ -1193,7 +1272,7 @@ async def api_history(request):
     """Jobs run with this program, newest first: the ones still running, then the finished ones on record."""
     app = request.app["app"]
     live = [app.history_entry(j) for j in sorted(app.jobs.values(), key=lambda j: -j.created) if j.finished is None]
-    return web.json_response({"items": live + app.history})
+    return web.json_response({"items": live + [app.stored_entry(row) for row in app.store.jobs(300)]})
 
 
 async def api_cancel(request):
@@ -1345,9 +1424,10 @@ def _library(request):
 async def api_library(request):
     lib, q = _library(request), request.query
     await asyncio.to_thread(lib.scan)
-    rows, workflows = lib.listing(q.get("sort", "new"), q.get("workflow", ""), q.get("q", ""), q.get("kind", ""),
-                                  q.get("sidecars") == "1")
-    return web.json_response({"items": rows[:1000], "total": len(rows), "workflows": workflows, "folder": lib.roots["output"]})
+    rows, workflows, tags = lib.listing(q.get("sort", "new"), q.get("workflow", ""), q.get("q", ""), q.get("kind", ""),
+                                        q.get("sidecars") == "1", q.get("fav") == "1", q.get("tag", ""))
+    return web.json_response({"items": rows[:1000], "total": len(rows), "workflows": workflows, "tags": tags,
+                              "folder": lib.roots["output"]})
 
 
 async def api_library_item(request):
@@ -1360,8 +1440,32 @@ async def api_library_item(request):
     stat = os.stat(full)
     info.pop("types")
     info.update(ref=ref, name=os.path.basename(full), path=full, size=stat.st_size, mtime=stat.st_mtime,
-                kind="video" if full.lower().endswith(library.VIDEO_EXT) else "image")
+                kind="video" if full.lower().endswith(library.VIDEO_EXT) else "image", job=None, mark=None)
+    if ref.startswith("output:"):      # what the store knows about it: the job that made it, the user's tags and note
+        app, rel = request.app["app"], lib.rel_of(ref)
+        row = app.store.job_of(lib.root, rel)
+        if row:
+            info["job"] = app.stored_entry(row)
+            info["job"]["links"] = [x for x in info["job"]["links"] if x.get("ref", "").lower() != ("output:" + rel).lower()]
+        info["mark"] = app.store.mark(lib.root, rel)
     return web.json_response(info)
+
+
+async def api_library_mark(request):
+    """Favourite, tags and note of a file: only what is given is changed."""
+    lib, body = _library(request), await request.json()
+    try:
+        rel = lib.rel_of(body.get("ref", ""))
+    except ValueError as e:
+        raise AppError(str(e))
+    tags = body.get("tags")
+    if tags is not None:      # a list or 'a, b, c'; '#' in front is dropped, no doubles, the order typed is kept
+        if isinstance(tags, str):
+            tags = re.split(r"[,\n]", tags)
+        tags = list(dict.fromkeys(t.strip().lstrip("#").strip()[:40] for t in tags if isinstance(t, str) and t.strip().lstrip("#").strip()))[:30]
+    note = body.get("note")
+    return web.json_response(request.app["app"].store.set_mark(
+        lib.root, rel, body.get("favorite"), tags, None if note is None else str(note).strip()[:4000]))
 
 
 async def api_library_file(request):
@@ -1546,6 +1650,7 @@ def make_app(cfg):
         web.get("/api/library/frame", api_library_frame),
         web.get("/api/library/workflow", api_library_workflow),
         web.post("/api/library/save_workflow", api_library_save_workflow),
+        web.post("/api/library/mark", api_library_mark),
         web.post("/api/library/rename", api_library_rename),
         web.post("/api/library/delete", api_library_delete),
         web.get("/api/history", api_history),
