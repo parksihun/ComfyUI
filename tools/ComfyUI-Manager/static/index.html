@@ -106,6 +106,9 @@
   .folders .hint { padding:6px 10px; margin:0; }
   .star { background:transparent; color:var(--dim); font-size:20px; line-height:1; padding:2px 6px; font-weight:normal; }
   .star.on { color:var(--warn); }
+  .card .pick { position:absolute; right:6px; bottom:6px; width:20px; height:20px; margin:0; cursor:pointer; accent-color:var(--accent); }
+  .card.picked { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .pickbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; padding:8px 10px; background:#18263a; border:1px solid var(--accent); border-radius:8px; font-size:13px; }
   .card .fav { position:absolute; right:6px; top:4px; color:var(--warn); font-size:16px; text-shadow:0 0 3px #000; }
   .card .meta .tags { display:block; color:var(--warn); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .links { display:flex; flex-direction:column; gap:3px; margin-top:6px; font-size:13px; }
@@ -346,6 +349,14 @@
     <div class="chips" id="wfChips"></div>
     <div class="chips" id="tagChips" style="margin-top:6px"></div>
     <div class="hint" id="libInfo"></div>
+    <div class="pickbar" id="pickBar" hidden>
+      <b id="pickCount"></b>
+      <button class="sub" id="pickAll">보이는 것 전체 선택</button>
+      <button class="sub" id="pickNone">선택 해제</button>
+      <span class="spacer"></span>
+      <span id="pickInfo"></span>
+      <button class="danger" id="pickDelete" title="선택한 파일을 서버 결과 폴더에서 지웁니다. 되돌릴 수 없습니다">선택한 파일 삭제</button>
+    </div>
     <div class="grid" id="libGrid"></div>
   </section>
 </main>
@@ -991,6 +1002,37 @@ const fmtDate = t => new Date(t * 1000).toLocaleString('ko-KR', { dateStyle: 'sh
 const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
+// ---- picking several files of the list to delete them together ----
+const picked = new Set();
+let lastPick = null;
+function setPicked(card, on) {
+  card.classList.toggle('picked', on); card.querySelector('.pick').checked = on;
+  if (on) picked.add(card.dataset.ref); else picked.delete(card.dataset.ref);
+}
+function showPicked() {
+  $('pickBar').hidden = !picked.size;
+  $('pickCount').textContent = picked.size + '개 선택';
+  $('pickDelete').textContent = '선택한 파일 삭제'; $('pickInfo').textContent = ''; $('pickInfo').style.color = '';
+}
+$('pickAll').onclick = () => { for (const c of $('libGrid').querySelectorAll('.card')) setPicked(c, true); showPicked(); };
+$('pickNone').onclick = () => { picked.clear(); for (const c of $('libGrid').querySelectorAll('.card')) setPicked(c, false); showPicked(); };
+$('pickDelete').onclick = async () => {
+  const b = $('pickDelete'), info = $('pickInfo');
+  if (b.textContent === '선택한 파일 삭제') {      // first click asks, the second one deletes
+    b.textContent = '정말 삭제 (' + picked.size + '개, 되돌릴 수 없음)';
+    info.style.color = ''; info.textContent = '영상은 미리보기 PNG도 함께 지웁니다. 한 번 더 누르면 삭제합니다.';
+    return;
+  }
+  b.disabled = true; info.textContent = '삭제하는 중…';
+  try {
+    const res = await post('/api/library/delete', { refs: [...picked] });
+    picked.clear(); for (const f of res.failed) picked.add(f.ref);      // what could not be deleted stays picked
+    await loadLibrary();
+    if (res.failed.length) { info.style.color = 'var(--bad)'; info.textContent = res.failed.length + '개는 지우지 못했습니다: ' + res.failed[0].error; }
+  } catch (e) { info.style.color = 'var(--bad)'; info.textContent = e.message; }
+  b.disabled = false;
+};
+
 async function loadLibrary() {
   const q = new URLSearchParams({ sort: $('libSort').value, kind: $('libKind').value, q: $('libSearch').value,
                                   workflow: lib.workflow, sidecars: $('libSidecars').checked ? '1' : '',
@@ -1019,6 +1061,9 @@ async function loadLibrary() {
   $('libInfo').textContent = res.total ? res.total + '개' + (res.total > res.items.length ? ' (앞의 ' + res.items.length + '개만 표시)' : '')
                                        : '표시할 파일이 없습니다.';
   const grid = $('libGrid'); grid.innerHTML = '';
+  const shown = new Set(res.items.map(it => it.ref));      // a file that left the list (filter, deleted) is no longer picked
+  for (const ref of [...picked]) if (!shown.has(ref)) picked.delete(ref);
+  lastPick = null;
   let group = null;
   for (const it of res.items) {
     if ($('libSort').value === 'workflow' && it.workflow !== group) {
@@ -1034,9 +1079,21 @@ async function loadLibrary() {
                 el('span', 'dim', fmtDate(it.mtime) + (it.width ? ' · ' + it.width + '×' + it.height : '') + (it.has_job ? ' · 작업 이력' : '')));
     if (it.tags.length) meta.append(el('span', 'tags', it.tags.map(t => '#' + t).join(' ')));
     card.title = it.snippet || (it.generated ? '프롬프트가 실행 중에 만들어진 파일' : '');
+    // the box at the corner picks the file for deleting several at once; Shift picks everything up to the last one
+    const pick = el('input', 'pick'); pick.type = 'checkbox'; pick.title = '선택 (Shift를 누르고 누르면 여기까지 한꺼번에)';
+    pick.checked = picked.has(it.ref); card.classList.toggle('picked', pick.checked); card.dataset.ref = it.ref;
+    pick.onclick = e => {
+      e.stopPropagation();
+      const cards = [...grid.querySelectorAll('.card')], here = cards.indexOf(card);
+      const from = e.shiftKey && lastPick != null ? Math.min(lastPick, here) : here, to = e.shiftKey && lastPick != null ? Math.max(lastPick, here) : here;
+      for (const c of cards.slice(from, to + 1)) setPicked(c, pick.checked);
+      lastPick = here; showPicked();
+    };
+    pic.append(pick);
     card.append(pic, meta); card.onclick = () => openDetail(it.ref);
     grid.append(card);
   }
+  showPicked();
 }
 
 function promptBox(p, neg) {

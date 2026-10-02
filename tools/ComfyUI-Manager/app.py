@@ -1735,14 +1735,26 @@ async def api_library_rename(request):
 
 
 async def api_library_delete(request):
+    """Delete one file ({'ref'}) or the chosen ones ({'refs': [...]}); with several, the ones that cannot be
+    deleted are reported and the others still go."""
     lib, body = _library(request), await request.json()
-    try:
-        removed = await asyncio.to_thread(lib.delete, body.get("ref", ""))
-    except ValueError as e:
-        raise AppError(str(e))
-    except OSError as e:
-        raise AppError(f"삭제하지 못했습니다: {e.strerror or e}")
-    return web.json_response({"removed": removed})
+    if not isinstance(body.get("refs"), list):
+        try:
+            removed = await asyncio.to_thread(lib.delete, body.get("ref", ""))
+        except ValueError as e:
+            raise AppError(str(e))
+        except OSError as e:
+            raise AppError(f"삭제하지 못했습니다: {e.strerror or e}")
+        return web.json_response({"removed": removed})
+    removed, failed = [], []
+    for ref in body["refs"][:2000]:
+        try:
+            removed += await asyncio.to_thread(lib.delete, str(ref))
+        except ValueError as e:
+            failed.append({"ref": ref, "error": str(e)})
+        except OSError as e:
+            failed.append({"ref": ref, "error": e.strerror or str(e)})
+    return web.json_response({"removed": removed, "failed": failed})
 
 
 async def api_inspect(request):
