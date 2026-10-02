@@ -8,10 +8,13 @@
 !Install_Python_Packages.bat
 !Start_ComfyUI_K620.bat
 !Start_ComfyUI_L40S.bat
+!Start_ComfyUI_RTX4060.bat
 !extra_model_paths.yaml
 
 !workflow/
 !workflow/**
+# Easy-Install's sample workflows, moved here by Setup_Folders.bat from ComfyUI\user\default\workflows
+workflow/Getting Started/
 
 !custom_nodes/
 !custom_nodes/ComfyUI-ShortsRemake/

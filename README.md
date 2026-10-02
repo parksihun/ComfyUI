@@ -33,11 +33,12 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 ├── Setup_Folders.bat                    폴더 생성 + workflow/custom_nodes 정션 (새 PC에서 한 번, extra_model_paths.yaml과 함께)
 ├── Install_Python_Packages.bat          워크플로우용 추가 파이썬 패키지 (yt-dlp 등, 인터넷 필요)
 ├── Start_ComfyUI_L40S.bat               GPU 서버(L40S) 실행 스크립트 (SageAttention, 외부 접속, 오프라인 설정 포함)
+├── Start_ComfyUI_RTX4060.bat            집 PC(RTX 4060 8GB) 실행 스크립트 (SageAttention, 이 PC에서만 접속)
 └── Start_ComfyUI_K620.bat               Quadro K620 PC용 실행 스크립트 (그래픽카드가 오래되어 --cpu로 실행)
 
-실행 스크립트는 PC의 그래픽카드 이름으로 나뉘어 있고 (L40S / K620), `--input-directory`, `--output-directory`, `--temp-directory` 옵션으로 폴더를 정합니다.
+실행 스크립트는 PC의 그래픽카드 이름으로 나뉘어 있고 (L40S / RTX4060 / K620), `--input-directory`, `--output-directory`, `--temp-directory` 옵션으로 폴더를 정합니다.
 서버용 `Start_ComfyUI_L40S.bat`은 입력, 출력, 임시 폴더를 `E:\ComfyUI\input`, `E:\ComfyUI\output`, `E:\ComfyUI\temp`에 두고 (없으면 만듭니다),
-`Start_ComfyUI_K620.bat`은 입력과 출력을 `V:\input`, `V:\output`에 두고 임시 폴더는 루트의 `temp\`를 씁니다. 또 `--extra-model-paths-config`로 루트의 `extra_model_paths.yaml`
+`Start_ComfyUI_K620.bat`은 입력과 출력을 `V:\input`, `V:\output`에 두고 임시 폴더는 루트의 `temp\`를 씁니다. `Start_ComfyUI_RTX4060.bat`은 셋 다 루트의 `input\`, `output\`, `temp\`를 씁니다. 또 `--extra-model-paths-config`로 루트의 `extra_model_paths.yaml`
 (모델 폴더 `model\`)을 읽도록 되어 있습니다. ComfyUI는 기본적으로 `ComfyUI\extra_model_paths.yaml`만 찾으므로 이 옵션이 없으면 `model\`이 보이지 않습니다.
 ```
 
