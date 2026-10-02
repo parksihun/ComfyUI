@@ -3,6 +3,7 @@
   "port": 8288,
   "comfy_url": "http://127.0.0.1:8188",
   "output_dir": "",
+  "fetch_dir": "",
   "svi_workflow": "workflow/Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5.json",
   "i2v_api": "workflow/5_I2V_6seg_from_prompts.api.json"
 }

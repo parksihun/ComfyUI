@@ -528,6 +528,41 @@ class Library:
             f.write(data)
         return "dropped:" + name
 
+    def _own(self, ref):
+        """[the file, then what belongs to it]: VideoHelperSuite writes <name>.png (first frame) next to <name>.mp4,
+        which the list hides, so it is renamed and deleted together with the video."""
+        if not (ref or "").startswith("output:"):
+            raise ValueError("보관함 목록에 있는 파일만 바꿀 수 있습니다")
+        full = self.resolve(ref)
+        side = os.path.splitext(full)[0] + ".png"
+        return [full] + ([side] if full.lower().endswith(VIDEO_EXT) and os.path.isfile(side) else [])
+
+    def rename(self, ref, name):
+        """Give the file another name in the same folder (the extension stays). Returns the new ref."""
+        files = self._own(ref)
+        folder, old = os.path.split(files[0])
+        stem, ext = os.path.splitext(old)
+        name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "", name or "").strip()
+        if name.lower().endswith(ext.lower()):
+            name = name[:-len(ext)]
+        name = name.strip(" .")
+        if not name:
+            raise ValueError("새 이름을 입력하세요")
+        moves = [(src, os.path.join(folder, name + os.path.splitext(src)[1])) for src in files]
+        for src, dst in moves:
+            if os.path.exists(dst) and os.path.normcase(src) != os.path.normcase(dst):
+                raise ValueError("같은 이름의 파일이 이미 있습니다: " + os.path.basename(dst))
+        for src, dst in moves:
+            os.rename(src, dst)
+        return "output:" + os.path.relpath(moves[0][1], os.path.realpath(self.roots["output"])).replace("\\", "/")
+
+    def delete(self, ref):
+        """Remove the file from the output folder for good. Returns the names removed."""
+        files = self._own(ref)
+        for path in files:
+            os.remove(path)
+        return [os.path.basename(path) for path in files]
+
     def embedded_workflow(self, ref):
         _, workflow, _ = read_metadata(self.resolve(ref))
         return workflow

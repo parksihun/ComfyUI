@@ -7,9 +7,20 @@
 <style>
   :root { --bg:#14161a; --card:#1d2026; --line:#2e333c; --text:#e6e8ec; --dim:#98a0ad; --accent:#5b9dff; --ok:#4cc38a; --bad:#ff6b6b; --warn:#e6b450; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 "Segoe UI","Malgun Gothic",sans-serif; }
+  body { margin:0; display:flex; min-height:100vh; background:var(--bg); color:var(--text); font:14px/1.5 "Segoe UI","Malgun Gothic",sans-serif; }
+  aside { flex:none; width:240px; position:sticky; top:0; height:100vh; overflow:auto; display:flex; flex-direction:column; gap:16px; padding:14px 12px; background:#101216; border-right:1px solid var(--line); }
+  aside h1 { font-size:16px; margin:0 4px; }
+  .menu { display:flex; flex-direction:column; gap:4px; }
+  .menu button { text-align:left; padding:9px 12px; background:transparent; color:var(--dim); font-weight:normal; border:1px solid transparent; }
+  .menu button.on { background:#2b313b; color:var(--text); border-color:var(--line); }
+  .side { margin-top:auto; display:flex; flex-direction:column; gap:6px; }
+  .side label { margin:8px 0 0; }
+  .side .line { display:flex; gap:6px; }
+  .side .line input { min-width:0; }
+  .side button { white-space:nowrap; }
+  .content { flex:1; min-width:0; }
+  @media (max-width:760px) { body { flex-direction:column; } aside { width:auto; height:auto; position:static; border-right:0; border-bottom:1px solid var(--line); } }
   header { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; padding:10px 18px; background:#101216; border-bottom:1px solid var(--line); }
-  header h1 { font-size:16px; margin:0 8px 0 0; }
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--bad); margin-right:6px; }
   .dot.on { background:var(--ok); }
   .status { color:var(--dim); font-size:13px; }
@@ -81,7 +92,25 @@
   .card .meta .wf { display:block; color:var(--accent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .card .meta .dim { color:var(--dim); }
   [hidden] { display:none !important; }
-  #viewer { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.72); display:flex; align-items:center; justify-content:center; padding:18px; }
+  #viewer, #folderPicker { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.72); display:flex; align-items:center; justify-content:center; padding:18px; }
+  .dialog { background:var(--card); border:1px solid var(--line); border-radius:10px; width:min(620px,100%); max-height:100%; display:flex; flex-direction:column; padding:16px; }
+  .folders { flex:none; height:46vh; overflow:auto; margin-top:10px; background:#12141a; border:1px solid var(--line); border-radius:6px; padding:4px; }
+  .folders button { display:block; width:100%; text-align:left; background:transparent; color:var(--text); font-weight:normal; padding:6px 10px; }
+  .folders button:hover { background:#2b313b; }
+  .folders button i { color:var(--dim); font-style:normal; margin-left:8px; font-size:12px; }
+  .folders .hint { padding:6px 10px; margin:0; }
+  .hist { display:flex; gap:12px; padding:12px 0; border-top:1px solid var(--line); }
+  .hist .thumbs { flex:none; width:84px; display:flex; flex-direction:column; gap:6px; }
+  .hist .thumbs img { width:84px; height:84px; object-fit:cover; border-radius:6px; cursor:pointer; background:#000; }
+  .hist .body { flex:1; min-width:0; }
+  .hist .head { font-size:13px; color:var(--dim); }
+  .hist .head b { color:var(--text); }
+  .hist .state.done { color:var(--ok); } .hist .state.error { color:var(--bad); } .hist .state.cancelled { color:var(--warn); }
+  .hist .state.running, .hist .state.queued { color:var(--accent); }
+  .hist .text { margin-top:4px; font-size:13px; white-space:pre-wrap; word-break:break-word; max-height:4.5em; overflow:hidden; cursor:pointer; }
+  .hist .text.open { max-height:none; }
+  .hist .text.err { color:var(--bad); cursor:default; }
+  .hist .hint { white-space:pre-wrap; word-break:break-all; }
   .sheet { background:var(--card); border:1px solid var(--line); border-radius:10px; width:min(1240px,100%); max-height:100%; overflow:auto;
            display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); gap:18px; padding:16px; }
   @media (max-width:900px) { .sheet { grid-template-columns:1fr; } }
@@ -98,22 +127,32 @@
 </style>
 </head>
 <body>
-<header>
+<aside>
   <h1>ComfyUI-Manager</h1>
-  <span class="tabs"><button id="tabBtnImage" class="on">이미지</button><button id="tabBtnScenario">시나리오</button><button id="tabBtnVideo">영상</button><button id="tabBtnLibrary">보관함</button></span>
-  <span class="status"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></span>
-  <span style="display:flex;gap:6px;align-items:center">
-    <input type="text" id="comfyUrl" list="comfyUrls" style="width:230px" placeholder="ComfyUI 주소 (http://127.0.0.1:8188)"
-           title="ComfyUI 서버 주소. 이 PC면 http://127.0.0.1:8188, 다른 서버면 http://서버IP:8188">
-    <datalist id="comfyUrls"></datalist>
-    <button class="sub" id="btnComfy">연결</button>
-  </span>
+  <nav class="menu"><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuLibrary">보관함</button></nav>
+  <div class="side">
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></div>
+    <label for="comfySel">ComfyUI 서버</label>
+    <select id="comfySel" title="전에 연결한 주소 중에서 고르면 그 서버로 바뀝니다"></select>
+    <div class="line">
+      <input type="text" id="comfyUrl" placeholder="새 주소 (서버IP:8188)"
+             title="처음 쓰는 ComfyUI 주소. 이 PC면 http://127.0.0.1:8188, 다른 서버면 http://서버IP:8188">
+      <button class="sub" id="btnComfy">연결</button>
+    </div>
+    <label for="fetchSel">결과를 가져올 폴더</label>
+    <select id="fetchSel" title="끝난 이미지와 영상을 이 폴더로도 복사합니다. 전에 쓴 폴더 중에서 고를 수 있습니다"></select>
+    <div class="hint" id="fetchPath" style="margin:0;word-break:break-all" hidden></div>
+    <button class="sub" id="btnFetchDir">폴더 선택…</button>
+  </div>
+</aside>
+
+<div class="content">
+<header id="createBar">
+  <span class="tabs"><button id="tabBtnImage" class="on">이미지</button><button id="tabBtnScenario">시나리오</button><button id="tabBtnVideo">영상</button></span>
   <span class="spacer"></span>
-  <span id="createButtons" style="display:flex;gap:10px">
   <button id="btnAll" title="이미지 → 시나리오 → 영상을 현재 입력값으로 이어서 실행">한 번에 실행</button>
   <button id="btnCancel" class="danger" disabled>중단</button>
   <button id="btnFree" class="sub" title="ComfyUI와 Qwen Chat이 잡고 있는 모델을 VRAM에서 내립니다">VRAM 비우기</button>
-  </span>
 </header>
 
 <main id="tabCreate">
@@ -234,6 +273,22 @@
   </section>
 </main>
 
+<main id="tabHistory" hidden>
+  <section>
+    <h2>작업 이력 <span>이 프로그램으로 실행한 작업의 기록입니다 (최신순)</span></h2>
+    <div class="row">
+      <div><label>단계</label>
+        <select id="histKind"><option value="">전체</option><option value="image">이미지</option><option value="scenario">시나리오</option><option value="video">영상</option></select></div>
+      <div><label>결과</label>
+        <select id="histState"><option value="">전체</option><option value="done">완료</option><option value="failed">오류 · 중단</option></select></div>
+      <div style="flex:3"></div>
+      <div style="flex:0"><button class="sub" id="btnHistReload">새로 고침</button></div>
+    </div>
+    <div class="hint" id="histInfo"></div>
+    <div id="histList"></div>
+  </section>
+</main>
+
 <main id="tabLibrary" hidden>
   <section>
     <h2>파일 확인 <span>이미지나 영상을 넣으면 그것을 만든 워크플로우와 프롬프트를 보여 줍니다</span></h2>
@@ -258,6 +313,27 @@
     <div class="grid" id="libGrid"></div>
   </section>
 </main>
+</div>
+
+<div id="folderPicker" hidden>
+  <div class="dialog">
+    <div class="actions" style="margin-top:0;justify-content:space-between"><b>결과를 가져올 폴더 선택</b><button class="sub" id="fpClose">닫기</button></div>
+    <div class="hint">이 프로그램이 실행 중인 PC의 폴더입니다. 끝난 이미지와 영상을 이 폴더로도 복사합니다 (ComfyUI의 저장 폴더는 그대로이고, 이미 있는 파일은 덮어쓰지 않습니다).</div>
+    <div class="actions">
+      <button class="sub" id="fpUp">↑ 위로</button>
+      <input type="text" id="fpPath" style="flex:1;width:auto" placeholder="내 PC (드라이브를 고르세요)" title="경로를 직접 적고 Enter를 눌러도 됩니다">
+    </div>
+    <div class="folders" id="fpList"></div>
+    <div class="job" id="fpInfo"></div>
+    <div class="actions">
+      <input type="text" id="fpNewName" style="width:150px" placeholder="새 폴더 이름">
+      <button class="sub" id="fpNew">새 폴더 만들기</button>
+      <span class="spacer"></span>
+      <button class="sub" id="fpNone">가져오지 않음</button>
+      <button id="fpChoose">이 폴더 선택</button>
+    </div>
+  </div>
+</div>
 
 <div id="viewer" hidden>
   <div class="sheet">
@@ -265,6 +341,12 @@
     <div>
       <div class="actions" style="margin-top:0;justify-content:space-between">
         <b id="dName" style="word-break:break-all"></b><button class="sub" id="dClose">닫기</button></div>
+      <div class="actions" id="dFileActions">
+        <input type="text" id="dNewName" style="flex:1;width:auto;min-width:160px" placeholder="새 파일 이름" title="확장자는 그대로 둡니다">
+        <button class="sub" id="dRename">이름 변경</button>
+        <button class="danger" id="dDelete" title="저장 폴더에서 파일을 지웁니다. 되돌릴 수 없습니다">삭제</button>
+      </div>
+      <div class="job" id="dFileInfo"></div>
       <h3>워크플로우</h3>
       <div class="wfname" id="dWorkflow"></div>
       <div class="hint" id="dMatch"></div>
@@ -512,7 +594,8 @@ async function refreshStatus() {
     state.status = s;
     $('dot').classList.toggle('on', s.comfy_ok);
     let text = s.comfy_ok ? 'ComfyUI 연결됨' : 'ComfyUI에 연결할 수 없음';
-    if (document.activeElement !== $('comfyUrl')) $('comfyUrl').value = s.comfy_url;
+    syncLists(s);
+    if (!$('tabHistory').hidden) loadHistory();
     if (s.comfy_ok) text += ' · 대기열 ' + s.running + '+' + s.pending;
     if (s.vram) text += ' · VRAM ' + ((s.vram.total - s.vram.free) / 2 ** 30).toFixed(1) + ' / ' + (s.vram.total / 2 ** 30).toFixed(1) + ' GB';
     $('statusText').textContent = text;
@@ -536,18 +619,19 @@ $('fileInput').onchange = e => { const f = e.target.files[0]; e.target.value = '
 $('analyzer').onchange = fillModels;
 $('btnScenario').onclick = () => guarded($('jobScenario'), genScenario);
 $('btnSave').onclick = () => saveScenario().catch(e => { $('saveInfo').textContent = e.message; });
-$('loadScenario').onchange = async e => {
+// A saved scenario with its start image becomes what the steps work with.
+async function openScenario(dir) {
+  const res = await api('/api/scenario?dir=' + encodeURIComponent(dir));
+  showScenario(res.dir, res.scenario);
+  $('imgView').src = '/api/scenario/image?dir=' + encodeURIComponent(dir); $('imgView').hidden = false;
+  $('imgInfo').textContent = '불러온 시나리오의 시작 이미지 (' + dir + ')';
+  state.image = res.scenario.image_ref || null; markThumb(null);
+  updateContext();
+  $('jobScenario').className = 'job ok'; $('jobScenario').textContent = '시나리오를 불러왔습니다';
+}
+$('loadScenario').onchange = e => {
   const dir = e.target.value; e.target.value = '';
-  if (!dir) return;
-  try {
-    const res = await api('/api/scenario?dir=' + encodeURIComponent(dir));
-    showScenario(res.dir, res.scenario);
-    $('imgView').src = '/api/scenario/image?dir=' + encodeURIComponent(dir); $('imgView').hidden = false;
-    $('imgInfo').textContent = '불러온 시나리오의 시작 이미지 (' + dir + ')';
-    state.image = res.scenario.image_ref || null; markThumb(null);
-    updateContext();
-    $('jobScenario').className = 'job ok'; $('jobScenario').textContent = '시나리오를 불러왔습니다';
-  } catch (err) { $('jobScenario').className = 'job err'; $('jobScenario').textContent = err.message; }
+  if (dir) openScenario(dir).catch(err => { $('jobScenario').className = 'job err'; $('jobScenario').textContent = err.message; });
 };
 $('backend').addEventListener('change', () => { if ($('paramBox').open) loadParams(); });
 $('paramBox').addEventListener('toggle', () => { if ($('paramBox').open) loadParams(); });
@@ -562,51 +646,112 @@ $('btnAll').onclick = () => {
     await genVideo();
   });
 };
-// ---- ComfyUI address (this PC or another server) ----
-function recentUrls(add) {
-  let list = [];
-  try { list = JSON.parse(localStorage.getItem('vw_comfy_urls')) || []; } catch (e) { /* start over */ }
-  if (add) { list = [add].concat(list.filter(u => u !== add)).slice(0, 8); localStorage.setItem('vw_comfy_urls', JSON.stringify(list)); }
-  const box = $('comfyUrls'); box.innerHTML = '';
-  for (const u of ['http://127.0.0.1:8188'].concat(list.filter(u => u !== 'http://127.0.0.1:8188'))) { const o = document.createElement('option'); o.value = u; box.append(o); }
+// ---- the two lists in the side bar: ComfyUI address and fetch folder, each with what was used before ----
+function fillSelect(sel, values, current, label, force) {
+  const sig = JSON.stringify([values, current]);
+  if (sel.dataset.sig === sig && !force) return;      // nothing changed: an open list is left alone
+  sel.dataset.sig = sig; sel.innerHTML = '';
+  for (const v of values) { const o = el('option', '', label(v)); o.value = v; sel.append(o); }
+  sel.value = current; sel.title = label(current);
 }
-async function connectComfy() {
+function syncLists(s, force) {
+  let old = [];      // addresses an earlier version kept in this browser
+  try { old = JSON.parse(localStorage.getItem('vw_comfy_urls')) || []; } catch (e) { /* none */ }
+  const urls = [...new Set([s.comfy_url, ...s.recent_urls, ...old, 'http://127.0.0.1:8188'])];
+  fillSelect($('comfySel'), urls, s.comfy_url, u => u.replace(/^http:\/\//, ''), force);
+  const dirs = [...new Set(['', s.fetch_dir, ...s.recent_dirs])];
+  fillSelect($('fetchSel'), dirs, s.fetch_dir, d => d || '가져오지 않음', force);
+  $('fetchPath').textContent = s.fetch_dir; $('fetchPath').hidden = !s.fetch_dir;      // the list cuts a long path short
+}
+async function connectComfy(url) {
   $('statusText').textContent = '연결 확인 중…';
   try {
-    const res = await post('/api/comfy', { url: $('comfyUrl').value });
-    $('comfyUrl').value = res.url; $('comfyUrl').blur();
-    if (res.ok) recentUrls(res.url);
+    const res = await post('/api/comfy', { url });
+    $('comfyUrl').value = ''; $('comfyUrl').blur();
     state.status = null; state.paramsLoaded = null;          // models and workflow settings belong to the old server
     await refreshStatus();
     $('statusText').textContent = res.message;
-  } catch (e) { $('statusText').textContent = e.message; }
+  } catch (e) { $('statusText').textContent = e.message; if (state.status) syncLists(state.status, true); }
 }
-$('btnComfy').onclick = connectComfy;
-$('comfyUrl').onkeydown = e => { if (e.key === 'Enter') connectComfy(); };
-recentUrls();
+$('comfySel').onchange = () => connectComfy($('comfySel').value);
+$('btnComfy').onclick = () => { if ($('comfyUrl').value.trim()) connectComfy($('comfyUrl').value); };
+$('comfyUrl').onkeydown = e => { if (e.key === 'Enter') $('btnComfy').onclick(); };
+async function applyFetchDir(path) {
+  try {
+    const res = await post('/api/fetch_dir', { path });
+    await refreshStatus();
+    $('statusText').textContent = res.message;
+    return true;
+  } catch (e) { $('statusText').textContent = e.message; if (state.status) syncLists(state.status, true); return false; }
+}
+$('fetchSel').onchange = () => applyFetchDir($('fetchSel').value);
+
+// ---- folder picker: the folders of the PC this program runs on ----
+async function browse(path) {
+  const info = $('fpInfo'); info.className = 'job'; info.textContent = '';
+  try {
+    const res = await api('/api/folders?path=' + encodeURIComponent(path || ''));
+    $('fpPath').value = res.path;
+    $('fpUp').disabled = res.parent == null; $('fpUp').onclick = () => browse(res.parent);
+    $('fpNew').disabled = $('fpChoose').disabled = !res.path;
+    const list = $('fpList'); list.innerHTML = ''; list.scrollTop = 0;
+    for (const d of res.dirs) {
+      const b = el('button', '', d.name); if (d.note) b.append(el('i', '', d.note));
+      b.onclick = () => browse(d.path); list.append(b);
+    }
+    if (!res.dirs.length) list.append(el('div', 'hint', '하위 폴더가 없습니다.'));
+  } catch (e) { info.className = 'job err'; info.textContent = e.message; }
+}
+$('btnFetchDir').onclick = () => { $('folderPicker').hidden = false; browse((state.status || {}).fetch_dir || ''); };
+$('fpClose').onclick = () => { $('folderPicker').hidden = true; };
+$('folderPicker').onclick = e => { if (e.target === $('folderPicker')) $('fpClose').onclick(); };
+$('fpPath').oninput = () => { $('fpChoose').disabled = !$('fpPath').value.trim(); };
+$('fpPath').onkeydown = e => { if (e.key === 'Enter') browse($('fpPath').value.trim()); };
+$('fpNew').onclick = async () => {
+  const name = $('fpNewName').value.trim(), info = $('fpInfo');
+  if (!name) { info.className = 'job err'; info.textContent = '새 폴더 이름을 적으세요'; return; }
+  try { await browse((await post('/api/folders', { path: $('fpPath').value.trim(), name })).path); $('fpNewName').value = ''; }
+  catch (e) { info.className = 'job err'; info.textContent = e.message; }
+};
+$('fpNewName').onkeydown = e => { if (e.key === 'Enter') $('fpNew').onclick(); };
+const choose = async path => {
+  if (await applyFetchDir(path)) $('fpClose').onclick();
+  else { $('fpInfo').className = 'job err'; $('fpInfo').textContent = $('statusText').textContent; }
+};
+$('fpChoose').onclick = () => choose($('fpPath').value.trim());
+$('fpNone').onclick = () => choose('');
 $('btnCancel').onclick = async () => { if (state.currentJob) await post('/api/job/' + state.currentJob + '/cancel', {}).catch(() => {}); };
 $('btnFree').onclick = async () => {
   try { await post('/api/free', {}); $('statusText').textContent = 'VRAM 비우기를 요청했습니다'; }
   catch (e) { $('statusText').textContent = e.message; }
   setTimeout(refreshStatus, 2500);
 };
-// ---- tabs ----
+// ---- menu (새 작업 / 작업 이력 / 보관함) and the step tabs of 새 작업 ----
 const STEPS = { image: 'stepImage', scenario: 'stepScenario', video: 'stepVideo' };
-const TAB_BUTTONS = { image: 'tabBtnImage', scenario: 'tabBtnScenario', video: 'tabBtnVideo', library: 'tabBtnLibrary' };
+const TAB_BUTTONS = { image: 'tabBtnImage', scenario: 'tabBtnScenario', video: 'tabBtnVideo' };
 function showTab(name) {
-  if (!TAB_BUTTONS[name]) name = 'image';
-  const create = name !== 'library';
-  $('tabCreate').hidden = !create; $('tabLibrary').hidden = create;
-  for (const [key, id] of Object.entries(STEPS)) $(id).hidden = key !== name;
-  for (const [key, id] of Object.entries(TAB_BUTTONS)) $(id).classList.toggle('on', key === name);
-  $('createButtons').style.display = create ? 'flex' : 'none';
+  if (name !== 'library' && name !== 'history' && !STEPS[name]) name = 'image';
+  const create = !!STEPS[name];
+  $('tabCreate').hidden = $('createBar').hidden = !create;
+  $('tabHistory').hidden = name !== 'history'; $('tabLibrary').hidden = name !== 'library';
+  $('menuCreate').classList.toggle('on', create);
+  $('menuHistory').classList.toggle('on', name === 'history'); $('menuLibrary').classList.toggle('on', name === 'library');
+  if (create) {
+    for (const [key, id] of Object.entries(STEPS)) $(id).hidden = key !== name;
+    for (const [key, id] of Object.entries(TAB_BUTTONS)) $(id).classList.toggle('on', key === name);
+    localStorage.setItem('vw_step', name);
+  }
   localStorage.setItem('vw_tab', name);
   if (name === 'library') loadLibrary();
+  if (name === 'history') loadHistory(true);
   if (name === 'video' && $('paramBox').open) loadParams();
   updateContext();
   window.scrollTo(0, 0);
 }
-// What the next step will work with, shown at the top of steps 2 and 3, and a mark on finished tabs.
+$('menuCreate').onclick = () => showTab(localStorage.getItem('vw_step'));      // back to the step it was left at
+$('menuHistory').onclick = () => showTab('history');
+$('menuLibrary').onclick = () => showTab('library');
+// What the next step will work with, shown at the top of steps 2 and 3.
 function updateContext() {
   const strip = (id, ok, text, src) => {
     const box = $(id); box.innerHTML = ''; box.className = 'ctx' + (ok ? '' : ' empty');
@@ -618,10 +763,75 @@ function updateContext() {
   strip('ctxVideo', !!state.dir, state.dir ? '시나리오: output/' + state.dir + ' · 구간 ' + state.segCount + '개 (영상 생성을 누르면 지금 내용으로 저장한 뒤 실행합니다)'
                                            : "먼저 '시나리오' 탭에서 시나리오를 만들거나 불러오세요.",
         state.dir ? '/api/scenario/image?dir=' + encodeURIComponent(state.dir) : '');
-  $('tabBtnImage').textContent = '이미지' + (hasImage ? ' ✓' : '');
-  $('tabBtnScenario').textContent = '시나리오' + (state.dir ? ' ✓' : '');
 }
 for (const [key, id] of Object.entries(TAB_BUTTONS)) $(id).onclick = () => showTab(key);
+
+// ---- job history: what was run with this program ----
+const KIND = { image: '이미지', scenario: '시나리오', video: '영상' };
+const STATE = { done: '완료', error: '오류', cancelled: '중단됨', running: '실행 중', queued: '대기 중' };
+function historyText(h) {
+  const p = h.params || {}, r = h.result || {};
+  if (h.kind === 'image') return p.prompt || '';
+  if (h.kind === 'scenario') return [r.dir, r.summary_ko, p.direction ? '연출 방향: ' + p.direction : ''].filter(Boolean).join('\n');
+  return [p.dir, p.backend === 'i2v' ? 'Wan 2.2 I2V 6구간' : 'Wan 2.2 SVI'].filter(Boolean).join(' · ');
+}
+// Puts what a past job was given back into the steps of 새 작업.
+async function reuseJob(h) {
+  const p = h.params || {}, r = h.result || {}, dir = r.dir || p.dir;
+  const set = (id, v) => { if (v != null && v !== '') { $(id).value = v; localStorage.setItem('vw_' + id, $(id).value); } };
+  if (dir) { await openScenario(dir); showTab(h.kind === 'video' ? 'video' : 'scenario'); return; }
+  if (h.kind === 'image') {
+    set('imgPrompt', p.prompt); set('imgSteps', p.steps);
+    if ([...$('imgSize').options].some(o => o.value === p.width + 'x' + p.height)) set('imgSize', p.width + 'x' + p.height);
+    $('imgSeed').value = r.seed || p.seed || 0;
+    if (r.image) setImage(r.image, r.width + ' × ' + r.height + ' · seed ' + r.seed + (r.saved ? ' · ' + r.saved : ''));
+    showTab('image');
+  } else if (h.kind === 'scenario') {      // one that did not get as far as a scenario folder
+    set('direction', p.direction); set('segments', p.segments); set('seconds', p.seconds); set('scName', p.name);
+    if (p.image) setImage(p.image);
+    showTab('scenario');
+  } else throw new Error('이 작업에는 불러올 내용이 없습니다');
+}
+async function loadHistory(force) {
+  const info = $('histInfo');
+  let res;
+  try { res = await api('/api/history'); }
+  catch (e) { info.className = 'job err'; info.textContent = e.message; return; }
+  const kind = $('histKind').value, st = $('histState').value;
+  const items = res.items.filter(h => (!kind || h.kind === kind) && (!st || (st === 'done' ? h.state === 'done' : h.state === 'error' || h.state === 'cancelled')));
+  const sig = kind + st + items.map(h => h.id + h.state + h.outputs.length).join();
+  if (sig === loadHistory.sig && !force) return;      // the periodic refresh leaves an unchanged list (and what was opened in it) alone
+  loadHistory.sig = sig;
+  info.className = 'hint';
+  info.textContent = items.length ? items.length + '건' : res.items.length ? '조건에 맞는 기록이 없습니다.' : '아직 실행한 작업이 없습니다. 새 작업에서 실행하면 여기에 남습니다.';
+  const list = $('histList'); list.innerHTML = '';
+  for (const h of items) {
+    const row = el('div', 'hist'), thumbs = el('div', 'thumbs'), body = el('div', 'body'), head = el('div', 'head');
+    const shown = h.outputs.filter(f => f.ref), final = (h.result || {}).final;
+    for (const f of (final ? shown.filter(f => f.filename === final.filename) : shown).slice(0, 3)) {
+      const img = el('img'); img.loading = 'lazy'; img.alt = ''; img.src = refUrl('thumb', f.ref); img.title = f.filename;
+      img.onerror = () => img.remove();      // renamed or deleted since
+      img.onclick = () => openDetail(f.ref);
+      thumbs.append(img);
+    }
+    head.append(el('b', '', KIND[h.kind] || h.kind), ' · ', el('span', 'state ' + h.state, STATE[h.state] || h.state),
+                ' · ' + fmtDate(h.time) + ' · ' + fmtSec(h.elapsed));
+    body.append(head);
+    const text = historyText(h);
+    if (text) { const t = el('div', 'text', text); t.title = '누르면 전체를 봅니다'; t.onclick = () => t.classList.toggle('open'); body.append(t); }
+    if (h.error) body.append(el('div', 'text open err', h.error));
+    const where = h.outputs.filter(f => f.saved || f.brought).map(f => [f.saved, f.brought ? '가져온 곳: ' + f.brought : ''].filter(Boolean).join(' · '));
+    if (where.length) body.append(el('div', 'hint', where.slice(-2).join('\n')));
+    if (h.state !== 'running' && h.state !== 'queued') {
+      const again = el('button', 'mini', '새 작업으로 불러오기');
+      again.onclick = () => reuseJob(h).catch(e => { info.className = 'job err'; info.textContent = e.message; window.scrollTo(0, 0); });
+      const acts = el('div', 'actions'); acts.style.marginTop = '6px'; acts.append(again); body.append(acts);
+    }
+    row.append(thumbs, body); list.append(row);
+  }
+}
+for (const id of ['histKind', 'histState']) $(id).onchange = () => loadHistory(true);
+$('btnHistReload').onclick = () => loadHistory(true);
 
 // ---- library ----
 const lib = { workflow: '' };
@@ -687,9 +897,31 @@ function promptBox(p, neg) {
 async function openDetail(ref, shownName) {
   let d;
   try { d = await api(refUrl('item', ref)); }
-  catch (e) { $('dropInfo').className = 'job err'; $('dropInfo').textContent = e.message; return; }
+  catch (e) { const box = $('tabHistory').hidden ? $('dropInfo') : $('histInfo'); box.className = 'job err'; box.textContent = e.message; return; }
   if (shownName) d.name = shownName;      // a dropped file is stored under a hash
   $('dName').textContent = d.name;
+  // rename / delete: only for files of the output folder, not for a file dropped on the page
+  const info = $('dFileInfo'); info.className = 'job'; info.textContent = '';
+  $('dFileActions').style.display = ref.startsWith('output:') ? 'flex' : 'none';
+  $('dNewName').value = d.name.replace(/\.\w+$/, '');
+  $('dDelete').textContent = '삭제';
+  const change = async (path, body, done) => {
+    $('dMedia').innerHTML = ''; await sleep(300);      // a file that is still being played cannot be renamed or removed
+    try { await done(await post(path, body)); if (!$('tabLibrary').hidden) loadLibrary(); }
+    catch (e) { await openDetail(ref); $('dFileInfo').className = 'job err'; $('dFileInfo').textContent = e.message; }
+  };
+  $('dRename').onclick = () => change('/api/library/rename', { ref, name: $('dNewName').value }, async r => {
+    await openDetail(r.ref); $('dFileInfo').className = 'job ok'; $('dFileInfo').textContent = r.name + ' (으)로 바꿨습니다';
+  });
+  $('dNewName').onkeydown = e => { if (e.key === 'Enter') $('dRename').onclick(); };
+  $('dDelete').onclick = () => {
+    if ($('dDelete').textContent === '삭제') {      // first click asks, the second one deletes
+      $('dDelete').textContent = '정말 삭제 (되돌릴 수 없음)';
+      info.className = 'job'; info.textContent = d.kind === 'video' ? '영상과 그 미리보기 PNG를 저장 폴더에서 지웁니다. 한 번 더 누르면 삭제합니다.' : '저장 폴더에서 파일을 지웁니다. 한 번 더 누르면 삭제합니다.';
+      return;
+    }
+    change('/api/library/delete', { ref }, async () => { $('dClose').onclick(); });
+  };
   const media = $('dMedia'); media.innerHTML = '';
   const m = el(d.kind === 'video' ? 'video' : 'img'); m.src = refUrl('file', ref);
   if (d.kind === 'video') { m.controls = true; m.loop = true; m.muted = true; m.autoplay = true; }
