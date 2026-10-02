@@ -533,12 +533,56 @@ class App:
         self.comfy.url = url
         self.comfy._object_info = None
         self._combos, self._chat_models, self._svi_cache, self.last_stage = {}, (0, None), None, None
-        os.makedirs(os.path.join(HERE, "data"), exist_ok=True)
-        with open(SETTINGS, "w", encoding="utf-8") as f:
-            json.dump({"comfy_url": url}, f)
+        self.remember(comfy_url=url)
         self.address_changed.set()
         if self.ws is not None:
             await self.ws.close()
+
+    def set_output_dir(self, path):
+        """Where scenarios and results are kept and what the library lists."""
+        os.makedirs(path, exist_ok=True)
+        probe = os.path.join(path, ".write_test")
+        with open(probe, "w") as f:      # fails here, with the system's message, when the folder is read-only
+            f.write("")
+        os.remove(probe)
+        self.output_dir = path
+        self.library.roots["output"] = path
+        self.remember(output_dir=path)
+
+    @staticmethod
+    def remember(**changes):
+        settings = {}
+        if os.path.isfile(SETTINGS):
+            with open(SETTINGS, encoding="utf-8") as f:
+                settings = json.load(f)
+        settings.update(changes)
+        os.makedirs(os.path.dirname(SETTINGS), exist_ok=True)
+        with open(SETTINGS, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False)
+
+    async def keep_outputs(self, job):
+        """Copy what the job saved (type 'output') into the save folder, unless the file is already there,
+        which is the case when ComfyUI on this machine writes to the same folder."""
+        base = os.path.realpath(self.output_dir)
+        for f in job.outputs:
+            if f["type"] != "output" or f.get("saved"):
+                continue
+            dest = os.path.realpath(os.path.join(base, f["subfolder"], f["filename"]))
+            if os.path.commonpath([dest, base]) != base:
+                continue
+            if not os.path.isfile(dest):
+                job.step = "결과를 저장 폴더로 받는 중"
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                params = {"filename": f["filename"], "subfolder": f["subfolder"], "type": "output"}
+                async with self.comfy.session.get(self.comfy.url + "/view", params=params) as r:
+                    if r.status != 200:
+                        job.notes.append(f"저장 폴더로 받지 못했습니다 ({r.status}): {f['filename']}")
+                        continue
+                    with open(dest + ".part", "wb") as out:
+                        async for chunk in r.content.iter_chunked(1 << 20):
+                            out.write(chunk)
+                os.replace(dest + ".part", dest)
+            f["saved"] = dest
 
     def start_job(self, kind, label, coro_fn, *args):
         job = Job(kind, label)
@@ -584,8 +628,9 @@ class App:
         images = (outputs.get("120") or {}).get("images") or []
         if not images:
             raise AppError("이미지가 만들어지지 않았습니다")
+        await self.keep_outputs(job)
         ref = {k: images[0].get(k, "") for k in ("filename", "subfolder", "type")}
-        return {"image": ref, "seed": seed, "width": prompt["105"]["inputs"]["width"], "height": prompt["105"]["inputs"]["height"]}
+        return {"image": ref, "saved": next((f["saved"] for f in job.outputs if f.get("saved")), ""), "seed": seed, "width": prompt["105"]["inputs"]["width"], "height": prompt["105"]["inputs"]["height"]}
 
     # ---- stage 2: scenario -------------------------------------------------------------------
     async def stage_scenario(self, job, p):
@@ -817,7 +862,10 @@ class App:
         videos = [f for f in job.outputs if f["kind"] == "video"]
         if not videos:
             raise AppError("영상 파일이 만들어지지 않았습니다 (ComfyUI 콘솔을 확인하세요)")
+        await self.keep_outputs(job)
         final = [f for f in videos if f["type"] == "output"] or videos
+        if final[-1].get("saved"):
+            job.notes.append("저장: " + final[-1]["saved"])
         return {"dir": name, "final": final[-1]}
 
 
@@ -916,6 +964,21 @@ async def api_comfy(request):
         return web.json_response({"url": url, "ok": False,
                                   "message": f"주소를 바꿨지만 연결되지 않습니다: {type(e).__name__}. ComfyUI가 켜져 있는지, "
                                              "다른 PC라면 --listen 0.0.0.0 으로 실행했는지 확인하세요"})
+
+
+async def api_output_dir(request):
+    """Change the save folder from the page."""
+    app = request.app["app"]
+    path = ((await request.json()).get("path") or "").strip().strip('"')
+    if not os.path.isabs(path):
+        raise AppError("저장 폴더는 전체 경로로 입력하세요 (예: C:\\00_forensic\\ComfyUI-Easy-Install\\output, D:\\videos)")
+    if app.lock.locked():
+        raise AppError("실행 중인 작업이 있어 지금은 저장 폴더를 바꿀 수 없습니다")
+    try:
+        app.set_output_dir(os.path.normpath(path))
+    except OSError as e:
+        raise AppError(f"그 폴더를 쓸 수 없습니다: {e}")
+    return web.json_response({"path": app.output_dir, "message": "저장 폴더를 바꿨습니다"})
 
 
 async def api_free(request):
@@ -1151,6 +1214,7 @@ def make_app(cfg):
         web.post("/api/job/{id}/cancel", api_cancel),
         web.post("/api/free", api_free),
         web.post("/api/comfy", api_comfy),
+        web.post("/api/output_dir", api_output_dir),
         web.post("/api/upload", api_upload),
         web.get("/api/scenarios", api_scenarios),
         web.get("/api/scenario", api_scenario_get),
