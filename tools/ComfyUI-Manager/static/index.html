@@ -107,9 +107,6 @@
            title="ComfyUI 서버 주소. 이 PC면 http://127.0.0.1:8188, 다른 서버면 http://서버IP:8188">
     <datalist id="comfyUrls"></datalist>
     <button class="sub" id="btnComfy">연결</button>
-    <input type="text" id="outputDir" style="width:300px" placeholder="저장 폴더 (전체 경로)"
-           title="시나리오와 생성 결과를 저장하고 보관함이 읽는 폴더">
-    <button class="sub" id="btnOutputDir">저장 폴더 적용</button>
   </span>
   <span class="spacer"></span>
   <span id="createButtons" style="display:flex;gap:10px">
@@ -516,7 +513,6 @@ async function refreshStatus() {
     $('dot').classList.toggle('on', s.comfy_ok);
     let text = s.comfy_ok ? 'ComfyUI 연결됨' : 'ComfyUI에 연결할 수 없음';
     if (document.activeElement !== $('comfyUrl')) $('comfyUrl').value = s.comfy_url;
-    if (document.activeElement !== $('outputDir')) $('outputDir').value = s.output_dir;
     if (s.comfy_ok) text += ' · 대기열 ' + s.running + '+' + s.pending;
     if (s.vram) text += ' · VRAM ' + ((s.vram.total - s.vram.free) / 2 ** 30).toFixed(1) + ' / ' + (s.vram.total / 2 ** 30).toFixed(1) + ' GB';
     $('statusText').textContent = text;
@@ -588,17 +584,6 @@ async function connectComfy() {
 $('btnComfy').onclick = connectComfy;
 $('comfyUrl').onkeydown = e => { if (e.key === 'Enter') connectComfy(); };
 recentUrls();
-async function applyOutputDir() {
-  try {
-    const res = await post('/api/output_dir', { path: $('outputDir').value });
-    $('outputDir').value = res.path; $('outputDir').blur();
-    $('statusText').textContent = res.message;
-    loadScenarioList();
-    if (!$('tabLibrary').hidden) loadLibrary();
-  } catch (e) { $('statusText').textContent = e.message; }
-}
-$('btnOutputDir').onclick = applyOutputDir;
-$('outputDir').onkeydown = e => { if (e.key === 'Enter') applyOutputDir(); };
 $('btnCancel').onclick = async () => { if (state.currentJob) await post('/api/job/' + state.currentJob + '/cancel', {}).catch(() => {}); };
 $('btnFree').onclick = async () => {
   try { await post('/api/free', {}); $('statusText').textContent = 'VRAM 비우기를 요청했습니다'; }

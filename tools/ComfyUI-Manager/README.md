@@ -50,15 +50,13 @@ Video Combine이 영상 옆에 같이 저장하는 미리보기 PNG는 기본으
 
 ### 저장 폴더
 
-주소 칸 옆에 저장 폴더를 전체 경로로 넣고 `저장 폴더 적용`을 누릅니다. 없는 폴더는 만들어집니다. 이 폴더가 하는 일은 셋입니다.
+시나리오 폴더(`prompts.json`, 시작 이미지)가 만들어지고, 이 프로그램으로 만든 이미지와 최종 영상이 들어오고, 보관함이 읽는 폴더입니다. 화면에서 고르지 않고 자동으로 정해집니다.
 
-- 시나리오 폴더(`prompts.json`, 시작 이미지)가 여기에 만들어집니다
-- 이 프로그램으로 만든 이미지와 최종 영상이 여기에 들어옵니다. ComfyUI가 다른 서버에 있거나 다른 폴더에 저장하더라도 끝난 뒤 이 폴더로 받아 옵니다 (이 PC의 ComfyUI가 같은 폴더에 저장하는 경우에는 이미 있는 파일이라 다시 받지 않습니다)
-- 보관함이 이 폴더를 읽습니다
+- ComfyUI가 이 PC(`127.0.0.1`)에서 돌고 있으면 ComfyUI를 켤 때 준 출력 폴더(`--output-directory`)를 그대로 씁니다. `Start_ComfyUI_K620.bat`이면 `V:\output`, `Start_ComfyUI_L40S.bat`이면 `E:\ComfyUI\output`입니다
+- ComfyUI가 다른 서버에 있으면 이 PC의 `ComfyUI-Easy-Install\output`을 씁니다. 그 서버에서 만든 결과는 작업이 끝난 뒤 이 폴더로 받아 옵니다
 
-저장 폴더를 정하지 않았고 ComfyUI가 이 PC(`127.0.0.1`)에서 돌고 있으면, ComfyUI를 켤 때 준 출력 폴더(`--output-directory`, 예: `V:\output`, `E:\ComfyUI\output`)를 그대로 따라갑니다. 그 밖의 경우 기본값은 `ComfyUI-Easy-Install\output`입니다.
-화면에서 바꾼 값은 주소와 함께 `data\settings.json`에 저장되고 그때부터는 그 값을 씁니다. 실행 옵션 `--output-dir`가 우선합니다.
-이 프로그램에는 로그인이 없으니, 주소와 저장 폴더를 아무나 바꾸면 곤란한 망에서는 `host`를 `127.0.0.1`로 두세요.
+다른 폴더를 쓰고 싶으면 `config.json`의 `output_dir`에 전체 경로를 적거나 실행 옵션 `--output-dir`를 줍니다.
+이 프로그램에는 로그인이 없으니, 서버 주소를 아무나 바꾸면 곤란한 망에서는 `host`를 `127.0.0.1`로 두세요.
 
 ## 생성 탭 화면
 
@@ -118,7 +116,7 @@ ComfyUI UI에서 다른 작업을 같이 돌리면 이 순서가 깨지니 영�
 |---|---|---|
 | `host` / `port` | `0.0.0.0` / `8288` | 웹 프로그램 주소. 이 PC에서만 쓰려면 host를 `127.0.0.1`로 |
 | `comfy_url` | `http://127.0.0.1:8188` | ComfyUI 주소 |
-| `output_dir` | (빈 값) | 시나리오 폴더 위치. 비우면 `ComfyUI-Easy-Install/output` |
+| `output_dir` | (빈 값) | 저장 폴더. 비우면 자동으로 정해집니다 (위 '저장 폴더' 참고) |
 | `svi_workflow` | `workflow/Wan2.2_…v3.5.json` | SVI 워크플로우 파일 |
 | `i2v_api` | `workflow/5_I2V_6seg_from_prompts.api.json` | I2V 6구간 API 템플릿 |
 

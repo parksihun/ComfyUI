@@ -535,24 +535,14 @@ class App:
         self.comfy._object_info = None
         self._combos, self._chat_models, self._svi_cache, self.last_stage = {}, (0, None), None, None
         self.remember(comfy_url=url)
+        if not self.output_chosen:      # back to the default; a ComfyUI on this machine is followed again on the next status poll
+            self.output_dir = self.library.roots["output"] = os.path.join(ROOT, "output")
         self.address_changed.set()
         if self.ws is not None:
             await self.ws.close()
 
-    def set_output_dir(self, path):
-        """Where scenarios and results are kept and what the library lists."""
-        os.makedirs(path, exist_ok=True)
-        probe = os.path.join(path, ".write_test")
-        with open(probe, "w") as f:      # fails here, with the system's message, when the folder is read-only
-            f.write("")
-        os.remove(probe)
-        self.output_dir = path
-        self.output_chosen = True
-        self.library.roots["output"] = path
-        self.remember(output_dir=path)
-
     def follow_comfy_output(self, argv):
-        """No save folder chosen and ComfyUI runs on this machine: use the folder it was started with
+        """No save folder in config.json / --output-dir and ComfyUI runs on this machine: use the folder it was started with
         (--output-directory), so the launchers' V:\\output / E:\\ComfyUI\\output need no second setting here."""
         if self.output_chosen or urlparse(self.comfy.url).hostname not in ("127.0.0.1", "localhost", "::1"):
             return
@@ -983,21 +973,6 @@ async def api_comfy(request):
                                              "다른 PC라면 --listen 0.0.0.0 으로 실행했는지 확인하세요"})
 
 
-async def api_output_dir(request):
-    """Change the save folder from the page."""
-    app = request.app["app"]
-    path = ((await request.json()).get("path") or "").strip().strip('"')
-    if not os.path.isabs(path):
-        raise AppError("저장 폴더는 전체 경로로 입력하세요 (예: C:\\00_forensic\\ComfyUI-Easy-Install\\output, D:\\videos)")
-    if app.lock.locked():
-        raise AppError("실행 중인 작업이 있어 지금은 저장 폴더를 바꿀 수 없습니다")
-    try:
-        app.set_output_dir(os.path.normpath(path))
-    except OSError as e:
-        raise AppError(f"그 폴더를 쓸 수 없습니다: {e}")
-    return web.json_response({"path": app.output_dir, "message": "저장 폴더를 바꿨습니다"})
-
-
 async def api_free(request):
     app = request.app["app"]
     await app.comfy.post_json("/qwenvl/chat/unload", {"backend": "all"}, timeout=60)
@@ -1208,7 +1183,7 @@ def load_config():
             cfg.update(json.load(f))
     if os.path.isfile(SETTINGS):
         with open(SETTINGS, encoding="utf-8") as f:
-            cfg.update(json.load(f))
+            cfg.update({k: v for k, v in json.load(f).items() if k == "comfy_url"})
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--host", default=cfg["host"])
     ap.add_argument("--port", type=int, default=cfg["port"])
@@ -1231,7 +1206,6 @@ def make_app(cfg):
         web.post("/api/job/{id}/cancel", api_cancel),
         web.post("/api/free", api_free),
         web.post("/api/comfy", api_comfy),
-        web.post("/api/output_dir", api_output_dir),
         web.post("/api/upload", api_upload),
         web.get("/api/scenarios", api_scenarios),
         web.get("/api/scenario", api_scenario_get),
