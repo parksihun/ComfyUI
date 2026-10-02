@@ -519,6 +519,35 @@ class Library:
             image.save(out, "JPEG", quality=85)
         return out
 
+    def frame(self, ref, which):
+        """The first or the last frame of a video as a PNG of full size (kept in data/frames once made)."""
+        full = self.resolve(ref)
+        if not full.lower().endswith(VIDEO_EXT):
+            raise ValueError("영상 파일이 아닙니다")
+        stat = os.stat(full)
+        key = hashlib.sha1(f"{full}|{stat.st_mtime}|{stat.st_size}|{which}".encode()).hexdigest()
+        out = os.path.join(self.data_dir, "frames", key + ".png")
+        if not os.path.isfile(out):
+            image = None
+            with av.open(full) as container:
+                stream = container.streams.video[0]
+                if which == "last":
+                    if container.duration and container.duration > 3 * av.time_base:      # start decoding near the end
+                        container.seek(container.duration - 3 * av.time_base)
+                    for decoded in container.decode(stream):
+                        image = decoded
+                    if image is None:      # the seek landed behind the last key frame: go through the whole file
+                        container.seek(0)
+                        for decoded in container.decode(stream):
+                            image = decoded
+                else:
+                    image = next(container.decode(stream))
+                image = image.to_image()
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            image.save(out + ".tmp", "PNG")
+            os.replace(out + ".tmp", out)
+        return out
+
     def add_dropped(self, filename, data):
         ext = os.path.splitext(filename)[1].lower()
         if ext not in IMAGE_EXT + VIDEO_EXT:

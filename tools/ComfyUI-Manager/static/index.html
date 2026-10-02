@@ -13,16 +13,21 @@
   .menu { display:flex; flex-direction:column; gap:4px; }
   .menu button { text-align:left; padding:9px 12px; background:transparent; color:var(--dim); font-weight:normal; border:1px solid transparent; }
   .menu button.on { background:#2b313b; color:var(--text); border-color:var(--line); }
-  .side { margin-top:auto; display:flex; flex-direction:column; gap:6px; }
-  .side label { margin:8px 0 0; }
-  .side .line { display:flex; gap:6px; }
-  .side .line input { min-width:0; }
-  .side button { white-space:nowrap; }
+  .gear { padding:4px 9px; font-size:18px; line-height:1.2; }
+  .gear.on { outline:1px solid var(--accent); }
+  .panel { position:fixed; top:56px; right:14px; z-index:10; width:330px; max-width:calc(100vw - 28px); max-height:calc(100vh - 70px); overflow:auto;
+           display:flex; flex-direction:column; gap:6px; padding:14px; background:var(--card); border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 32px rgba(0,0,0,.55); }
+  .panel h3 { margin:0; font-size:14px; }
+  .panel label { margin:10px 0 0; }
+  .panel .line { display:flex; gap:6px; align-items:center; }
+  .panel .line input { min-width:0; }
+  .panel button { white-space:nowrap; }
+  .panel .job { margin-top:6px; }
   .content { flex:1; min-width:0; }
   @media (max-width:760px) { body { flex-direction:column; } aside { width:auto; height:auto; position:static; border-right:0; border-bottom:1px solid var(--line); } }
   header { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; padding:10px 18px; background:#101216; border-bottom:1px solid var(--line); }
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--bad); margin-right:6px; }
-  .dot.on { background:var(--ok); }
+  .dot.on { background:var(--accent); }      /* connected: blue, not connected: red */
   .status { color:var(--dim); font-size:13px; }
   .spacer { flex:1; }
   main { max-width:1280px; margin:0 auto; padding:16px 18px 60px; display:flex; flex-direction:column; gap:16px; }
@@ -115,6 +120,11 @@
            display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); gap:18px; padding:16px; }
   @media (max-width:900px) { .sheet { grid-template-columns:1fr; } }
   .sheet .media video, .sheet .media img { width:100%; max-height:78vh; object-fit:contain; background:#000; border-radius:8px; }
+  .frames { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+  .frames figure { margin:0; }
+  .frames img { width:100%; max-height:38vh; object-fit:contain; background:#000; border-radius:6px; cursor:zoom-in; display:block; }
+  .frames figcaption { font-size:12px; color:var(--dim); margin-top:4px; }
+  .frames a { color:var(--accent); }
   .sheet h3 { margin:14px 0 6px; font-size:13px; color:var(--dim); font-weight:600; }
   .sheet .wfname { font-size:17px; font-weight:600; color:var(--accent); word-break:break-all; }
   .prompt { background:#12141a; border:1px solid var(--line); border-radius:6px; padding:8px 10px; margin-top:6px; }
@@ -130,30 +140,40 @@
 <aside>
   <h1>ComfyUI-Manager</h1>
   <nav class="menu"><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuLibrary">보관함</button></nav>
-  <div class="side">
-    <div class="status"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></div>
-    <label for="comfySel">ComfyUI 서버</label>
-    <select id="comfySel" title="전에 연결한 주소 중에서 고르면 그 서버로 바뀝니다"></select>
-    <div class="line">
-      <input type="text" id="comfyUrl" placeholder="새 주소 (서버IP:8188)"
-             title="처음 쓰는 ComfyUI 주소. 이 PC면 http://127.0.0.1:8188, 다른 서버면 http://서버IP:8188">
-      <button class="sub" id="btnComfy">연결</button>
-    </div>
-    <label for="fetchSel">결과를 가져올 폴더</label>
-    <select id="fetchSel" title="끝난 이미지와 영상을 이 폴더로도 복사합니다. 전에 쓴 폴더 중에서 고를 수 있습니다"></select>
-    <div class="hint" id="fetchPath" style="margin:0;word-break:break-all" hidden></div>
-    <button class="sub" id="btnFetchDir">폴더 선택…</button>
-  </div>
 </aside>
 
 <div class="content">
-<header id="createBar">
-  <span class="tabs"><button id="tabBtnImage" class="on">이미지</button><button id="tabBtnScenario">시나리오</button><button id="tabBtnVideo">영상</button></span>
+<header>
+  <span class="tabs" id="stepTabs"><button id="tabBtnImage" class="on">이미지</button><button id="tabBtnScenario">시나리오</button><button id="tabBtnVideo">영상</button></span>
   <span class="spacer"></span>
-  <button id="btnAll" title="이미지 → 시나리오 → 영상을 현재 입력값으로 이어서 실행">한 번에 실행</button>
-  <button id="btnCancel" class="danger" disabled>중단</button>
-  <button id="btnFree" class="sub" title="ComfyUI와 Qwen Chat이 잡고 있는 모델을 VRAM에서 내립니다">VRAM 비우기</button>
+  <span id="createButtons" style="display:flex;gap:10px">
+    <button id="btnAll" title="이미지 → 시나리오 → 영상을 현재 입력값으로 이어서 실행">한 번에 실행</button>
+    <button id="btnCancel" class="danger" disabled>중단</button>
+  </span>
+  <span class="status" title="ComfyUI 연결 상태 (파란색: 연결됨, 빨간색: 연결 안 됨)"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></span>
+  <button class="sub gear" id="btnSettings" title="설정: 서버 연결, 서버 결과 폴더, VRAM 비우기" aria-label="설정">&#9881;</button>
 </header>
+
+<div class="panel" id="settings" hidden>
+  <h3>설정</h3>
+  <label for="comfySel">ComfyUI 서버</label>
+  <select id="comfySel" title="전에 연결한 주소 중에서 고르면 그 서버로 바뀝니다"></select>
+  <div class="line">
+    <input type="text" id="comfyUrl" placeholder="새 주소 (서버IP:8188)"
+           title="처음 쓰는 ComfyUI 주소. 이 PC면 http://127.0.0.1:8188, 다른 서버면 http://서버IP:8188">
+    <button class="sub" id="btnComfy">연결</button>
+  </div>
+  <label for="resultSel">서버 결과 폴더</label>
+  <select id="resultSel" title="ComfyUI 서버가 만든 결과가 있는 폴더를 이 PC에서 보이는 경로로 지정합니다. 이 프로그램은 그 폴더의 파일을 읽기만 하고 복사하지 않습니다. 전에 쓴 폴더 중에서 고를 수 있습니다"></select>
+  <div class="hint" id="resultPath" style="margin:0;word-break:break-all"></div>
+  <button class="sub" id="btnResultDir">폴더 선택…</button>
+  <label>VRAM</label>
+  <div class="line">
+    <button class="sub" id="btnFree" title="ComfyUI와 Qwen Chat이 잡고 있는 모델을 VRAM에서 내립니다">VRAM 비우기</button>
+    <span class="hint" id="vramInfo" style="margin:0"></span>
+  </div>
+  <div class="job" id="setInfo"></div>
+</div>
 
 <main id="tabCreate">
   <section id="stepImage">
@@ -317,8 +337,9 @@
 
 <div id="folderPicker" hidden>
   <div class="dialog">
-    <div class="actions" style="margin-top:0;justify-content:space-between"><b>결과를 가져올 폴더 선택</b><button class="sub" id="fpClose">닫기</button></div>
-    <div class="hint">이 프로그램이 실행 중인 PC의 폴더입니다. 끝난 이미지와 영상을 이 폴더로도 복사합니다 (ComfyUI의 저장 폴더는 그대로이고, 이미 있는 파일은 덮어쓰지 않습니다).</div>
+    <div class="actions" style="margin-top:0;justify-content:space-between"><b>서버 결과 폴더 선택</b><button class="sub" id="fpClose">닫기</button></div>
+    <div class="hint">ComfyUI 서버가 결과를 저장하는 폴더를, 이 프로그램이 실행 중인 PC에서 보이는 경로로 고릅니다 (예: 서버의 E:\ComfyUI가 V:로 연결되어 있으면 V:\output).
+      이 프로그램은 직접 생성하거나 복사하지 않고, 서버가 그 폴더에 만든 파일을 읽어 보관함과 작업 이력에 보여 줍니다.</div>
     <div class="actions">
       <button class="sub" id="fpUp">↑ 위로</button>
       <input type="text" id="fpPath" style="flex:1;width:auto" placeholder="내 PC (드라이브를 고르세요)" title="경로를 직접 적고 Enter를 눌러도 됩니다">
@@ -326,10 +347,8 @@
     <div class="folders" id="fpList"></div>
     <div class="job" id="fpInfo"></div>
     <div class="actions">
-      <input type="text" id="fpNewName" style="width:150px" placeholder="새 폴더 이름">
-      <button class="sub" id="fpNew">새 폴더 만들기</button>
       <span class="spacer"></span>
-      <button class="sub" id="fpNone">가져오지 않음</button>
+      <button class="sub" id="fpNone" title="지정을 지우고 자동으로 찾습니다 (ComfyUI가 이 PC에서 돌거나, 서버의 출력 폴더가 네트워크 드라이브로 연결된 경우)">자동으로 찾기</button>
       <button id="fpChoose">이 폴더 선택</button>
     </div>
   </div>
@@ -344,7 +363,7 @@
       <div class="actions" id="dFileActions">
         <input type="text" id="dNewName" style="flex:1;width:auto;min-width:160px" placeholder="새 파일 이름" title="확장자는 그대로 둡니다">
         <button class="sub" id="dRename">이름 변경</button>
-        <button class="danger" id="dDelete" title="저장 폴더에서 파일을 지웁니다. 되돌릴 수 없습니다">삭제</button>
+        <button class="danger" id="dDelete" title="서버 결과 폴더에서 파일을 지웁니다. 되돌릴 수 없습니다">삭제</button>
       </div>
       <div class="job" id="dFileInfo"></div>
       <h3>워크플로우</h3>
@@ -458,18 +477,23 @@ function fillModels() {
   const s = state.status || {}, kind = $('analyzer').value, sel = $('model'), keep = sel.value || localStorage.getItem('vw_model') || '';
   sel.innerHTML = '';
   const add = (value, text, group) => { const o = document.createElement('option'); o.value = value; o.textContent = text; (group || sel).appendChild(o); };
+  // Only models that are in the server's models\LLM folder are listed (the nodes themselves list their whole catalogue).
+  const none = '받아 둔 모델이 없습니다 (서버의 models\\LLM 폴더)', known = s.catalogue || {};
   if (kind === 'gguf') {
-    if (!(s.gguf_models || []).length) add('', s.comfy_ok ? '사용 불가 (QwenVL-Mod 또는 ShortsRemake 노드 없음)' : 'ComfyUI 연결 대기');
+    if (!(s.gguf_models || []).length) add('', !s.comfy_ok ? 'ComfyUI 연결 대기' : known.gguf ? none : '사용 불가 (QwenVL-Mod 또는 ShortsRemake 노드 없음)');
     for (const m of s.gguf_models || []) add(m, m);
   } else if (kind === 'chat') {
     if (!s.chat) add('', s.comfy_ok ? 'Qwen Chat 없음 (ComfyUI-QwenVL-Mod 미설치)' : 'ComfyUI 연결 대기');
-    else for (const [backend, label] of [['gguf', 'GGUF'], ['hf', 'Transformers']]) {
-      if (!(s.chat[backend] || []).length) continue;
-      const g = document.createElement('optgroup'); g.label = label; sel.appendChild(g);
-      for (const m of s.chat[backend]) add(backend + '|' + m, m, g);
+    else {
+      for (const [backend, label] of [['gguf', 'GGUF'], ['hf', 'Transformers']]) {
+        if (!(s.chat[backend] || []).length) continue;
+        const g = document.createElement('optgroup'); g.label = label; sel.appendChild(g);
+        for (const m of s.chat[backend]) add(backend + '|' + m, m, g);
+      }
+      if (!sel.options.length) add('', none);
     }
   } else if (kind === 'node') {
-    if (!(s.node_models || []).length) add('', '템플릿 기본값 (Qwen3-VL-8B-Instruct)');
+    if (!(s.node_models || []).length) add('', known.node ? none : '템플릿 기본값 (Qwen3-VL-8B-Instruct)');
     for (const m of s.node_models || []) add(m, m);
     if (!keep && (s.node_models || []).includes('Qwen3-VL-8B-Instruct')) sel.value = 'Qwen3-VL-8B-Instruct';
   } else add('', '—');
@@ -590,15 +614,17 @@ async function genVideo() {
 async function refreshStatus() {
   try {
     const count = x => ((x || {}).gguf_models || []).length;
-    const s = await api('/api/status'), first = !state.status || state.status.comfy_ok !== s.comfy_ok || !!state.status.chat !== !!s.chat || count(state.status) !== count(s);
+    const s = await api('/api/status'), models = x => JSON.stringify([x.chat, x.node_models, x.gguf_models]);
+    const first = !state.status || state.status.comfy_ok !== s.comfy_ok || models(state.status) !== models(s);
     state.status = s;
     $('dot').classList.toggle('on', s.comfy_ok);
     let text = s.comfy_ok ? 'ComfyUI 연결됨' : 'ComfyUI에 연결할 수 없음';
     syncLists(s);
     if (!$('tabHistory').hidden) loadHistory();
     if (s.comfy_ok) text += ' · 대기열 ' + s.running + '+' + s.pending;
-    if (s.vram) text += ' · VRAM ' + ((s.vram.total - s.vram.free) / 2 ** 30).toFixed(1) + ' / ' + (s.vram.total / 2 ** 30).toFixed(1) + ' GB';
-    $('statusText').textContent = text;
+    const vram = s.vram ? ((s.vram.total - s.vram.free) / 2 ** 30).toFixed(1) + ' / ' + (s.vram.total / 2 ** 30).toFixed(1) + ' GB' : '';
+    if (vram) text += ' · VRAM ' + vram;
+    $('statusText').textContent = text; $('vramInfo').textContent = vram ? '사용 ' + vram : '';
     if (first) {
       if (s.comfy_ok && !localStorage.getItem('vw_analyzer')) $('analyzer').value = count(s) ? 'gguf' : s.chat ? 'chat' : 'node';
       fillModels();
@@ -646,7 +672,18 @@ $('btnAll').onclick = () => {
     await genVideo();
   });
 };
-// ---- the two lists in the side bar: ComfyUI address and fetch folder, each with what was used before ----
+// ---- settings (the gear at the top right): ComfyUI address, result folder, VRAM ----
+const setInfo = (text, kind) => { $('setInfo').className = 'job' + (kind ? ' ' + kind : ''); $('setInfo').textContent = text; };
+function showSettings(open) {
+  $('settings').hidden = !open; $('btnSettings').classList.toggle('on', open);
+  if (open) setInfo('');
+}
+$('btnSettings').onclick = () => showSettings($('settings').hidden);
+document.addEventListener('mousedown', e => {      // a click anywhere else closes it (the folder popup belongs to it)
+  if (!$('settings').hidden && !e.target.closest('#settings, #btnSettings, #folderPicker')) showSettings(false);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('folderPicker').hidden) showSettings(false); });
+// The two lists: ComfyUI address and result folder (where this PC sees what the server saved), each with what was used before.
 function fillSelect(sel, values, current, label, force) {
   const sig = JSON.stringify([values, current]);
   if (sel.dataset.sig === sig && !force) return;      // nothing changed: an open list is left alone
@@ -659,32 +696,37 @@ function syncLists(s, force) {
   try { old = JSON.parse(localStorage.getItem('vw_comfy_urls')) || []; } catch (e) { /* none */ }
   const urls = [...new Set([s.comfy_url, ...s.recent_urls, ...old, 'http://127.0.0.1:8188'])];
   fillSelect($('comfySel'), urls, s.comfy_url, u => u.replace(/^http:\/\//, ''), force);
-  const dirs = [...new Set(['', s.fetch_dir, ...s.recent_dirs])];
-  fillSelect($('fetchSel'), dirs, s.fetch_dir, d => d || '가져오지 않음', force);
-  $('fetchPath').textContent = s.fetch_dir; $('fetchPath').hidden = !s.fetch_dir;      // the list cuts a long path short
+  const dirs = [...new Set(['', s.result_dir, ...s.recent_dirs])];
+  fillSelect($('resultSel'), dirs, s.result_dir, d => d || '자동으로 찾기', force);
+  $('resultSel').disabled = $('btnResultDir').disabled = s.output_source === 'config';
+  $('resultPath').textContent = s.output_source === 'default' ? '서버 결과 폴더를 찾지 못했습니다. 폴더를 지정하세요.'
+    : '사용 중: ' + s.output_dir + ({ auto: ' (자동으로 찾음)', config: ' (config.json에서 지정)' }[s.output_source] || '');
 }
 async function connectComfy(url) {
-  $('statusText').textContent = '연결 확인 중…';
+  setInfo('연결 확인 중…');
   try {
     const res = await post('/api/comfy', { url });
     $('comfyUrl').value = ''; $('comfyUrl').blur();
     state.status = null; state.paramsLoaded = null;          // models and workflow settings belong to the old server
     await refreshStatus();
-    $('statusText').textContent = res.message;
-  } catch (e) { $('statusText').textContent = e.message; if (state.status) syncLists(state.status, true); }
+    setInfo(res.message, res.ok ? 'ok' : 'err');
+  } catch (e) { setInfo(e.message, 'err'); if (state.status) syncLists(state.status, true); }
 }
 $('comfySel').onchange = () => connectComfy($('comfySel').value);
 $('btnComfy').onclick = () => { if ($('comfyUrl').value.trim()) connectComfy($('comfyUrl').value); };
 $('comfyUrl').onkeydown = e => { if (e.key === 'Enter') $('btnComfy').onclick(); };
-async function applyFetchDir(path) {
+async function applyResultDir(path) {
   try {
-    const res = await post('/api/fetch_dir', { path });
+    const res = await post('/api/result_dir', { path });
     await refreshStatus();
-    $('statusText').textContent = res.message;
+    setInfo(res.message, 'ok');
+    loadScenarioList();      // scenarios, the library and the history thumbnails all come from this folder
+    if (!$('tabLibrary').hidden) loadLibrary();
+    if (!$('tabHistory').hidden) loadHistory(true);
     return true;
-  } catch (e) { $('statusText').textContent = e.message; if (state.status) syncLists(state.status, true); return false; }
+  } catch (e) { setInfo(e.message, 'err'); if (state.status) syncLists(state.status, true); return false; }
 }
-$('fetchSel').onchange = () => applyFetchDir($('fetchSel').value);
+$('resultSel').onchange = () => applyResultDir($('resultSel').value);
 
 // ---- folder picker: the folders of the PC this program runs on ----
 async function browse(path) {
@@ -693,7 +735,7 @@ async function browse(path) {
     const res = await api('/api/folders?path=' + encodeURIComponent(path || ''));
     $('fpPath').value = res.path;
     $('fpUp').disabled = res.parent == null; $('fpUp').onclick = () => browse(res.parent);
-    $('fpNew').disabled = $('fpChoose').disabled = !res.path;
+    $('fpChoose').disabled = !res.path;
     const list = $('fpList'); list.innerHTML = ''; list.scrollTop = 0;
     for (const d of res.dirs) {
       const b = el('button', '', d.name); if (d.note) b.append(el('i', '', d.note));
@@ -702,28 +744,24 @@ async function browse(path) {
     if (!res.dirs.length) list.append(el('div', 'hint', '하위 폴더가 없습니다.'));
   } catch (e) { info.className = 'job err'; info.textContent = e.message; }
 }
-$('btnFetchDir').onclick = () => { $('folderPicker').hidden = false; browse((state.status || {}).fetch_dir || ''); };
+$('btnResultDir').onclick = () => {
+  const s = state.status || {};
+  $('folderPicker').hidden = false; browse(s.result_dir || (s.output_source === 'auto' ? s.output_dir : ''));
+};
 $('fpClose').onclick = () => { $('folderPicker').hidden = true; };
 $('folderPicker').onclick = e => { if (e.target === $('folderPicker')) $('fpClose').onclick(); };
 $('fpPath').oninput = () => { $('fpChoose').disabled = !$('fpPath').value.trim(); };
 $('fpPath').onkeydown = e => { if (e.key === 'Enter') browse($('fpPath').value.trim()); };
-$('fpNew').onclick = async () => {
-  const name = $('fpNewName').value.trim(), info = $('fpInfo');
-  if (!name) { info.className = 'job err'; info.textContent = '새 폴더 이름을 적으세요'; return; }
-  try { await browse((await post('/api/folders', { path: $('fpPath').value.trim(), name })).path); $('fpNewName').value = ''; }
-  catch (e) { info.className = 'job err'; info.textContent = e.message; }
-};
-$('fpNewName').onkeydown = e => { if (e.key === 'Enter') $('fpNew').onclick(); };
 const choose = async path => {
-  if (await applyFetchDir(path)) $('fpClose').onclick();
-  else { $('fpInfo').className = 'job err'; $('fpInfo').textContent = $('statusText').textContent; }
+  if (await applyResultDir(path)) $('fpClose').onclick();
+  else { $('fpInfo').className = 'job err'; $('fpInfo').textContent = $('setInfo').textContent; }
 };
 $('fpChoose').onclick = () => choose($('fpPath').value.trim());
 $('fpNone').onclick = () => choose('');
 $('btnCancel').onclick = async () => { if (state.currentJob) await post('/api/job/' + state.currentJob + '/cancel', {}).catch(() => {}); };
 $('btnFree').onclick = async () => {
-  try { await post('/api/free', {}); $('statusText').textContent = 'VRAM 비우기를 요청했습니다'; }
-  catch (e) { $('statusText').textContent = e.message; }
+  try { await post('/api/free', {}); setInfo('VRAM 비우기를 요청했습니다', 'ok'); }
+  catch (e) { setInfo(e.message, 'err'); }
   setTimeout(refreshStatus, 2500);
 };
 // ---- menu (새 작업 / 작업 이력 / 보관함) and the step tabs of 새 작업 ----
@@ -732,7 +770,7 @@ const TAB_BUTTONS = { image: 'tabBtnImage', scenario: 'tabBtnScenario', video: '
 function showTab(name) {
   if (name !== 'library' && name !== 'history' && !STEPS[name]) name = 'image';
   const create = !!STEPS[name];
-  $('tabCreate').hidden = $('createBar').hidden = !create;
+  $('tabCreate').hidden = $('stepTabs').hidden = $('createButtons').hidden = !create;
   $('tabHistory').hidden = name !== 'history'; $('tabLibrary').hidden = name !== 'library';
   $('menuCreate').classList.toggle('on', create);
   $('menuHistory').classList.toggle('on', name === 'history'); $('menuLibrary').classList.toggle('on', name === 'library');
@@ -820,7 +858,7 @@ async function loadHistory(force) {
     const text = historyText(h);
     if (text) { const t = el('div', 'text', text); t.title = '누르면 전체를 봅니다'; t.onclick = () => t.classList.toggle('open'); body.append(t); }
     if (h.error) body.append(el('div', 'text open err', h.error));
-    const where = h.outputs.filter(f => f.saved || f.brought).map(f => [f.saved, f.brought ? '가져온 곳: ' + f.brought : ''].filter(Boolean).join(' · '));
+    const where = h.outputs.filter(f => f.saved).map(f => f.saved);
     if (where.length) body.append(el('div', 'hint', where.slice(-2).join('\n')));
     if (h.state !== 'running' && h.state !== 'queued') {
       const again = el('button', 'mini', '새 작업으로 불러오기');
@@ -917,7 +955,7 @@ async function openDetail(ref, shownName) {
   $('dDelete').onclick = () => {
     if ($('dDelete').textContent === '삭제') {      // first click asks, the second one deletes
       $('dDelete').textContent = '정말 삭제 (되돌릴 수 없음)';
-      info.className = 'job'; info.textContent = d.kind === 'video' ? '영상과 그 미리보기 PNG를 저장 폴더에서 지웁니다. 한 번 더 누르면 삭제합니다.' : '저장 폴더에서 파일을 지웁니다. 한 번 더 누르면 삭제합니다.';
+      info.className = 'job'; info.textContent = d.kind === 'video' ? '영상과 그 미리보기 PNG를 서버 결과 폴더에서 지웁니다. 한 번 더 누르면 삭제합니다.' : '서버 결과 폴더에서 파일을 지웁니다. 한 번 더 누르면 삭제합니다.';
       return;
     }
     change('/api/library/delete', { ref }, async () => { $('dClose').onclick(); });
@@ -926,6 +964,17 @@ async function openDetail(ref, shownName) {
   const m = el(d.kind === 'video' ? 'video' : 'img'); m.src = refUrl('file', ref);
   if (d.kind === 'video') { m.controls = true; m.loop = true; m.muted = true; m.autoplay = true; }
   media.append(m);
+  if (d.kind === 'video') {      // the first and the last frame as pictures (the last one is where a following video starts)
+    const frames = el('div', 'frames');
+    for (const [which, label] of [['first', '첫 프레임'], ['last', '마지막 프레임']]) {
+      const url = refUrl('frame', ref) + '&which=' + which, fig = el('figure'), img = el('img'), cap = el('figcaption', '', label + ' · ');
+      const link = el('a', '', 'PNG 받기'); link.href = url; link.download = d.name.replace(/\.\w+$/, '') + '_' + which + '.png';
+      img.src = url; img.alt = label; img.title = '누르면 원래 크기로 봅니다'; img.onclick = () => window.open(url, '_blank');
+      img.onerror = () => { cap.textContent = label + ': 뽑지 못했습니다'; img.remove(); };
+      cap.append(link); fig.append(img, cap); frames.append(fig);
+    }
+    media.append(frames);
+  }
   $('dWorkflow').textContent = d.workflow;
   $('dMatch').textContent = !d.has_prompt && !d.has_workflow ? 'ComfyUI 정보가 들어 있지 않은 파일입니다 (다른 곳에서 만들었거나 메타데이터 저장을 끈 경우).'
     : d.match === 'id' ? 'workflow 폴더의 같은 워크플로우(ID 일치)입니다.'

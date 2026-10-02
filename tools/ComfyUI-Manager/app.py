@@ -22,7 +22,6 @@ import os
 import posixpath
 import random
 import re
-import shutil
 import socket
 import string
 import sys
@@ -51,8 +50,7 @@ DEFAULT_CONFIG = {
     "host": "0.0.0.0",
     "port": 8288,
     "comfy_url": "http://127.0.0.1:8188",
-    "output_dir": "",                                     # empty = ComfyUI's own output folder (see follow_comfy_output)
-    "fetch_dir": "",                                      # finished results are also copied here; empty = nowhere
+    "output_dir": "",                                     # empty = picked on the page, else found (see follow_comfy_output)
     "svi_workflow": "workflow/Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5.json",
     "i2v_api": "workflow/5_I2V_6seg_from_prompts.api.json",
 }
@@ -237,6 +235,11 @@ def build_scenario_doc(parsed, n, seconds, width, height, direction, image_ref):
     }
 
 
+def _model_key(name):
+    """A model name as it is compared with a folder name: 'Qwen3.8-27B-Uncensored (choz)' -> 'qwen3.827buncensored'."""
+    return re.sub(r"[^a-z0-9.]", "", re.sub(r"\(.*?\)", "", name.lower()))
+
+
 def sanitize_name(name):
     name = re.sub(r'[\\/:*?"<>|.\x00-\x1f]', "", name or "").strip()
     return re.sub(r"\s+", "_", name)[:40] or "scenario"
@@ -263,6 +266,18 @@ def network_drives():
             host, _, share = buf.value.strip("\\").partition("\\")
             drives[letter + ":\\"] = (host, share)
     return drives
+
+
+def output_under(folder, comfy_output):
+    """`folder` was picked as the place where the server's results are. When it is a parent of the server's output
+    folder (V:\\ for a server that saves to E:\\ComfyUI\\output), the output folder inside it is what is meant."""
+    parts = [p for p in re.split(r"[\\/]", ntpath.splitdrive(comfy_output)[1]) if p]
+    if parts and os.path.basename(os.path.normpath(folder)).lower() != parts[-1].lower():
+        for i in range(len(parts)):
+            path = os.path.join(folder, *parts[i:])
+            if os.path.isdir(path):
+                return os.path.normpath(path)
+    return folder
 
 
 def list_folders(path):
@@ -454,14 +469,19 @@ class App:
     def __init__(self, config):
         self.cfg = config
         self.comfy = Comfy(config["comfy_url"])
-        self.output_dir = config["output_dir"] or os.path.join(ROOT, "output")
-        self.output_chosen = bool(config["output_dir"])      # False: follow ComfyUI's own output folder
-        self.output_followed = False     # output_dir is the folder ComfyUI itself writes to
-        self.comfy_output = ""           # that folder as ComfyUI's machine names it (E:\ComfyUI\output)
-        self._followed = None            # (address, folder) last looked up, whether it was found, when
-        self.fetch_dir = config["fetch_dir"]      # finished results are also copied here ('' = nowhere)
         saved = read_settings()
         self.recent = {key: [v for v in saved.get(key) or [] if isinstance(v, str)] for key in ("recent_urls", "recent_dirs")}
+        # The result folder: where this PC sees what ComfyUI saves. Nothing is generated or copied here; the files are
+        # read where the server put them. One folder per ComfyUI address, picked on the page.
+        self.result_dirs = {k: v for k, v in (saved.get("result_dirs") or {}).items() if isinstance(v, str)}
+        if "result_dirs" not in saved and saved.get("fetch_dir"):      # picked before this became the result folder
+            self.result_dirs[config["comfy_url"]] = saved["fetch_dir"]
+        picked = self.result_dirs.get(config["comfy_url"], "")
+        self.output_dir = config["output_dir"] or picked or os.path.join(ROOT, "output")
+        # config: config.json / --output-dir, chosen: picked on the page, auto: found, default: not known (<root>/output)
+        self.output_source = "config" if config["output_dir"] else "chosen" if picked else "default"
+        self.comfy_output = ""           # ComfyUI's output folder as its own machine names it (E:\ComfyUI\output)
+        self._followed = None            # (address, that folder) last looked up, whether it was found, when
         self.jobs = {}
         self.by_prompt = {}
         self.lock = asyncio.Lock()       # one stage at a time: the stages hand VRAM over to each other
@@ -469,6 +489,7 @@ class App:
         self._svi_cache = None
         self._chat_models = (0, None)
         self._combos = {}
+        self._llm = (0, None)
         self.ws = None
         self.address_changed = asyncio.Event()
         self.library = library.Library(self.output_dir, os.path.join(HERE, "data"),
@@ -525,6 +546,33 @@ class App:
                 models = None
             self._chat_models = (time.time(), models)
         return models
+
+    async def llm_on_disk(self):
+        """What is in ComfyUI's models/LLM folder: (names of the .gguf files, folders that hold model weights), both
+        lower case. None when ComfyUI cannot tell (not reachable, or the folder is not registered)."""
+        stamp, found = self._llm
+        if time.time() - stamp > 60:
+            files, answered = [], False
+            for folder in ("LLM", "llm"):
+                try:
+                    files += await self.comfy.get_json(f"/models/{folder}", timeout=20)
+                    answered = True
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                    pass
+            names = [f.replace("\\", "/").lower() for f in files if isinstance(f, str)]
+            found = None if not answered else (
+                {n.rsplit("/", 1)[-1] for n in names if n.endswith(".gguf")},
+                {_model_key(n.split("/")[-2]) for n in names if "/" in n and n.endswith((".safetensors", ".bin"))})
+            self._llm = (time.time(), found)
+        return found
+
+    @staticmethod
+    def on_disk(found, names, gguf):
+        """The models of a node's list that are really there; the whole list when that cannot be checked."""
+        if found is None:
+            return list(names)
+        files, folders = found
+        return [n for n in names if (n.lower() in files if gguf else _model_key(n.rsplit("/", 1)[-1]) in folders)]
 
     async def combo_values(self, class_type, name="model_name"):
         """Choices of a node's combo input ([] when the node is not installed)."""
@@ -642,35 +690,61 @@ class App:
         self.comfy.url = url
         self.comfy._object_info = None
         self._combos, self._chat_models, self._svi_cache, self.last_stage = {}, (0, None), None, None
+        self._llm = (0, None)
         self.remember(comfy_url=url)
-        self.comfy_output, self._followed = "", None
-        if not self.output_chosen:      # back to the default; the new ComfyUI's folder is followed on the next status poll
-            self.output_dir = self.library.roots["output"] = os.path.join(ROOT, "output")
-            self.output_followed = False
+        self.comfy_output = ""
+        self.apply_picked()
         self.address_changed.set()
         if self.ws is not None:
             await self.ws.close()
 
+    def apply_picked(self):
+        """The folder picked for the ComfyUI in use, before ComfyUI has been asked anything (the library works without it)."""
+        self._followed = None
+        if self.output_source != "config":
+            picked = self.result_dirs.get(self.comfy.url, "")
+            self.output_dir = self.library.roots["output"] = picked or os.path.join(ROOT, "output")
+            self.output_source = "chosen" if picked else "default"
+
+    def set_result_dir(self, path):
+        """Pick, for the ComfyUI in use, the folder of this PC that shows what that server saves ('' = find it)."""
+        if path:
+            self.result_dirs[self.comfy.url] = path
+            self.keep_recent("recent_dirs", path)
+        else:
+            self.result_dirs.pop(self.comfy.url, None)
+        self.remember(result_dirs=self.result_dirs)
+        self.apply_picked()
+
     async def follow_comfy_output(self, argv):
-        """No save folder in config.json / --output-dir: use the folder ComfyUI was started with (--output-directory), so
-        the launchers' V:\\output / E:\\ComfyUI\\output need no second setting here. For a ComfyUI on another machine that
-        is its folder through a network drive of this PC; without such a drive results are fetched into <root>/output."""
+        """Settle which folder of this PC holds what ComfyUI saves, now that ComfyUI told how it was started. In order:
+        config.json / --output-dir; the folder picked on the page for this server; else found without being told
+        (ComfyUI on this machine: its --output-directory; on another machine: that folder through a network drive)."""
         folder = argv[argv.index("--output-directory") + 1] if "--output-directory" in argv[:-1] else ""
         folder = path_module(folder).normpath(folder) if folder else ""
         key = (self.comfy.url, folder)
         if self._followed and self._followed[0] == key and (self._followed[1] or time.time() - self._followed[2] < 30):
-            return      # found, or looked for a moment ago (a network drive may be connected later)
+            return      # settled, or looked for a moment ago (a network drive may be connected later)
         if self.lock.locked():      # a running stage keeps the folder it started with
             return
         self._followed = (key, False, time.time())
         self.comfy_output = folder
-        if self.output_chosen or not folder:
+        if self.output_source == "config":
             return
-        path = await asyncio.to_thread(local_view, urlparse(self.comfy.url).hostname, folder)
-        if path and self._followed[0] == key and not self.lock.locked():
-            self._followed = (key, True, time.time())
-            self.output_dir = self.library.roots["output"] = path
-            self.output_followed = True
+        picked = self.result_dirs.get(self.comfy.url, "")
+        if picked:
+            path = await asyncio.to_thread(output_under, picked, folder)
+        else:
+            path = await asyncio.to_thread(local_view, urlparse(self.comfy.url).hostname, folder) if folder else None
+        if not path or self._followed[0] != key or self.lock.locked() or picked != self.result_dirs.get(self.comfy.url, ""):
+            return
+        if picked and path != picked:      # a parent of the output folder had been picked: keep what is really used
+            self.result_dirs[self.comfy.url] = path
+            self.remember(result_dirs=self.result_dirs)
+            self.keep_recent("recent_dirs", path)
+        self._followed = (key, True, time.time())
+        self.output_dir = self.library.roots["output"] = path
+        self.output_source = "chosen" if picked else "auto"
 
     def keep_recent(self, key, value):
         """Addresses and folders used before, newest first: the lists to pick from on the page."""
@@ -685,10 +759,10 @@ class App:
         with open(SETTINGS, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False)
 
-    async def keep_outputs(self, job):
-        """Copy what the job saved (type 'output') into the save folder, unless the file is already there,
-        which is the case when the save folder is the one ComfyUI writes to."""
-        base = os.path.realpath(self.output_dir)
+    async def find_outputs(self, job):
+        """Look up, in the result folder, the files the job saved on the server (type 'output'). Nothing is copied.
+        Returns '' or, for the user, why some of them cannot be seen from this PC."""
+        base, missing = os.path.realpath(self.output_dir), []
         for f in job.outputs:
             if f["type"] != "output" or f.get("saved"):
                 continue
@@ -697,86 +771,19 @@ class App:
             if os.path.commonpath([dest, base]) != base:
                 continue
             for _ in range(5):      # a file just written on another machine can take a moment to show on the network drive
-                if os.path.isfile(dest) or not self.output_followed:
+                if os.path.isfile(dest) or self.output_source == "default":
                     break
                 await asyncio.sleep(1.0)
-            if not os.path.isfile(dest):
-                job.step = "결과를 저장 폴더로 받는 중"
-                error = await self.download(f, dest + ".part")
-                if error:
-                    job.notes.append(f"저장 폴더로 받지 못했습니다 ({error}): {f['filename']}")
-                    continue
-                os.replace(dest + ".part", dest)
-                f["fetched"] = True
-            f["saved"] = shown
-
-    async def download(self, f, path):
-        """One output file of ComfyUI -> path. Returns '' or why it could not be read."""
-        params = {"filename": f["filename"], "subfolder": f["subfolder"], "type": "output"}
-        async with self.comfy.session.get(self.comfy.url + "/view", params=params) as r:
-            if r.status != 200:
-                return f"ComfyUI {r.status}"
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "wb") as out:
-                async for chunk in r.content.iter_chunked(1 << 20):
-                    out.write(chunk)
-        return ""
-
-    def set_fetch_dir(self, path):
-        """The folder finished results are also copied to ('' = none). The save folder stays what it is."""
-        if path:
-            os.makedirs(path, exist_ok=True)
-            probe = os.path.join(path, ".write_test")
-            with open(probe, "w") as f:      # fails here, with the system's message, when the folder is read-only
-                f.write("")
-            os.remove(probe)
-            self.keep_recent("recent_dirs", path)
-        self.fetch_dir = path
-        self.remember(fetch_dir=path)
-
-    async def bring_results(self, job):
-        """Copy what the job saved into the fetch folder, keeping the subfolder. Nothing there is overwritten: a file
-        of the same name and size counts as brought already, a different one gets the new file next to it as 'name (2)'."""
-        if not self.fetch_dir:
-            return
-        base = os.path.realpath(self.fetch_dir)
-        for f in job.outputs:
-            if f["type"] != "output" or f.get("brought"):
-                continue
-            dest = os.path.normpath(os.path.join(self.fetch_dir, f["subfolder"], f["filename"]))
-            if os.path.commonpath([os.path.realpath(dest), base]) != base:
-                continue
-            source = f.get("saved") or ""
-            job.step = "결과를 가져오는 중"
-            try:
-                if source and os.path.isfile(dest) and os.path.samefile(source, dest):      # the fetch folder is the save folder
-                    continue
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                part = dest + ".part"
-                if source and os.path.isfile(source):
-                    await asyncio.to_thread(shutil.copyfile, source, part)
-                else:
-                    error = await self.download(f, part)
-                    if error:
-                        f["bring_error"] = error
-                        continue
-                if os.path.isfile(dest) and os.path.getsize(dest) == os.path.getsize(part):
-                    os.remove(part)
-                else:
-                    stem, ext = os.path.splitext(dest)
-                    n = 2
-                    while os.path.exists(dest):
-                        dest, n = f"{stem} ({n}){ext}", n + 1
-                    os.rename(part, dest)
-                f["brought"] = dest
-            except (OSError, aiohttp.ClientError, asyncio.TimeoutError) as e:
-                f["bring_error"] = f"{type(e).__name__} {e}"
-
-    @staticmethod
-    def brought_text(f):
-        if f.get("brought"):
-            return "가져온 곳: " + f["brought"]
-        return "가져오지 못했습니다: " + f["bring_error"] if f.get("bring_error") else ""
+            if os.path.isfile(dest):
+                f["saved"] = shown
+            else:
+                missing.append(f["filename"])
+        if not missing:
+            return ""
+        if self.output_source == "default":
+            return "서버에는 저장되었지만 이 PC에서는 볼 수 없습니다. 설정에서 서버 결과 폴더를 지정하면 보관함에 나옵니다"
+        return (f"서버 결과 폴더({self.output_dir})에서 보이지 않는 파일: {', '.join(missing[:3])}. "
+                "설정의 서버 결과 폴더가 그 서버의 출력 폴더가 맞는지 확인하세요")
 
     def saved_text(self, f):
         """Where a saved file is: the path on ComfyUI's machine, with the path on this PC when that is a different one."""
@@ -786,7 +793,7 @@ class App:
         there = path_module(self.comfy_output).join(self.comfy_output, *re.split(r"[\\/]", f["subfolder"]), f["filename"])
         if not local or os.path.normcase(there) == os.path.normcase(local):
             return there
-        return f"{there} ({'받아 온 사본' if f.get('fetched') else '이 PC에서는'} {local})"
+        return f"{there} (이 PC에서는 {local})"
 
     def history_entry(self, job):
         """A job as the history shows it: what was asked, how it ended, and what it left behind."""
@@ -863,10 +870,9 @@ class App:
         images = (outputs.get("120") or {}).get("images") or []
         if not images:
             raise AppError("이미지가 만들어지지 않았습니다")
-        await self.keep_outputs(job)
-        await self.bring_results(job)
+        unseen = await self.find_outputs(job)
         ref = {k: images[0].get(k, "") for k in ("filename", "subfolder", "type")}
-        saved = next((" · ".join(filter(None, (self.saved_text(f), self.brought_text(f)))) for f in job.outputs
+        saved = next((" · ".join(filter(None, (self.saved_text(f), unseen))) for f in job.outputs
                       if f["type"] == "output" and f["filename"] == ref["filename"]), "")
         return {"image": ref, "saved": saved, "seed": seed, "width": prompt["105"]["inputs"]["width"], "height": prompt["105"]["inputs"]["height"]}
 
@@ -944,6 +950,7 @@ class App:
     async def analyze_gguf(self, job, uploaded, instruction, p):
         """A QwenVL-Mod GGUF model asked directly (no preset, no chat protocol) through our own node."""
         models = [m for m in await self.combo_values("ShortsQwenGGUFVision") if not m.startswith("(")]
+        models = self.on_disk(await self.llm_on_disk(), models, True) or models      # the default is one that is downloaded
         if not models:
             raise AppError("Qwen GGUF 직접 호출을 쓸 수 없습니다. ComfyUI에 ComfyUI-QwenVL-Mod와 최신 ComfyUI-ShortsRemake가 "
                            "있어야 합니다 (ComfyUI를 재시작했는지도 확인하세요).")
@@ -1100,14 +1107,12 @@ class App:
         videos = [f for f in job.outputs if f["kind"] == "video"]
         if not videos:
             raise AppError("영상 파일이 만들어지지 않았습니다 (ComfyUI 콘솔을 확인하세요)")
-        await self.keep_outputs(job)
-        await self.bring_results(job)
+        unseen = await self.find_outputs(job)
         final = [f for f in videos if f["type"] == "output"] or videos
         if self.saved_text(final[-1]):
             job.notes.append("저장: " + self.saved_text(final[-1]))
-        job.notes.extend(filter(None, [self.brought_text(final[-1])]
-                                + [self.brought_text(f) + " (" + f["filename"] + ")" for f in job.outputs
-                                   if f is not final[-1] and f.get("bring_error")]))
+        if unseen:
+            job.notes.append(unseen)
         return {"dir": name, "final": final[-1]}
 
 
@@ -1136,7 +1141,8 @@ async def index(request):
 async def api_status(request):
     app = request.app["app"]
     out = {"comfy_url": app.comfy.url, "comfy_ok": False, "ws_ok": app.comfy.ws_ok, "output_dir": app.output_dir,
-           "fetch_dir": app.fetch_dir, "recent_urls": app.recent["recent_urls"], "recent_dirs": app.recent["recent_dirs"],
+           "catalogue": {"node": 0, "gguf": 0},
+           "result_dir": app.result_dirs.get(app.comfy.url, ""), "output_source": app.output_source, "recent_urls": app.recent["recent_urls"], "recent_dirs": app.recent["recent_dirs"],
            "running": 0, "pending": 0, "vram": None, "chat": None, "node_models": [], "gguf_models": [],
            "svi_override": os.path.isfile(os.path.join(TEMPLATES, "video_svi.api.json"))}
     try:
@@ -1144,13 +1150,20 @@ async def api_status(request):
         out.update(comfy_ok=True, running=len(queue.get("queue_running", [])), pending=len(queue.get("queue_pending", [])))
         stats = await app.comfy.get_json("/system_stats", timeout=5)
         await app.follow_comfy_output((stats.get("system") or {}).get("argv") or [])
-        out["output_dir"] = app.output_dir
+        out.update(output_dir=app.output_dir, output_source=app.output_source, result_dir=app.result_dirs.get(app.comfy.url, ""))
         devices = stats.get("devices") or []
         if devices and devices[0].get("vram_total"):
             out["vram"] = {"name": devices[0].get("name", ""), "total": devices[0]["vram_total"], "free": devices[0].get("vram_free", 0)}
-        out["chat"] = await app.chat_models()
-        out["node_models"] = await app.combo_values("AILab_QwenVL_Advanced")
-        out["gguf_models"] = [m for m in await app.combo_values("ShortsQwenGGUFVision") if not m.startswith("(")]
+        # the nodes list their whole catalogue; only the models that are in the server's models/LLM folder are offered
+        found = await app.llm_on_disk()
+        chat = await app.chat_models()
+        node = await app.combo_values("AILab_QwenVL_Advanced")
+        gguf = [m for m in await app.combo_values("ShortsQwenGGUFVision") if not m.startswith("(")]
+        out["catalogue"] = {"node": len(node), "gguf": len(gguf)}
+        out["chat"] = chat and dict(chat, hf=app.on_disk(found, chat.get("hf") or [], False),
+                                    gguf=app.on_disk(found, chat.get("gguf") or [], True))
+        out["node_models"] = app.on_disk(found, node, False)
+        out["gguf_models"] = app.on_disk(found, gguf, True)
     except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, ValueError):
         pass
     return web.json_response(out)
@@ -1220,18 +1233,26 @@ async def api_comfy(request):
                                              "다른 PC라면 --listen 0.0.0.0 으로 실행했는지 확인하세요"})
 
 
-async def api_fetch_dir(request):
-    """Change the fetch folder from the page (empty turns it off)."""
+async def api_result_dir(request):
+    """Pick the result folder for the ComfyUI in use from the page (empty: find it)."""
     app = request.app["app"]
     path = ((await request.json()).get("path") or "").strip().strip('"')
-    if path and not os.path.isabs(path):
-        raise AppError("가져올 폴더는 전체 경로로 입력하세요 (예: D:\\videos). 비우면 가져오지 않습니다")
-    try:
-        app.set_fetch_dir(os.path.normpath(path) if path else "")
-    except OSError as e:
-        raise AppError(f"그 폴더를 쓸 수 없습니다: {e}")
-    return web.json_response({"path": app.fetch_dir, "message": "끝난 결과를 " + app.fetch_dir + " 로 가져옵니다" if path
-                              else "결과를 따로 가져오지 않습니다"})
+    if app.output_source == "config":
+        raise AppError("서버 결과 폴더가 config.json의 output_dir (또는 --output-dir)로 고정되어 있습니다")
+    if app.lock.locked():
+        raise AppError("실행 중인 작업이 있어 지금은 폴더를 바꿀 수 없습니다")
+    if not path:
+        app.set_result_dir("")
+        return web.json_response({"path": "", "message": "서버 결과 폴더를 자동으로 찾습니다"})
+    if not os.path.isabs(path):
+        raise AppError("전체 경로로 입력하세요 (예: V:\\output)")
+    path = os.path.normpath(path)
+    if not await asyncio.to_thread(os.path.isdir, path):
+        raise AppError(f"폴더가 없습니다: {path}")
+    used = await asyncio.to_thread(output_under, path, app.comfy_output)
+    app.set_result_dir(used)
+    return web.json_response({"path": used, "message": f"{path} 안의 서버 출력 폴더 {used} 을(를) 씁니다" if used != path
+                              else f"서버 결과 폴더: {used}"})
 
 
 async def api_folders(request):
@@ -1243,19 +1264,6 @@ async def api_folders(request):
         return web.json_response(await asyncio.to_thread(list_folders, path))
     except OSError as e:
         raise AppError(f"폴더를 열 수 없습니다: {e.strerror or e}")
-
-
-async def api_folder_new(request):
-    body = await request.json()
-    path, name = (body.get("path") or "").strip(), (body.get("name") or "").strip()
-    if not os.path.isabs(path) or not name or name in (".", "..") or re.search(r'[\\/:*?"<>|\x00-\x1f]', name):
-        raise AppError('폴더 이름에 \\ / : * ? " < > | 는 쓸 수 없습니다')
-    new = os.path.join(path, name)
-    try:
-        os.makedirs(new, exist_ok=True)
-    except OSError as e:
-        raise AppError(f"폴더를 만들 수 없습니다: {e.strerror or e}")
-    return web.json_response({"path": new})
 
 
 async def api_free(request):
@@ -1370,6 +1378,16 @@ async def api_library_thumb(request):
         path = await asyncio.to_thread(lib.thumbnail, request.query.get("ref", ""))
     except (ValueError, OSError, StopIteration, av.FFmpegError) as e:
         return json_error(str(e), 404)
+    return web.FileResponse(path, headers={"Cache-Control": "max-age=86400"})
+
+
+async def api_library_frame(request):
+    """The first (?which=first) or last (?which=last) frame of a video, as a PNG."""
+    lib, which = _library(request), request.query.get("which", "first")
+    try:
+        path = await asyncio.to_thread(lib.frame, request.query.get("ref", ""), "last" if which == "last" else "first")
+    except (ValueError, OSError, StopIteration, AttributeError, IndexError, av.FFmpegError) as e:
+        return json_error(str(e) or "프레임을 뽑지 못했습니다", 404)
     return web.FileResponse(path, headers={"Cache-Control": "max-age=86400"})
 
 
@@ -1488,16 +1506,16 @@ def load_config():
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as f:
             cfg.update(json.load(f))
-    cfg.update({k: v for k, v in read_settings().items() if k in ("comfy_url", "fetch_dir")})
+    cfg.update({k: v for k, v in read_settings().items() if k == "comfy_url"})
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--host", default=cfg["host"])
     ap.add_argument("--port", type=int, default=cfg["port"])
     ap.add_argument("--comfy", default=cfg["comfy_url"], help="ComfyUI address, e.g. http://127.0.0.1:8188")
-    ap.add_argument("--output-dir", default=cfg["output_dir"], help="where scenario folders are written (default: ComfyUI's output folder)")
-    ap.add_argument("--fetch-dir", default=cfg["fetch_dir"], help="folder finished results are also copied to (default: none)")
+    ap.add_argument("--output-dir", default=cfg["output_dir"],
+                    help="folder of this PC that shows what ComfyUI saves (default: picked on the page, else found)")
     ap.add_argument("--open", action="store_true", help="open the page in the default browser once the server is up")
     args = ap.parse_args()
-    cfg.update(host=args.host, port=args.port, comfy_url=args.comfy, output_dir=args.output_dir, fetch_dir=args.fetch_dir, open=args.open)
+    cfg.update(host=args.host, port=args.port, comfy_url=args.comfy, output_dir=args.output_dir, open=args.open)
     return cfg
 
 
@@ -1512,9 +1530,8 @@ def make_app(cfg):
         web.post("/api/job/{id}/cancel", api_cancel),
         web.post("/api/free", api_free),
         web.post("/api/comfy", api_comfy),
-        web.post("/api/fetch_dir", api_fetch_dir),
+        web.post("/api/result_dir", api_result_dir),
         web.get("/api/folders", api_folders),
-        web.post("/api/folders", api_folder_new),
         web.post("/api/upload", api_upload),
         web.get("/api/scenarios", api_scenarios),
         web.get("/api/scenario", api_scenario_get),
@@ -1526,6 +1543,7 @@ def make_app(cfg):
         web.get("/api/library/item", api_library_item),
         web.get("/api/library/file", api_library_file),
         web.get("/api/library/thumb", api_library_thumb),
+        web.get("/api/library/frame", api_library_frame),
         web.get("/api/library/workflow", api_library_workflow),
         web.post("/api/library/save_workflow", api_library_save_workflow),
         web.post("/api/library/rename", api_library_rename),
