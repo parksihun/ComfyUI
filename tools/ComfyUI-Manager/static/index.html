@@ -496,7 +496,7 @@ async function genImage() {
 const imageInfo = r => [r.width ? r.width + ' × ' + r.height : '', 'seed ' + r.seed, r.workflow ? '워크플로우: ' + r.workflow : '', r.saved]
   .filter(Boolean).join(' · ');
 
-// ---- the workflows a step can run (the ones the connected ComfyUI keeps, checked against its nodes and models) ----
+// ---- the workflows of the connected ComfyUI: all of them; the ones a step cannot run come last and say why ----
 const workflows = { image: null, video: null };
 async function loadWorkflows(kind, force) {
   const sel = $(kind === 'image' ? 'imgWorkflow' : 'videoWorkflow'), info = $(kind === 'image' ? 'imgWorkflowInfo' : 'videoWorkflowInfo');
@@ -507,12 +507,17 @@ async function loadWorkflows(kind, force) {
   workflows[kind] = res.items;
   const keep = sel.value || localStorage.getItem('vw_' + sel.id) || res.default;
   sel.innerHTML = '';
-  for (const w of res.items) {
-    const o = el('option', '', w.label + (kind === 'video' ? ' · 구간 ' + w.segments + '개' : '')
-      + (w.missing.length ? ' · 서버에 없는 노드 있음' : '') + (w.models.length ? ' · 서버에 없는 모델 있음' : ''));
+  const ready = res.items.filter(w => !w.reason), rest = res.items.filter(w => w.reason);
+  for (const w of ready) {
+    const o = el('option', '', w.label + (kind === 'video' ? ' · 구간 ' + w.segments + '개' : '') + (w.missing.length ? ' · 서버에 없는 노드 있음' : ''));
     o.value = w.name; sel.append(o);
   }
-  sel.value = res.items.some(w => w.name === keep) ? keep : res.items.some(w => w.name === res.default) ? res.default : (res.items[0] || {}).name || '';
+  if (rest.length) {
+    const group = el('optgroup'); group.label = '이 단계에서 실행할 수 없는 워크플로우';
+    for (const w of rest) { const o = el('option', '', w.label); o.value = w.name; group.append(o); }
+    sel.append(group);
+  }
+  sel.value = res.items.some(w => w.name === keep) ? keep : ready.some(w => w.name === res.default) ? res.default : (ready[0] || res.items[0] || {}).name || '';
   if (!res.connected) info.dataset.note = 'ComfyUI에 연결되면 그 서버의 워크플로우 목록을 읽습니다.';
   else delete info.dataset.note;
   workflowChosen(kind);
@@ -520,9 +525,9 @@ async function loadWorkflows(kind, force) {
 function workflowChosen(kind) {
   const sel = $(kind === 'image' ? 'imgWorkflow' : 'videoWorkflow'), info = $(kind === 'image' ? 'imgWorkflowInfo' : 'videoWorkflowInfo');
   const w = (workflows[kind] || []).find(x => x.name === sel.value);
-  info.textContent = [w && w.missing.length ? '서버에 없는 노드가 들어 있어 실행이 안 될 수 있습니다: ' + w.missing.join(', ') + '.' : '',
-                      w && w.models.length ? '서버에 없는 모델: ' + w.models.join(', ') + '.' : '',
-                      !(workflows[kind] || []).length && kind === 'video' && !info.dataset.note ? '서버에서 쓸 수 있는 영상 워크플로우를 찾지 못했습니다.' : '',
+  info.textContent = [w && w.reason ? '이 워크플로우는 이 단계에서 실행할 수 없습니다: ' + w.reason + '.' : '',
+                      w && w.missing.length ? '서버에 없는 노드가 들어 있어 실행이 안 될 수 있습니다: ' + w.missing.join(', ') + '.' : '',
+                      !(workflows[kind] || []).length && kind === 'video' && !info.dataset.note ? '서버에 저장된 워크플로우가 없습니다.' : '',
                       info.dataset.note || '']
     .filter(Boolean).join(' ');
   if (kind === 'video') { state.paramsLoaded = null; if ($('paramBox').open) loadParams(); }

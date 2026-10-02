@@ -510,7 +510,6 @@ class App:
         self._workflows = {}             # name -> ((file, modified, node definitions), API prompt, warnings)
         self._wf_list = (0, {})          # when asked, {name: {'modified', 'created'}} of the server's workflow folder
         self._wf_files = {}              # name -> (modified, content)
-        self._loras = (0, None)
         self._catalogue_task = None
         self._chat_models = (0, None)
         self._combos = {}
@@ -716,7 +715,7 @@ class App:
         self.comfy.url = url
         self.comfy._object_info = None
         self._combos, self._chat_models, self._workflows, self.last_stage = {}, (0, None), {}, None
-        self._llm, self._wf_list, self._wf_files, self._loras = (0, None), (0, {}), {}, (0, None)
+        self._llm, self._wf_list, self._wf_files = (0, None), (0, {}), {}
         self.remember(comfy_url=url)
         self.use_catalogue()
         self.comfy_output = ""
@@ -1014,17 +1013,6 @@ class App:
             cached = self._workflows[name] = (key, data, warnings)
         return copy.deepcopy(cached[1]), list(cached[2])
 
-    async def missing_models(self, api):
-        """Model files the workflow names that the server does not have."""
-        stamp, loras = self._loras
-        if time.time() - stamp > 60:
-            try:
-                loras = await self.comfy.get_json("/models/loras", timeout=20)
-            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-                loras = None
-            self._loras = (time.time(), loras)
-        return comfy_convert.missing_models(api, await self.comfy.object_info(), loras)
-
     @staticmethod
     def usable(api, kind):
         """'' when the step can run this workflow, else why not."""
@@ -1041,24 +1029,22 @@ class App:
         return "" if slots["load"] else "시작 이미지 노드(Load Image)가 없습니다"
 
     async def workflows(self, kind):
-        """The workflows of the server that the image / video step can run, for the list on the page."""
-        items = [{"name": "", "label": self.BUILTIN_IMAGE, "segments": 1, "missing": [], "models": []}] if kind == "image" else []
+        """Every workflow the server keeps, for the list of the image / video step. 'reason' says why the step cannot
+        run one (it has nowhere to put the prompt or the start image); those stay in the list, after the others."""
+        items = [{"name": "", "label": self.BUILTIN_IMAGE, "segments": 1, "missing": [], "reason": ""}] if kind == "image" else []
         try:
             names = await self.workflow_names()
-            items[0:1] = [dict(i, models=await self.missing_models((await self.workflow_api(""))[0])) for i in items]
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError):
             return {"items": items, "default": "" if kind == "image" else self.default_video(), "connected": False}
         for name in names:
             try:
                 api, warnings = await self.workflow_api(name)
-                if self.usable(api, kind):
-                    continue
                 items.append({"name": name, "label": self.workflow_label(name),
                               "segments": 6 if self.has_fanout(api) else len(comfy_convert.find_slots(api)["prompts"]),
                               "missing": sorted({w.split("'")[1] for w in warnings if "unknown type" in w}),
-                              "models": await self.missing_models(api)})
+                              "reason": self.usable(api, kind)})
             except (AppError, aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError, IndexError):
-                continue      # not a workflow
+                continue      # not a workflow file
         return {"items": items, "default": "" if kind == "image" else self.default_video(), "connected": True}
 
     # ---- the names the library gives: from the server's workflows, remembered in the store ----------
@@ -1108,7 +1094,6 @@ class App:
         problem = self.usable(prompt, "image")
         if problem:
             raise AppError(f"이 워크플로우로는 이미지를 만들 수 없습니다 ({self.workflow_label(name)}): {problem}")
-        absent = await self.missing_models(prompt)      # ComfyUI refuses a missing model itself; a skipped LoRA it does not
         slots = comfy_convert.find_slots(prompt)
         for nid in slots["prompts"][0]:
             prompt[nid]["inputs"]["text"] = text
@@ -1137,8 +1122,6 @@ class App:
         saved = " · ".join(filter(None, (self.saved_text(made) if made["type"] == "output" else "", unseen)))
         if not slots["sizes"]:
             saved = " · ".join(filter(None, (saved, "이 워크플로우는 크기를 워크플로우 값 그대로 씁니다")))
-        if absent:
-            saved = " · ".join(filter(None, (saved, "서버에 없는 모델: " + ", ".join(absent))))
         size = prompt[slots["sizes"][0]]["inputs"] if slots["sizes"] else {"width": 0, "height": 0}
         return {"image": ref, "saved": saved, "seed": seed, "width": size["width"], "height": size["height"],
                 "workflow": self.workflow_label(name), "missing": sorted({w.split("'")[1] for w in warnings if "unknown type" in w})}
@@ -1267,9 +1250,6 @@ class App:
         problem = self.usable(api, "video")
         if problem:
             warnings.append(problem)
-        absent = await self.missing_models(api)
-        if absent:
-            warnings.append("서버에 없는 모델: " + ", ".join(absent))
         if self.has_fanout(api):
             return {"workflow": name, "slots": 6, "params": [], "warnings": warnings}
         items = [{"id": nid, "title": n["_meta"]["title"], "value": n["inputs"].get("value"),
@@ -1350,9 +1330,6 @@ class App:
         if problem:
             raise AppError(f"이 워크플로우로는 영상을 만들 수 없습니다 ({self.workflow_label(workflow)}): {problem}")
         job.notes.append("워크플로우: " + self.workflow_label(workflow))
-        absent = await self.missing_models(api)
-        if absent:      # a LoRA loader may just skip them, a model loader will refuse: say it before the long run
-            job.notes.append("서버에 없는 모델: " + ", ".join(absent))
         job.notes.extend(warnings)
         if self.has_fanout(api):      # reads prompts.json through a node: give it the values themselves
             api = self.build_i2v(api, doc, texts, image_name)

@@ -312,31 +312,6 @@ def find_slots(api):
     }
 
 
-MODEL_EXT = (".safetensors", ".gguf", ".ckpt", ".pt", ".pth", ".sft", ".bin", ".onnx")
-
-
-def missing_models(api, object_info, loras=None):
-    """Model files the prompt names that the ComfyUI these node definitions come from does not offer: a file name in
-    a choice input that is not among the choices. `loras` (that server's LoRA list) also checks the LoRAs of loaders
-    that take them as free text (rgthree's Power Lora Loader)."""
-    same = lambda name: name.replace("\\", "/").lower()
-    known = None if loras is None else {same(x) for x in loras}
-    missing = set()
-    for node in api.values():
-        info = object_info.get(node["class_type"]) or {}
-        specs = dict((info.get("input") or {}).get("required") or {}, **((info.get("input") or {}).get("optional") or {}))
-        for name, value in node["inputs"].items():
-            if isinstance(value, str) and value.lower().endswith(MODEL_EXT):
-                spec = specs.get(name) or [None]
-                choices = spec[0] if isinstance(spec[0], list) else (spec[1].get("options") if len(spec) > 1 and isinstance(spec[1], dict) else None)
-                if isinstance(choices, list) and same(value) not in {same(str(c)) for c in choices}:
-                    missing.add(value)
-            elif isinstance(value, dict) and isinstance(value.get("lora"), str) and value.get("on", True) and known is not None:
-                if value["lora"] not in ("", "None") and same(value["lora"]) not in known:
-                    missing.add(value["lora"])
-    return sorted(missing)
-
-
 def randomize_seeds(api):
     """New random value for every literal seed (what 'randomize' does in the UI). Samplers that add no noise
     keep theirs."""
