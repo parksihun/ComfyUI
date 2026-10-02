@@ -37,6 +37,7 @@ import library  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(HERE))
 TEMPLATES = os.path.join(HERE, "templates")
+SETTINGS = os.path.join(HERE, "data", "settings.json")      # what was changed from the page
 log = logging.getLogger("comfyui_manager")
 
 DEFAULT_CONFIG = {
@@ -365,6 +366,8 @@ class App:
         self._svi_cache = None
         self._chat_models = (0, None)
         self._combos = {}
+        self.ws = None
+        self.address_changed = asyncio.Event()
         self.library = library.Library(self.output_dir, os.path.join(HERE, "data"),
                                        library.Catalogue(os.path.join(ROOT, "workflow"), TEMPLATES))
 
@@ -503,10 +506,12 @@ class App:
             self.add_outputs(job, str(data.get("node")), data.get("output") or {})
 
     async def ws_loop(self):
-        ws_url = "ws" + self.comfy.url[4:] + "/ws?clientId=" + self.comfy.client_id
         while True:
+            self.address_changed.clear()
+            ws_url = "ws" + self.comfy.url[4:] + "/ws?clientId=" + self.comfy.client_id
             try:
                 async with self.comfy.session.ws_connect(ws_url, heartbeat=30, max_msg_size=0) as ws:
+                    self.ws = ws
                     self.comfy.ws_ok = True
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
@@ -515,9 +520,25 @@ class App:
                             break
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
                 pass
+            self.ws = None
             self.comfy.ws_ok = False
             self.comfy._object_info = None      # ComfyUI may come back with different nodes or models
-            await asyncio.sleep(3.0)
+            try:                                # retry in 3 s, or at once when the address was changed
+                await asyncio.wait_for(self.address_changed.wait(), timeout=3.0)
+            except asyncio.TimeoutError:
+                pass
+
+    async def set_comfy(self, url):
+        """Point the tool at another ComfyUI (local or on another machine) and remember it."""
+        self.comfy.url = url
+        self.comfy._object_info = None
+        self._combos, self._chat_models, self._svi_cache, self.last_stage = {}, (0, None), None, None
+        os.makedirs(os.path.join(HERE, "data"), exist_ok=True)
+        with open(SETTINGS, "w", encoding="utf-8") as f:
+            json.dump({"comfy_url": url}, f)
+        self.address_changed.set()
+        if self.ws is not None:
+            await self.ws.close()
 
     def start_job(self, kind, label, coro_fn, *args):
         job = Job(kind, label)
@@ -876,6 +897,27 @@ async def api_cancel(request):
     return web.json_response(job.to_dict())
 
 
+async def api_comfy(request):
+    """Change the ComfyUI address from the page."""
+    app = request.app["app"]
+    url = ((await request.json()).get("url") or "").strip().rstrip("/")
+    if url and "://" not in url:
+        url = "http://" + url
+    if not re.match(r"^https?://[^/\s]+$", url):
+        raise AppError("주소는 http://호스트:포트 형식으로 입력하세요 (예: http://127.0.0.1:8188, http://192.168.0.10:8188)")
+    if app.lock.locked():
+        raise AppError("실행 중인 작업이 있어 지금은 주소를 바꿀 수 없습니다")
+    await app.set_comfy(url)
+    try:
+        stats = await app.comfy.get_json("/system_stats", timeout=6)
+        device = ((stats.get("devices") or [{}])[0]).get("name", "")
+        return web.json_response({"url": url, "ok": True, "message": "연결했습니다" + (f" ({device})" if device else "")})
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+        return web.json_response({"url": url, "ok": False,
+                                  "message": f"주소를 바꿨지만 연결되지 않습니다: {type(e).__name__}. ComfyUI가 켜져 있는지, "
+                                             "다른 PC라면 --listen 0.0.0.0 으로 실행했는지 확인하세요"})
+
+
 async def api_free(request):
     app = request.app["app"]
     await app.comfy.post_json("/qwenvl/chat/unload", {"backend": "all"}, timeout=60)
@@ -1084,6 +1126,9 @@ def load_config():
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as f:
             cfg.update(json.load(f))
+    if os.path.isfile(SETTINGS):
+        with open(SETTINGS, encoding="utf-8") as f:
+            cfg.update(json.load(f))
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--host", default=cfg["host"])
     ap.add_argument("--port", type=int, default=cfg["port"])
@@ -1105,6 +1150,7 @@ def make_app(cfg):
         web.get("/api/job/{id}", api_job),
         web.post("/api/job/{id}/cancel", api_cancel),
         web.post("/api/free", api_free),
+        web.post("/api/comfy", api_comfy),
         web.post("/api/upload", api_upload),
         web.get("/api/scenarios", api_scenarios),
         web.get("/api/scenario", api_scenario_get),

@@ -62,7 +62,6 @@
   .ctx { display:flex; gap:12px; align-items:center; background:#12141a; border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:12px; font-size:13px; }
   .ctx img { width:54px; height:54px; object-fit:cover; border-radius:6px; }
   .ctx.empty { color:var(--warn); }
-  .nav { justify-content:space-between; border-top:1px solid var(--line); padding-top:12px; margin-top:18px; }
   .drop { border:2px dashed var(--line); border-radius:10px; padding:22px; text-align:center; color:var(--dim); }
   .drop.over { border-color:var(--accent); color:var(--text); background:#18202c; }
   .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
@@ -103,6 +102,12 @@
   <h1>ComfyUI-Manager</h1>
   <span class="tabs"><button id="tabBtnImage" class="on">이미지</button><button id="tabBtnScenario">시나리오</button><button id="tabBtnVideo">영상</button><button id="tabBtnLibrary">보관함</button></span>
   <span class="status"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></span>
+  <span style="display:flex;gap:6px;align-items:center">
+    <input type="text" id="comfyUrl" list="comfyUrls" style="width:230px" placeholder="ComfyUI 주소 (http://127.0.0.1:8188)"
+           title="ComfyUI 서버 주소. 이 PC면 http://127.0.0.1:8188, 다른 서버면 http://서버IP:8188">
+    <datalist id="comfyUrls"></datalist>
+    <button class="sub" id="btnComfy">연결</button>
+  </span>
   <span class="spacer"></span>
   <span id="createButtons" style="display:flex;gap:10px">
   <button id="btnAll" title="이미지 → 시나리오 → 영상을 현재 입력값으로 이어서 실행">한 번에 실행</button>
@@ -146,7 +151,6 @@
         <div class="gallery" id="gallery"></div>
       </div>
     </div>
-    <div class="actions nav"><span></span><button class="sub" data-go="scenario">다음: 시나리오 작성 →</button></div>
   </section>
 
   <section id="stepScenario" hidden>
@@ -200,7 +204,6 @@
         </div>
       </div>
     </div>
-    <div class="actions nav"><button class="sub" data-go="image">← 이미지</button><button class="sub" data-go="video">다음: 영상 제작 →</button></div>
   </section>
 
   <section id="stepVideo" hidden>
@@ -228,7 +231,6 @@
     <div class="bar" id="videoBar" hidden><i></i></div>
     <div class="note" id="videoNotes" hidden></div>
     <div class="videos" id="videos"></div>
-    <div class="actions nav"><button class="sub" data-go="scenario">← 시나리오</button><span></span></div>
   </section>
 </main>
 
@@ -509,7 +511,8 @@ async function refreshStatus() {
     const s = await api('/api/status'), first = !state.status || state.status.comfy_ok !== s.comfy_ok || !!state.status.chat !== !!s.chat || count(state.status) !== count(s);
     state.status = s;
     $('dot').classList.toggle('on', s.comfy_ok);
-    let text = s.comfy_ok ? 'ComfyUI 연결됨 (' + s.comfy_url + ')' : 'ComfyUI에 연결할 수 없음 (' + s.comfy_url + ')';
+    let text = s.comfy_ok ? 'ComfyUI 연결됨' : 'ComfyUI에 연결할 수 없음';
+    if (document.activeElement !== $('comfyUrl')) $('comfyUrl').value = s.comfy_url;
     if (s.comfy_ok) text += ' · 대기열 ' + s.running + '+' + s.pending;
     if (s.vram) text += ' · VRAM ' + ((s.vram.total - s.vram.free) / 2 ** 30).toFixed(1) + ' / ' + (s.vram.total / 2 ** 30).toFixed(1) + ' GB';
     $('statusText').textContent = text;
@@ -559,6 +562,28 @@ $('btnAll').onclick = () => {
     await genVideo();
   });
 };
+// ---- ComfyUI address (this PC or another server) ----
+function recentUrls(add) {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem('vw_comfy_urls')) || []; } catch (e) { /* start over */ }
+  if (add) { list = [add].concat(list.filter(u => u !== add)).slice(0, 8); localStorage.setItem('vw_comfy_urls', JSON.stringify(list)); }
+  const box = $('comfyUrls'); box.innerHTML = '';
+  for (const u of ['http://127.0.0.1:8188'].concat(list.filter(u => u !== 'http://127.0.0.1:8188'))) { const o = document.createElement('option'); o.value = u; box.append(o); }
+}
+async function connectComfy() {
+  $('statusText').textContent = '연결 확인 중…';
+  try {
+    const res = await post('/api/comfy', { url: $('comfyUrl').value });
+    $('comfyUrl').value = res.url; $('comfyUrl').blur();
+    if (res.ok) recentUrls(res.url);
+    state.status = null; state.paramsLoaded = null;          // models and workflow settings belong to the old server
+    await refreshStatus();
+    $('statusText').textContent = res.message;
+  } catch (e) { $('statusText').textContent = e.message; }
+}
+$('btnComfy').onclick = connectComfy;
+$('comfyUrl').onkeydown = e => { if (e.key === 'Enter') connectComfy(); };
+recentUrls();
 $('btnCancel').onclick = async () => { if (state.currentJob) await post('/api/job/' + state.currentJob + '/cancel', {}).catch(() => {}); };
 $('btnFree').onclick = async () => {
   try { await post('/api/free', {}); $('statusText').textContent = 'VRAM 비우기를 요청했습니다'; }
@@ -597,7 +622,6 @@ function updateContext() {
   $('tabBtnScenario').textContent = '시나리오' + (state.dir ? ' ✓' : '');
 }
 for (const [key, id] of Object.entries(TAB_BUTTONS)) $(id).onclick = () => showTab(key);
-for (const b of document.querySelectorAll('[data-go]')) b.onclick = () => showTab(b.dataset.go);
 
 // ---- library ----
 const lib = { workflow: '' };
