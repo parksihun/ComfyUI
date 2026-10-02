@@ -101,11 +101,11 @@
 <body>
 <header>
   <h1>ComfyUI-Manager</h1>
-  <span class="tabs"><button id="tabBtnImage" class="on">1 이미지</button><button id="tabBtnScenario">2 시나리오</button><button id="tabBtnVideo">3 영상</button><button id="tabBtnLibrary">보관함</button></span>
+  <span class="tabs"><button id="tabBtnImage" class="on">이미지</button><button id="tabBtnScenario">시나리오</button><button id="tabBtnVideo">영상</button><button id="tabBtnLibrary">보관함</button></span>
   <span class="status"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></span>
   <span class="spacer"></span>
   <span id="createButtons" style="display:flex;gap:10px">
-  <button id="btnAll" title="1 → 2 → 3단계를 현재 입력값으로 이어서 실행">1→3 한 번에 실행</button>
+  <button id="btnAll" title="이미지 → 시나리오 → 영상을 현재 입력값으로 이어서 실행">한 번에 실행</button>
   <button id="btnCancel" class="danger" disabled>중단</button>
   <button id="btnFree" class="sub" title="ComfyUI와 Qwen Chat이 잡고 있는 모델을 VRAM에서 내립니다">VRAM 비우기</button>
   </span>
@@ -113,7 +113,7 @@
 
 <main id="tabCreate">
   <section id="stepImage">
-    <h2>1. 이미지 생성 · 입력 <span>z-image turbo로 영상의 첫 프레임을 만듭니다 (또는 가지고 있는 이미지를 올립니다)</span></h2>
+    <h2>이미지 생성 · 입력 <span>z-image turbo로 영상의 첫 프레임을 만듭니다 (또는 가지고 있는 이미지를 올립니다)</span></h2>
     <div class="cols">
       <div>
         <label>이미지 프롬프트</label>
@@ -146,11 +146,11 @@
         <div class="gallery" id="gallery"></div>
       </div>
     </div>
-    <div class="actions nav"><span></span><button class="sub" data-go="scenario">다음: 2 시나리오 작성 →</button></div>
+    <div class="actions nav"><span></span><button class="sub" data-go="scenario">다음: 시나리오 작성 →</button></div>
   </section>
 
   <section id="stepScenario" hidden>
-    <h2>2. 시나리오 작성 <span>Qwen이 이미지를 보고 이어지는 영상을 구간별 프롬프트로 씁니다</span></h2>
+    <h2>시나리오 작성 <span>Qwen이 이미지를 보고 이어지는 영상을 구간별 프롬프트로 씁니다</span></h2>
     <div class="ctx" id="ctxScenario"></div>
     <div class="cols">
       <div>
@@ -200,11 +200,11 @@
         </div>
       </div>
     </div>
-    <div class="actions nav"><button class="sub" data-go="image">← 1 이미지</button><button class="sub" data-go="video">다음: 3 영상 제작 →</button></div>
+    <div class="actions nav"><button class="sub" data-go="image">← 이미지</button><button class="sub" data-go="video">다음: 영상 제작 →</button></div>
   </section>
 
   <section id="stepVideo" hidden>
-    <h2>3. 영상 제작 <span>시작 이미지와 구간 프롬프트를 Wan 2.2 워크플로우에 넣어 영상을 만듭니다</span></h2>
+    <h2>영상 제작 <span>시작 이미지와 구간 프롬프트를 Wan 2.2 워크플로우에 넣어 영상을 만듭니다</span></h2>
     <div class="ctx" id="ctxVideo"></div>
     <div class="row">
       <div style="flex:2">
@@ -228,7 +228,7 @@
     <div class="bar" id="videoBar" hidden><i></i></div>
     <div class="note" id="videoNotes" hidden></div>
     <div class="videos" id="videos"></div>
-    <div class="actions nav"><button class="sub" data-go="scenario">← 2 시나리오</button><span></span></div>
+    <div class="actions nav"><button class="sub" data-go="scenario">← 시나리오</button><span></span></div>
   </section>
 </main>
 
@@ -555,7 +555,7 @@ $('btnAll').onclick = () => {
     showTab('image'); await genImage();
     box = $('jobScenario'); showTab('scenario'); await genScenario();
     box = $('jobVideo'); showTab('video');
-    if (!$('scWarning').hidden) throw new Error('시나리오가 완전하지 않아 영상 단계로 넘어가지 않았습니다. 빈 구간을 채운 뒤 3단계를 실행하세요.');
+    if (!$('scWarning').hidden) throw new Error('시나리오가 완전하지 않아 영상 단계로 넘어가지 않았습니다. 빈 구간을 채운 뒤 영상 탭에서 실행하세요.');
     await genVideo();
   });
 };
@@ -589,12 +589,12 @@ function updateContext() {
     box.append(el('span', '', text));
   };
   const hasImage = !$('imgView').hidden;
-  strip('ctxScenario', hasImage, hasImage ? '시작 이미지: ' + $('imgInfo').textContent : "먼저 '1 이미지' 탭에서 이미지를 만들거나 올리세요.", $('imgView').src);
+  strip('ctxScenario', hasImage, hasImage ? '시작 이미지: ' + $('imgInfo').textContent : "먼저 '이미지' 탭에서 이미지를 만들거나 올리세요.", $('imgView').src);
   strip('ctxVideo', !!state.dir, state.dir ? '시나리오: output/' + state.dir + ' · 구간 ' + state.segCount + '개 (영상 생성을 누르면 지금 내용으로 저장한 뒤 실행합니다)'
-                                           : "먼저 '2 시나리오' 탭에서 시나리오를 만들거나 불러오세요.",
+                                           : "먼저 '시나리오' 탭에서 시나리오를 만들거나 불러오세요.",
         state.dir ? '/api/scenario/image?dir=' + encodeURIComponent(state.dir) : '');
-  $('tabBtnImage').textContent = '1 이미지' + (hasImage ? ' ✓' : '');
-  $('tabBtnScenario').textContent = '2 시나리오' + (state.dir ? ' ✓' : '');
+  $('tabBtnImage').textContent = '이미지' + (hasImage ? ' ✓' : '');
+  $('tabBtnScenario').textContent = '시나리오' + (state.dir ? ' ✓' : '');
 }
 for (const [key, id] of Object.entries(TAB_BUTTONS)) $(id).onclick = () => showTab(key);
 for (const b of document.querySelectorAll('[data-go]')) b.onclick = () => showTab(b.dataset.go);
