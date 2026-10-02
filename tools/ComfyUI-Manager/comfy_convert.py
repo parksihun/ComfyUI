@@ -39,7 +39,7 @@ def widget_names(info):
             opts = spec[1] if len(spec) > 1 and isinstance(spec[1], dict) else {}
             if opts.get("forceInput"):
                 continue
-            if not (isinstance(typ, list) or typ in WIDGET_TYPES):
+            if not (isinstance(typ, list) or typ in WIDGET_TYPES or opts.get("widgetType") in WIDGET_TYPES):
                 continue
             names.append(name)
             if opts.get("control_after_generate") or (typ == "INT" and name in ("seed", "noise_seed")):
@@ -71,7 +71,8 @@ def _has_widget(spec):
     typ, opts = spec[0], _options(spec)
     if opts.get("forceInput") or opts.get("hidden"):
         return False
-    return isinstance(typ, list) or typ in WIDGET_TYPES or typ == DYNAMIC_COMBO
+    # an input that takes several types ("FLOAT,INT", LTXVEmptyLatentAudio's frame_rate) names its widget in widgetType
+    return isinstance(typ, list) or typ in WIDGET_TYPES or typ == DYNAMIC_COMBO or opts.get("widgetType") in WIDGET_TYPES
 
 
 def _spec_default(spec):
