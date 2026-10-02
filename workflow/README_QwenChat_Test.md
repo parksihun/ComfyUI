@@ -98,7 +98,7 @@ Qwen Chat(ComfyUI-QwenVL-Mod의 사이드바 채팅)이 **시작 이미지를 �
 
 채팅 없이 Queue로 같은 일을 하려면 `7_Qwen_Image_to_VideoPrompts` 워크플로우를 쓰면 됩니다 (같은 GGUF 모델을 직접 부르고 지시문이 노드에 들어 있습니다).
 
-## 6. 웹 프로그램(tools/video_webapp)의 시나리오 지시문
+## 6. 웹 프로그램(tools/ComfyUI-Manager)의 시나리오 지시문
 
 웹 프로그램에서 분석 방법을 `Qwen Chat`으로 고르면 아래 지시문과 이미지를 Qwen Chat에 보내고, 답을 구간 6개로 읽습니다 (기본값인 `Qwen GGUF 직접 호출`은 채팅을 거치지 않습니다). 여기서 같은 모델로 미리 보내 보면 그 모델이 형식을 지키는지 알 수 있습니다.
 

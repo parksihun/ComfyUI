@@ -1,10 +1,13 @@
-"""Video web app: z-image turbo image -> Qwen scenario (N prompts) -> Wan 2.2 SVI video.
+"""ComfyUI-Manager (this repo's tool, not the node-pack manager): make and keep track of images and videos.
 
-A small aiohttp server with a one-page UI. It does not generate anything itself: every step is queued on a
-running ComfyUI through its HTTP API (/prompt, /history, /view, /upload/image, /free, /ws), so it only needs
-the packages ComfyUI already ships (aiohttp, Pillow) and works on the offline server.
+Create: z-image turbo image -> Qwen scenario (N prompts) -> Wan 2.2 video. Nothing is generated here; every
+step is queued on a running ComfyUI through its HTTP API (/prompt, /history, /view, /upload/image, /free, /ws).
+Library: lists the output folder and shows, for any image or video, the workflow and prompts it was made with
+(read from the metadata ComfyUI embeds in the file); works without ComfyUI running.
 
-    python_embeded\\python.exe tools\\video_webapp\\app.py [--port 8288] [--comfy http://127.0.0.1:8188]
+A small aiohttp server with a one-page UI; it only needs packages ComfyUI already ships (aiohttp, Pillow, PyAV).
+
+    python_embeded\\python.exe tools\\ComfyUI-Manager\\app.py [--port 8288] [--comfy http://127.0.0.1:8188]
 """
 import argparse
 import asyncio
@@ -20,18 +23,21 @@ import sys
 import time
 import uuid
 import webbrowser
+from urllib.parse import quote, unquote
 
 import aiohttp
+import av
 from aiohttp import web
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)      # python_embeded does not put the script's folder on sys.path
 import comfy_convert  # noqa: E402
+import library  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(HERE))
 TEMPLATES = os.path.join(HERE, "templates")
-log = logging.getLogger("video_webapp")
+log = logging.getLogger("comfyui_manager")
 
 DEFAULT_CONFIG = {
     "host": "0.0.0.0",
@@ -207,7 +213,7 @@ def build_scenario_doc(parsed, n, seconds, width, height, direction, image_ref):
                     "label": f"{_fmt_time(start)} - {_fmt_time(end)}",
                     "positive_prompt": sg["positive_prompt"], "motion": "", "camera": "", "scene_ko": sg.get("scene_ko", "")})
     return {
-        "source": "video_webapp", "video_file": "", "image_file": "reference.png", "image_ref": image_ref,
+        "source": "comfyui_manager", "video_file": "", "image_file": "reference.png", "image_ref": image_ref,
         "direction": direction, "duration": round(n * seconds, 3), "width": width, "height": height,
         "segment_length": seconds, "fps": 16,
         "summary_ko": parsed.get("summary_ko", ""), "common_prompt": parsed.get("common_prompt", ""),
@@ -359,6 +365,8 @@ class App:
         self._svi_cache = None
         self._chat_models = (0, None)
         self._combos = {}
+        self.library = library.Library(self.output_dir, os.path.join(HERE, "data"),
+                                       library.Catalogue(os.path.join(ROOT, "workflow"), TEMPLATES))
 
     # ---- helpers -----------------------------------------------------------------------------
     def path(self, rel):
@@ -939,6 +947,99 @@ async def api_video_info(request):
     return web.json_response(await request.app["app"].video_info(request.query.get("backend", "svi")))
 
 
+# ---- library ---------------------------------------------------------------------------------------
+def _library(request):
+    return request.app["app"].library
+
+
+async def api_library(request):
+    lib, q = _library(request), request.query
+    await asyncio.to_thread(lib.scan)
+    rows, workflows = lib.listing(q.get("sort", "new"), q.get("workflow", ""), q.get("q", ""), q.get("kind", ""),
+                                  q.get("sidecars") == "1")
+    return web.json_response({"items": rows[:1000], "total": len(rows), "workflows": workflows, "folder": lib.roots["output"]})
+
+
+async def api_library_item(request):
+    lib, ref = _library(request), request.query.get("ref", "")
+    try:
+        full = lib.resolve(ref)
+        info = await asyncio.to_thread(library.describe, full, lib.catalogue)
+    except ValueError as e:
+        raise AppError(str(e))
+    stat = os.stat(full)
+    info.pop("types")
+    info.update(ref=ref, name=os.path.basename(full), path=full, size=stat.st_size, mtime=stat.st_mtime,
+                kind="video" if full.lower().endswith(library.VIDEO_EXT) else "image")
+    return web.json_response(info)
+
+
+async def api_library_file(request):
+    try:
+        full = _library(request).resolve(request.query.get("ref", ""))
+    except ValueError as e:
+        return json_error(str(e), 404)
+    return web.FileResponse(full)
+
+
+async def api_library_thumb(request):
+    lib = _library(request)
+    try:
+        path = await asyncio.to_thread(lib.thumbnail, request.query.get("ref", ""))
+    except (ValueError, OSError, StopIteration, av.FFmpegError) as e:
+        return json_error(str(e), 404)
+    return web.FileResponse(path, headers={"Cache-Control": "max-age=86400"})
+
+
+async def api_library_workflow(request):
+    """The workflow embedded in the file, as a download ComfyUI can open."""
+    lib, ref = _library(request), request.query.get("ref", "")
+    try:
+        workflow = await asyncio.to_thread(lib.embedded_workflow, ref)
+    except ValueError as e:
+        return json_error(str(e), 404)
+    if workflow is None:
+        return json_error("이 파일에는 워크플로우가 들어 있지 않습니다", 404)
+    name = os.path.splitext(os.path.basename(ref.partition(":")[2]))[0] + ".json"
+    return web.Response(text=json.dumps(workflow, ensure_ascii=False), content_type="application/json",
+                        headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(name)})
+
+
+async def api_library_save_workflow(request):
+    """Write the embedded workflow into workflow/ so ComfyUI lists it under a real name."""
+    lib, body = _library(request), await request.json()
+    try:
+        workflow = await asyncio.to_thread(lib.embedded_workflow, body.get("ref", ""))
+    except ValueError as e:
+        raise AppError(str(e))
+    if workflow is None:
+        raise AppError("이 파일에는 워크플로우가 들어 있지 않습니다")
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "", body.get("name") or "").strip().strip(".")
+    if not name:
+        raise AppError("저장할 이름을 입력하세요")
+    folder = os.path.join(ROOT, "workflow")
+    path = os.path.join(folder, name + ".json")
+    if os.path.exists(path):
+        raise AppError(f"workflow 폴더에 같은 이름이 이미 있습니다: {name}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(workflow, f, ensure_ascii=False)
+    return web.json_response({"saved": path, "name": name})
+
+
+async def api_inspect(request):
+    """A file dropped on the page: keep a copy under data/dropped and describe it like a library item."""
+    lib = _library(request)
+    field = await (await request.multipart()).next()
+    if field is None or field.name != "file":
+        return json_error("file 필드가 없습니다")
+    data = bytes(await field.read())
+    try:
+        ref = lib.add_dropped(field.filename or "file", data)
+    except ValueError as e:
+        raise AppError(str(e))
+    return web.json_response({"ref": ref, "name": unquote(field.filename or "")})
+
+
 async def _proxy(request, path, params):
     app = request.app["app"]
     headers = {"Range": request.headers["Range"]} if "Range" in request.headers else {}
@@ -995,7 +1096,7 @@ def load_config():
 
 
 def make_app(cfg):
-    web_app = web.Application(middlewares=[errors], client_max_size=64 * 1024 * 1024)
+    web_app = web.Application(middlewares=[errors], client_max_size=4 * 1024 ** 3)      # dropped videos can be large
     web_app["app"] = App(cfg)
     web_app.add_routes([
         web.get("/", index),
@@ -1011,6 +1112,13 @@ def make_app(cfg):
         web.get("/api/scenario/image", api_scenario_image),
         web.get("/api/video/info", api_video_info),
         web.get("/api/view", api_view),
+        web.get("/api/library", api_library),
+        web.get("/api/library/item", api_library_item),
+        web.get("/api/library/file", api_library_file),
+        web.get("/api/library/thumb", api_library_thumb),
+        web.get("/api/library/workflow", api_library_workflow),
+        web.post("/api/library/save_workflow", api_library_save_workflow),
+        web.post("/api/inspect", api_inspect),
     ])
     web_app.on_startup.append(on_startup)
     web_app.on_cleanup.append(on_cleanup)
@@ -1021,5 +1129,5 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     config = load_config()
     shown = "127.0.0.1" if config["host"] in ("0.0.0.0", "::") else config["host"]
-    print(f"\n  Video web app:  http://{shown}:{config['port']}\n  ComfyUI:        {config['comfy_url']}\n")
+    print(f"\n  ComfyUI-Manager:  http://{shown}:{config['port']}\n  ComfyUI:          {config['comfy_url']}\n")
     web.run_app(make_app(config), host=config["host"], port=config["port"], print=None)

@@ -995,8 +995,8 @@ README_CHAT_TESTS = (
 
 
 def _webapp():
-    """tools/video_webapp/app.py: the scenario instructions live there (loaded by path, ComfyUI has its own `app` package)."""
-    spec = importlib.util.spec_from_file_location("video_webapp_app", os.path.join(ROOT, "tools", "video_webapp", "app.py"))
+    """tools/ComfyUI-Manager/app.py: the scenario instructions live there (loaded by path, ComfyUI has its own `app` package)."""
+    spec = importlib.util.spec_from_file_location("comfyui_manager_app", os.path.join(ROOT, "tools", "ComfyUI-Manager", "app.py"))
     webapp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(webapp)
     return webapp
@@ -1005,7 +1005,7 @@ def _webapp():
 def _readme_chat_scenario():
     instruction = _webapp().SCENARIO_CHAT.format(n=6, s=5.0, direction="")
     return (
-        "## 6. 웹 프로그램(tools/video_webapp)의 시나리오 지시문\n\n"
+        "## 6. 웹 프로그램(tools/ComfyUI-Manager)의 시나리오 지시문\n\n"
         "웹 프로그램에서 분석 방법을 `Qwen Chat`으로 고르면 아래 지시문과 이미지를 Qwen Chat에 보내고, 답을 구간 6개로 읽습니다 (기본값인 `Qwen GGUF 직접 호출`은 채팅을 거치지 않습니다). "
         "여기서 같은 모델로 미리 보내 보면 그 모델이 형식을 지키는지 알 수 있습니다.\n\n"
         "Clear로 대화를 지우고, 아래 지시문을 그대로 붙여 보냅니다.\n\n"
@@ -1068,7 +1068,7 @@ NOTE_GGUF_PROMPTS = (
     "- seed가 randomize라 Queue마다 다른 시나리오가 나옵니다\n\n"
     "**필요한 것**: ComfyUI-QwenVL-Mod (모델 로더를 빌려 씁니다), `model\\LLM\\GGUF\\…`의 GGUF 모델과 mmproj 파일.\n"
     "실행이 끝나면 모델은 VRAM에서 내려갑니다 (`keep_model_loaded`를 켜면 유지).\n\n"
-    "웹 프로그램(tools/video_webapp)의 분석 방법 `Qwen GGUF 직접 호출`이 이 노드와 같은 지시문을 씁니다."
+    "웹 프로그램(tools/ComfyUI-Manager)의 분석 방법 `Qwen GGUF 직접 호출`이 이 노드와 같은 지시문을 씁니다."
 )
 
 

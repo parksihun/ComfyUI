@@ -33,3 +33,5 @@ custom_nodes/ComfyUI-Frame-Interpolation/*.gif
 
 __pycache__/
 *.pyc
+# index, thumbnails and dropped files of tools/ComfyUI-Manager
+tools/*/data/

@@ -27,8 +27,9 @@ ComfyUI-Easy-Install 폴더 안에서 **우리가 만든 것만** 추적하는 �
 ├── custom_nodes/ComfyUI-Frame-Interpolation/ (외부) RIFE VFI + ckpts/rife/rife49.pth
 ├── custom_nodes/ComfyUI-Custom-Scripts/ (외부) pysssss Math Expression 등
 ├── tools/build_shorts_workflows.py      0_~4_ 워크플로우 JSON 생성 스크립트
-├── tools/video_webapp/                  영상 생성 웹 프로그램: z-image 이미지 → Qwen 시나리오 6개 → Wan 2.2 SVI 영상
-│                                        (ComfyUI API 연동, Start_Video_WebApp.bat으로 실행, 설명은 폴더 안 README.md)
+├── tools/ComfyUI-Manager/               이미지·영상 생성 관리 웹 프로그램 (Start_ComfyUI_Manager.bat, 설명은 폴더 안 README.md)
+│                                        생성: z-image 이미지 → Qwen 시나리오 6개 → Wan 2.2 영상 (ComfyUI API 연동)
+│                                        보관함: output 폴더의 파일마다 만든 워크플로우와 프롬프트 표시, 워크플로우별 정렬
 ├── Setup_Folders.bat                    폴더 생성 + workflow/custom_nodes 정션 (새 PC에서 한 번, extra_model_paths.yaml과 함께)
 ├── Install_Python_Packages.bat          워크플로우용 추가 파이썬 패키지 (yt-dlp 등, 인터넷 필요)
 ├── Start_ComfyUI_L40S.bat               GPU 서버(L40S) 실행 스크립트 (SageAttention, 외부 접속, 오프라인 설정 포함)
