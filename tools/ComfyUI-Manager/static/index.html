@@ -112,8 +112,14 @@
   .star.on { color:var(--warn); }
   .card .pick { position:absolute; right:6px; bottom:6px; width:20px; height:20px; margin:0; cursor:pointer; accent-color:var(--accent); }
   .card.picked { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .card.aimed { border-color:var(--bad); box-shadow:0 0 0 1px var(--bad); }
+  #cardMenu { position:fixed; z-index:25; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.55); }
+  #cardMenu button { display:block; white-space:nowrap; }
   .pickbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; padding:8px 10px; background:#18263a; border:1px solid var(--accent); border-radius:8px; font-size:13px; }
-  .card .fav { position:absolute; right:6px; top:4px; color:var(--warn); font-size:16px; text-shadow:0 0 3px #000; }
+  .card { user-select:none; }
+  .card .fav { position:absolute; right:0; top:0; background:transparent; color:#fff; opacity:.5; padding:4px 7px; font-size:19px; line-height:1; font-weight:normal; text-shadow:0 0 3px #000; }
+  .card:hover .fav, .card .fav.on { opacity:1; }
+  .card .fav.on { color:var(--warn); }
   .card .meta .tags { display:block; color:var(--warn); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .links { display:flex; flex-direction:column; gap:3px; margin-top:6px; font-size:13px; }
   .links span { color:var(--dim); }
@@ -156,7 +162,7 @@
 <body>
 <aside>
   <h1>ComfyUI-Manager</h1>
-  <nav class="menu"><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuScenarios">시나리오</button><button id="menuLibrary">보관함</button></nav>
+  <nav class="menu"><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuScenarios">시나리오</button><button id="menuLibrary">보관함</button><button id="menuInspect">파일 확인</button></nav>
 </aside>
 
 <div class="content">
@@ -352,17 +358,11 @@
 
 <main id="tabLibrary" hidden>
   <section>
-    <h2>파일 확인 <span>이미지나 영상을 넣으면 그것을 만든 워크플로우와 프롬프트를 보여 줍니다</span></h2>
-    <div class="drop" id="dropArea">이미지나 영상 파일을 여기에 끌어다 놓으세요 &nbsp;
-      <button class="sub" id="btnPick">파일 선택</button><input type="file" id="pickFile" accept="image/*,video/*,.mkv" hidden></div>
-    <div class="job" id="dropInfo"></div>
-  </section>
-  <section>
     <h2>보관함 <span id="libFolder"></span></h2>
     <div class="row">
       <div><label>정렬</label>
         <select id="libSort"><option value="new">최신순</option><option value="old">오래된순</option>
-          <option value="workflow">워크플로우별</option><option value="name">이름순</option></select></div>
+          <option value="fav">즐겨찾기 먼저</option><option value="workflow">워크플로우별</option><option value="name">이름순</option></select></div>
       <div><label>종류</label>
         <select id="libKind"><option value="">전체</option><option value="video">영상</option><option value="image">이미지</option></select></div>
       <div style="flex:2"><label>프롬프트 / 파일명 검색</label><input type="text" id="libSearch" placeholder="예: cafe, walking"></div>
@@ -372,16 +372,18 @@
     </div>
     <div class="chips" id="wfChips"></div>
     <div class="chips" id="tagChips" style="margin-top:6px"></div>
-    <div class="hint" id="libInfo"></div>
-    <div class="pickbar" id="pickBar" hidden>
-      <b id="pickCount"></b>
-      <button class="sub" id="pickAll">보이는 것 전체 선택</button>
-      <button class="sub" id="pickNone">선택 해제</button>
-      <span class="spacer"></span>
-      <span id="pickInfo"></span>
-      <button class="danger" id="pickDelete" title="선택한 파일을 서버 결과 폴더에서 지웁니다. 되돌릴 수 없습니다">선택한 파일 삭제</button>
-    </div>
+    <div class="hint"><span id="libInfo"></span><span id="pickInfo"></span></div>
+    <div class="job err" id="libOpenInfo" hidden></div>
     <div class="grid" id="libGrid"></div>
+  </section>
+</main>
+
+<main id="tabInspect" hidden>
+  <section>
+    <h2>파일 확인 <span>이미지나 영상을 넣으면 그것을 만든 워크플로우와 프롬프트를 보여 줍니다</span></h2>
+    <div class="drop" id="dropArea">이미지나 영상 파일을 여기에 끌어다 놓으세요 &nbsp;
+      <button class="sub" id="btnPick">파일 선택</button><input type="file" id="pickFile" accept="image/*,video/*,.mkv" hidden></div>
+    <div class="job" id="dropInfo"></div>
   </section>
 </main>
 </div>
@@ -434,12 +436,17 @@
   </div>
 </div>
 
+<div id="cardMenu" hidden><button class="danger" id="cmDelete"></button></div>
+
 <div id="viewer" hidden>
   <div class="sheet">
     <div class="media" id="dMedia"></div>
     <div>
       <div class="actions" style="margin-top:0;justify-content:space-between">
-        <b id="dName" style="word-break:break-all"></b><button class="sub" id="dClose">닫기</button></div>
+        <b id="dName" style="word-break:break-all"></b>
+        <span style="display:flex;gap:6px;flex:none">
+          <button class="sub" id="dPrev" title="보관함 목록의 앞 파일 (←)">‹ 이전</button><button class="sub" id="dNext" title="보관함 목록의 다음 파일 (→)">다음 ›</button>
+          <button class="sub" id="dClose" title="Esc">닫기</button></span></div>
       <div class="actions">
         <button id="dUse" title="영상: 이 영상의 구간 프롬프트와 시작 이미지로 새 시나리오를 만들고 같은 워크플로우를 골라 새 작업을 엽니다. 이미지: 시작 이미지와 프롬프트로 넣습니다">새 작업에서 사용</button>
         <span class="hint" id="dUseHint" style="margin:0"></span>
@@ -447,7 +454,7 @@
       <div class="actions" id="dFileActions">
         <input type="text" id="dNewName" style="flex:1;width:auto;min-width:160px" placeholder="새 파일 이름" title="확장자는 그대로 둡니다">
         <button class="sub" id="dRename">이름 변경</button>
-        <button class="danger" id="dDelete" title="서버 결과 폴더에서 파일을 지웁니다. 되돌릴 수 없습니다">삭제</button>
+        <button class="danger" id="dDelete" title="서버 결과 폴더에서 파일을 지웁니다. 되돌릴 수 없습니다 (Delete 키)">삭제</button>
       </div>
       <div class="job" id="dFileInfo"></div>
       <div id="dMarkBox">
@@ -1024,14 +1031,15 @@ $('btnFree').onclick = async () => {
   catch (e) { setInfo(e.message, 'err'); }
   setTimeout(refreshStatus, 2500);
 };
-// ---- menu (새 작업 / 작업 이력 / 보관함) and the step tabs of 새 작업 ----
+// ---- menu (새 작업 / 작업 이력 / 시나리오 / 보관함 / 파일 확인) and the step tabs of 새 작업 ----
 const STEPS = { image: 'stepImage', scenario: 'stepScenario', video: 'stepVideo' };
 const TAB_BUTTONS = { image: 'tabBtnImage', scenario: 'tabBtnScenario', video: 'tabBtnVideo' };
 function showTab(name) {
-  if (name !== 'library' && name !== 'history' && name !== 'scenarios' && !STEPS[name]) name = 'image';
+  if (name !== 'library' && name !== 'inspect' && name !== 'history' && name !== 'scenarios' && !STEPS[name]) name = 'image';
   const create = !!STEPS[name];
   $('tabCreate').hidden = $('stepTabs').hidden = $('createButtons').hidden = !create;
   $('tabHistory').hidden = name !== 'history'; $('tabLibrary').hidden = name !== 'library'; $('tabScenarios').hidden = name !== 'scenarios';
+  $('tabInspect').hidden = name !== 'inspect'; $('menuInspect').classList.toggle('on', name === 'inspect');
   $('menuScenarios').classList.toggle('on', name === 'scenarios');
   // a recorded work opened into the steps belongs to 작업 이력
   $('menuCreate').classList.toggle('on', create && !state.work);
@@ -1055,6 +1063,7 @@ $('menuCreate').onclick = () => {      // back to the step it was left at; from 
 };
 $('menuHistory').onclick = () => showTab('history');
 $('menuLibrary').onclick = () => showTab('library');
+$('menuInspect').onclick = () => showTab('inspect');
 $('menuScenarios').onclick = () => showTab('scenarios');
 // What the next step will work with, shown at the top of steps 2 and 3.
 function updateContext() {
@@ -1258,7 +1267,7 @@ $('svClose').onclick = () => { $('scnViewer').hidden = true; };
 $('scnViewer').onclick = e => { if (e.target === $('scnViewer')) $('svClose').onclick(); };
 
 // ---- library ----
-const lib = { workflow: '', tag: '' };
+const lib = { workflow: '', tag: '', order: [], viewing: null };      // order: the files of the list as shown; viewing: the one open in the viewer
 const refUrl = (kind, ref) => '/api/library/' + kind + '?ref=' + encodeURIComponent(ref);
 const fmtDate = t => new Date(t * 1000).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
@@ -1271,32 +1280,61 @@ function setPicked(card, on) {
   card.classList.toggle('picked', on); card.querySelector('.pick').checked = on;
   if (on) picked.add(card.dataset.ref); else picked.delete(card.dataset.ref);
 }
-function showPicked() {
-  $('pickBar').hidden = !picked.size;
-  $('pickCount').textContent = picked.size + '개 선택';
-  $('pickDelete').textContent = '선택한 파일 삭제'; $('pickInfo').textContent = ''; $('pickInfo').style.color = '';
+function pickTo(card, on, range) {      // range: everything from the last one picked up to this one
+  const cards = [...$('libGrid').querySelectorAll('.card')], here = cards.indexOf(card);
+  const from = range && lastPick != null ? Math.min(lastPick, here) : here, to = range && lastPick != null ? Math.max(lastPick, here) : here;
+  for (const c of cards.slice(from, to + 1)) setPicked(c, on);
+  lastPick = here; showPicked();
 }
-$('pickAll').onclick = () => { for (const c of $('libGrid').querySelectorAll('.card')) setPicked(c, true); showPicked(); };
-$('pickNone').onclick = () => { picked.clear(); for (const c of $('libGrid').querySelectorAll('.card')) setPicked(c, false); showPicked(); };
-$('pickDelete').onclick = async () => {
-  const b = $('pickDelete'), info = $('pickInfo');
-  if (b.textContent === '선택한 파일 삭제') {      // first click asks, the second one deletes
-    b.textContent = '정말 삭제 (' + picked.size + '개, 되돌릴 수 없음)';
-    info.style.color = ''; info.textContent = '영상은 미리보기 PNG도 함께 지웁니다. 한 번 더 누르면 삭제합니다.';
-    return;
-  }
-  b.disabled = true; info.textContent = '삭제하는 중…';
+function showPicked() {      // how many are picked goes on the line of the count, so the list does not move
+  $('pickInfo').style.color = 'var(--accent)';
+  $('pickInfo').textContent = picked.size ? ' · ' + picked.size + '개 선택 (우클릭이나 Delete로 삭제, Ctrl+A로 전체 선택, Esc로 해제)' : '';
+}
+function pickAll(on) {
+  if (!on) picked.clear();
+  for (const c of $('libGrid').querySelectorAll('.card')) setPicked(c, on);
+  showPicked();
+}
+
+// ---- the delete button: under the pointer on a right click on a file of the list (on a picked file it deletes everything picked),
+// ---- on a picked file when Delete is pressed ----
+let aimed = [];
+function hideCardMenu() {
+  $('cardMenu').hidden = true;
+  for (const c of $('libGrid').querySelectorAll('.card.aimed')) c.classList.remove('aimed');
+}
+function aimAt(refs, x, y) {
+  hideCardMenu(); aimed = refs;
+  for (const c of $('libGrid').querySelectorAll('.card')) c.classList.toggle('aimed', aimed.includes(c.dataset.ref));
+  $('cmDelete').textContent = (aimed.length > 1 ? '선택한 ' + aimed.length + '개 삭제' : '삭제') + ' (되돌릴 수 없음)';
+  const m = $('cardMenu'); m.hidden = false;
+  m.style.left = Math.max(4, Math.min(x - 14, innerWidth - m.offsetWidth - 4)) + 'px';
+  m.style.top = Math.max(4, Math.min(y - 14, innerHeight - m.offsetHeight - 4)) + 'px';
+}
+function cardMenu(e, card) {
+  e.preventDefault(); e.stopPropagation();
+  aimAt(picked.has(card.dataset.ref) ? [...picked] : [card.dataset.ref], e.clientX, e.clientY);
+}
+function aimAtPicked() {      // on a picked file that is on the screen, or in the middle when they are all scrolled away
+  const box = [...$('libGrid').querySelectorAll('.card.picked')].map(c => c.getBoundingClientRect()).find(r => r.bottom > 40 && r.top < innerHeight - 40);
+  aimAt([...picked], box ? box.left + box.width / 2 : innerWidth / 2, box ? box.top + box.width / 2 : innerHeight / 2);
+}
+$('cmDelete').onclick = async () => {
+  const refs = aimed; hideCardMenu();
   try {
-    const res = await post('/api/library/delete', { refs: [...picked] });
-    picked.clear(); for (const f of res.failed) picked.add(f.ref);      // what could not be deleted stays picked
+    const res = await post('/api/library/delete', { refs });
+    for (const r of refs) picked.delete(r);
+    for (const f of res.failed) picked.add(f.ref);      // what could not be deleted is left picked
     await loadLibrary();
-    if (res.failed.length) { info.style.color = 'var(--bad)'; info.textContent = res.failed.length + '개는 지우지 못했습니다: ' + res.failed[0].error; }
-  } catch (e) { info.style.color = 'var(--bad)'; info.textContent = e.message; }
-  b.disabled = false;
+    if (res.failed.length) { $('pickInfo').style.color = 'var(--bad)'; $('pickInfo').textContent = ' · ' + res.failed.length + '개는 지우지 못해 선택된 채로 남았습니다: ' + res.failed[0].error; }
+  } catch (e) { $('libInfo').textContent = e.message; }
 };
+document.addEventListener('click', e => { if (!e.target.closest('#cardMenu')) hideCardMenu(); }, true);
+document.addEventListener('contextmenu', hideCardMenu, true);
+window.addEventListener('scroll', hideCardMenu, true);
 
 async function loadLibrary() {
-  const q = new URLSearchParams({ sort: $('libSort').value, kind: $('libKind').value, q: $('libSearch').value,
+  const q =new URLSearchParams({ sort: $('libSort').value, kind: $('libKind').value, q: $('libSearch').value,
                                   workflow: lib.workflow, sidecars: $('libSidecars').checked ? '1' : '',
                                   fav: $('libFav').checked ? '1' : '', tag: lib.tag });
   $('libInfo').textContent = '폴더를 읽는 중… (처음에는 파일마다 정보를 읽어서 시간이 걸립니다)';
@@ -1323,7 +1361,8 @@ async function loadLibrary() {
   $('libInfo').textContent = res.total ? res.total + '개' + (res.total > res.items.length ? ' (앞의 ' + res.items.length + '개만 표시)' : '')
                                        : '표시할 파일이 없습니다.';
   const grid = $('libGrid'); grid.innerHTML = '';
-  const shown = new Set(res.items.map(it => it.ref));      // a file that left the list (filter, deleted) is no longer picked
+  lib.order = res.items.map(it => it.ref);
+  const shown = new Set(lib.order);      // a file that left the list (filter, deleted) is no longer picked
   for (const ref of [...picked]) if (!shown.has(ref)) picked.delete(ref);
   lastPick = null;
   let group = null;
@@ -1336,23 +1375,33 @@ async function loadLibrary() {
     img.loading = 'lazy'; img.src = refUrl('thumb', it.ref); img.alt = '';
     pic.append(img);
     if (it.kind === 'video') pic.append(el('span', 'tag', '영상' + (it.duration ? ' ' + Math.round(it.duration) + '초' : '')));
-    if (it.favorite) pic.append(el('span', 'fav', '★'));
+    // the star at the corner makes the file a favourite without opening it; the list is sorted again when it is next loaded
+    const fav = el('button', 'fav'); fav.title = '즐겨찾기';
+    const star = on => { fav.textContent = on ? '★' : '☆'; fav.classList.toggle('on', on); };
+    star(it.favorite);
+    fav.onclick = async e => {
+      e.stopPropagation();
+      try { it.favorite = (await post('/api/library/mark', { ref: it.ref, favorite: !it.favorite })).favorite; star(it.favorite); }
+      catch (err) { $('libInfo').textContent = err.message; }
+    };
+    pic.append(fav);
     meta.append(el('b', '', it.name), el('span', 'wf', it.workflow),
                 el('span', 'dim', fmtDate(it.mtime) + (it.width ? ' · ' + it.width + '×' + it.height : '') + (it.has_job ? ' · 작업 이력' : '')));
     if (it.tags.length) meta.append(el('span', 'tags', it.tags.map(t => '#' + t).join(' ')));
     card.title = it.snippet || (it.generated ? '프롬프트가 실행 중에 만들어진 파일' : '');
-    // the box at the corner picks the file for deleting several at once; Shift picks everything up to the last one
-    const pick = el('input', 'pick'); pick.type = 'checkbox'; pick.title = '선택 (Shift를 누르고 누르면 여기까지 한꺼번에)';
+    // picking files to delete several at once: the box at the corner, or Ctrl / Shift + click anywhere on the card;
+    // while any is picked a plain click picks too. Shift picks everything up to the last one
+    const pick = el('input', 'pick'); pick.type = 'checkbox'; pick.title = '선택 (Ctrl을 누르고 파일을 눌러도 됩니다. Shift를 누르고 누르면 여기까지 한꺼번에)';
     pick.checked = picked.has(it.ref); card.classList.toggle('picked', pick.checked); card.dataset.ref = it.ref;
-    pick.onclick = e => {
-      e.stopPropagation();
-      const cards = [...grid.querySelectorAll('.card')], here = cards.indexOf(card);
-      const from = e.shiftKey && lastPick != null ? Math.min(lastPick, here) : here, to = e.shiftKey && lastPick != null ? Math.max(lastPick, here) : here;
-      for (const c of cards.slice(from, to + 1)) setPicked(c, pick.checked);
-      lastPick = here; showPicked();
-    };
+    pick.onclick = e => { e.stopPropagation(); pickTo(card, pick.checked, e.shiftKey); };
     pic.append(pick);
-    card.append(pic, meta); card.onclick = () => openDetail(it.ref);
+    card.append(pic, meta);
+    card.onclick = e => {
+      const range = e.shiftKey && lastPick != null;
+      if (e.ctrlKey || e.metaKey || e.shiftKey || picked.size) pickTo(card, range || !picked.has(it.ref), range);
+      else openDetail(it.ref);
+    };
+    card.oncontextmenu = e => cardMenu(e, card);
     grid.append(card);
   }
   showPicked();
@@ -1378,9 +1427,16 @@ function promptBox(p, neg) {
 async function openDetail(ref, shownName) {
   let d;
   try { d = await api(refUrl('item', ref)); }
-  catch (e) { const box = $('tabHistory').hidden ? $('dropInfo') : $('histInfo'); box.className = 'job err'; box.textContent = e.message; return; }
+  catch (e) {      // said where the file was opened from: the records, the checked file, the library list
+    const box = !$('tabHistory').hidden ? $('histInfo') : !$('tabInspect').hidden ? $('dropInfo') : $('libOpenInfo');
+    box.hidden = false; box.className = 'job err'; box.textContent = e.message; return;
+  }
+  $('libOpenInfo').hidden = true;
   if (shownName) d.name = shownName;      // a dropped file is stored under a hash
   $('dName').textContent = d.name;
+  lib.viewing = ref;      // ‹ › go through the files of the library list
+  const at = $('tabLibrary').hidden ? -1 : lib.order.indexOf(ref);
+  $('dPrev').disabled = at <= 0; $('dNext').disabled = at < 0 || at >= lib.order.length - 1;
   // favourite, tags, note and the job that made it: what the store keeps about a file of the output folder
   $('dMarkBox').hidden = !d.mark; $('dJobBox').hidden = !d.job;
   if (d.mark) {
@@ -1411,13 +1467,14 @@ async function openDetail(ref, shownName) {
   const info = $('dFileInfo'); info.className = 'job'; info.textContent = '';
   $('dFileActions').style.display = ref.startsWith('output:') ? 'flex' : 'none';
   $('dNewName').value = d.name.replace(/\.\w+$/, '');
-  $('dDelete').textContent = '삭제';
+  $('dDelete').textContent = '삭제'; $('dDelete').disabled = false;
   const change = async (path, body, done) => {
     $('dMedia').innerHTML = ''; await sleep(300);      // a file that is still being played cannot be renamed or removed
     try { await done(await post(path, body)); if (!$('tabLibrary').hidden) loadLibrary(); }
     catch (e) { await openDetail(ref); $('dFileInfo').className = 'job err'; $('dFileInfo').textContent = e.message; }
   };
   $('dRename').onclick = () => change('/api/library/rename', { ref, name: $('dNewName').value }, async r => {
+    if (at >= 0) lib.order[at] = r.ref;
     await openDetail(r.ref); $('dFileInfo').className = 'job ok'; $('dFileInfo').textContent = r.name + ' (으)로 바꿨습니다';
   });
   $('dNewName').onkeydown = e => { if (e.key === 'Enter') $('dRename').onclick(); };
@@ -1427,7 +1484,15 @@ async function openDetail(ref, shownName) {
       info.className = 'job'; info.textContent = d.kind === 'video' ? '영상과 그 미리보기 PNG를 서버 결과 폴더에서 지웁니다. 한 번 더 누르면 삭제합니다.' : '서버 결과 폴더에서 파일을 지웁니다. 한 번 더 누르면 삭제합니다.';
       return;
     }
-    change('/api/library/delete', { ref }, async () => { $('dClose').onclick(); });
+    // the file after it in the list is shown next (not the preview PNG that is deleted with a video)
+    const stem = r => r.replace(/\.\w+$/, '').toLowerCase();
+    const rest = at < 0 ? [] : lib.order.slice(at + 1).concat(lib.order.slice(0, at).reverse()).filter(r => stem(r) !== stem(ref));
+    $('dDelete').disabled = true;
+    change('/api/library/delete', { ref }, async () => {
+      lib.order = lib.order.filter(r => stem(r) !== stem(ref));
+      if (!rest.length) return $('dClose').onclick();
+      await openDetail(rest[0]); $('dFileInfo').className = 'job ok'; $('dFileInfo').textContent = d.name + ' 을(를) 지웠습니다. 목록의 다음 파일입니다.';
+    });
   };
   const media = $('dMedia'); media.innerHTML = '';
   const m = el(d.kind === 'video' ? 'video' : 'img'); m.src = refUrl('file', ref);
@@ -1486,6 +1551,35 @@ async function openDetail(ref, shownName) {
 }
 $('dClose').onclick = () => { $('viewer').hidden = true; $('dMedia').innerHTML = ''; };
 $('viewer').onclick = e => { if (e.target === $('viewer')) $('dClose').onclick(); };
+const stepDetail = by => { const next = lib.order[lib.order.indexOf(lib.viewing) + by]; if (next) openDetail(next); };
+$('dPrev').onclick = () => stepDetail(-1);
+$('dNext').onclick = () => stepDetail(1);
+// keys: in the viewer Delete (twice) deletes, ← → go through the list, Esc closes;
+// in the list Ctrl+A picks everything shown, Delete brings the delete button for the picked files, Esc unpicks
+document.addEventListener('keydown', e => {
+  if (e.altKey || e.key === 'Shift' || e.target.matches('input:not([type=checkbox]), textarea, select')) return;
+  if (['working', 'folderPicker', 'scnViewer', 'settings'].some(id => !$(id).hidden)) return;
+  const inList = $('viewer').hidden && !$('tabLibrary').hidden;
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key.toLowerCase() !== 'a' || !inList) return;
+    hideCardMenu(); pickAll(true);
+  } else if (!$('cardMenu').hidden) {      // Delete or Enter presses the delete button, any other key puts it away
+    if (e.key === 'Delete' || e.key === 'Enter') $('cmDelete').click();
+    else { hideCardMenu(); if (e.key !== 'Escape') return; }
+  } else if (!$('viewer').hidden) {
+    const seeking = e.target.tagName === 'VIDEO';      // a video that has the focus uses the arrows itself
+    if (e.key === 'Delete' && $('dFileActions').style.display !== 'none') $('dDelete').click();
+    else if (e.key === 'Escape') $('dClose').onclick();
+    else if (e.key === 'ArrowLeft' && !seeking) $('dPrev').click();
+    else if (e.key === 'ArrowRight' && !seeking) $('dNext').click();
+    else return;
+  } else if (inList && picked.size) {
+    if (e.key === 'Delete') aimAtPicked();
+    else if (e.key === 'Escape') pickAll(false);
+    else return;
+  } else return;
+  e.preventDefault();
+});
 
 async function inspectFile(file) {
   const info = $('dropInfo'); info.className = 'job'; info.textContent = file.name + ' 을(를) 읽는 중…';
@@ -1497,10 +1591,10 @@ async function inspectFile(file) {
 }
 $('btnPick').onclick = () => $('pickFile').click();
 $('pickFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) inspectFile(f); };
-window.addEventListener('dragover', e => { if (!$('tabLibrary').hidden) { e.preventDefault(); $('dropArea').classList.add('over'); } });
+window.addEventListener('dragover', e => { if (!$('tabInspect').hidden) { e.preventDefault(); $('dropArea').classList.add('over'); } });
 window.addEventListener('dragleave', e => { if (!e.relatedTarget) $('dropArea').classList.remove('over'); });
 window.addEventListener('drop', e => {
-  if ($('tabLibrary').hidden) return;
+  if ($('tabInspect').hidden) return;
   e.preventDefault(); $('dropArea').classList.remove('over');
   const f = e.dataTransfer.files[0]; if (f) inspectFile(f);
 });

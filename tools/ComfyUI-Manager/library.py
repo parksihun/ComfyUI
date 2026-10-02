@@ -510,6 +510,8 @@ class Library:
             rows.sort(key=lambda r: r["mtime"])
         elif sort == "name":
             rows.sort(key=lambda r: r["name"].lower())
+        elif sort == "fav":
+            rows.sort(key=lambda r: (not r["favorite"], -r["mtime"]))
         else:
             rows.sort(key=lambda r: -r["mtime"])
         for r in rows:
