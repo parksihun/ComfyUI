@@ -61,6 +61,7 @@ DEFAULT_CONFIG = {
     "svi_workflow": "workflow/Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5.json",
     "i2v_api": "workflow/5_I2V_6seg_from_prompts.api.json",
     "image_workflow": "image_z_image_turbo.json",       # the image workflow picked at first
+    "scenario_dir": "",                                   # empty = the folder 'scenario' next to the result folder
 }
 
 DEFAULT_NEGATIVE = (
@@ -518,6 +519,7 @@ class App:
         self._wf_list = (0, {})          # when asked, {name: {'modified', 'created'}} of the server's workflow folder
         self._wf_files = {}              # name -> (modified, content)
         self._catalogue_task = None
+        self._adopted = set()            # result folders whose old scenario folders were moved to the scenario folder
         self._chat_models = (0, None)
         self._combos = {}
         self._llm = (0, None)
@@ -532,10 +534,47 @@ class App:
     def path(self, rel):
         return rel if os.path.isabs(rel) else os.path.join(ROOT, rel)
 
+    @property
+    def scenario_root(self):
+        """Where the scenarios are kept: a folder of their own next to the result folder (V:\\output -> V:\\scenario), so
+        they are not mixed with what ComfyUI saves. config.json's scenario_dir names another place."""
+        if self.cfg.get("scenario_dir"):
+            return self.cfg["scenario_dir"]
+        output = os.path.normpath(self.output_dir)
+        parent = os.path.dirname(output)
+        return os.path.join(parent if parent and parent != output else output, "scenario")
+
+    def adopt_scenarios(self):
+        """Scenario folders an earlier version made inside the result folder ('<name>_prompts' holding a prompts.json)
+        are moved to the scenario folder, once per result folder; a name already there is left where it is."""
+        key = os.path.normcase(os.path.normpath(self.output_dir))
+        if key in self._adopted or not os.path.isdir(self.output_dir):
+            return
+        self._adopted.add(key)
+        root = self.scenario_root
+        if os.path.normcase(os.path.normpath(root)) == key:
+            return
+        for name in os.listdir(self.output_dir):
+            source = os.path.join(self.output_dir, name)
+            if name.endswith("_prompts") and os.path.isfile(os.path.join(source, "prompts.json")) and not os.path.exists(os.path.join(root, name)):
+                try:      # only this program's own: the Shorts nodes keep their '<video>_prompts' folders in the output folder
+                    with open(os.path.join(source, "prompts.json"), encoding="utf-8") as f:
+                        if json.load(f).get("source") != "comfyui_manager":
+                            continue
+                except (OSError, ValueError, AttributeError):
+                    continue
+                try:
+                    os.makedirs(root, exist_ok=True)
+                    shutil.move(source, os.path.join(root, name))
+                    log.info("scenario folder moved: %s -> %s", source, root)
+                except OSError:
+                    log.exception("scenario folder not moved: %s", source)
+
     def scenario_dir(self, name):
         if not name or name != os.path.basename(name) or name in (".", ".."):
             raise AppError("잘못된 시나리오 폴더 이름입니다")
-        return os.path.join(self.output_dir, name)
+        self.adopt_scenarios()
+        return os.path.join(self.scenario_root, name)
 
     def load_scenario(self, name):
         path = os.path.join(self.scenario_dir(name), "prompts.json")
@@ -555,13 +594,60 @@ class App:
                 f.write(f"### part_{sg['index']:02d} [{sg.get('label', '')}]\n{sg.get('positive_prompt', '')}\n{sg.get('scene_ko', '')}\n\n")
 
     def list_scenarios(self):
-        found = []
-        if os.path.isdir(self.output_dir):
-            for name in os.listdir(self.output_dir):
-                p = os.path.join(self.output_dir, name, "prompts.json")
-                if name.endswith("_prompts") and os.path.isfile(p):
-                    found.append((os.path.getmtime(p), name))
-        return [{"dir": name, "mtime": int(m)} for m, name in sorted(found, reverse=True)[:100]]
+        """Every scenario of the scenario folder, newest first, with what its list card shows."""
+        self.adopt_scenarios()
+        root, found, uses = self.scenario_root, [], self.store.scenario_uses()
+        for name in os.listdir(root) if os.path.isdir(root) else []:
+            path = os.path.join(root, name, "prompts.json")
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    doc = json.load(f)
+            except (OSError, ValueError):
+                continue
+            texts = [str(sg.get("positive_prompt") or "") for sg in doc.get("segments") or []]
+            found.append({"dir": name, "name": re.sub(r"_prompts$", "", name), "mtime": int(os.path.getmtime(path)),
+                          "segments": len(texts), "empty": sum(1 for t in texts if not t.strip()),
+                          "summary": str(doc.get("summary_ko") or ""), "snippet": next((t for t in texts if t.strip()), "")[:200],
+                          "source": str(doc.get("source_file") or ""), "works": uses.get(name, 0),
+                          "search": (name + " " + str(doc.get("summary_ko") or "") + " " + " ".join(texts)).lower()[:6000]})
+        return sorted(found, key=lambda s: -s["mtime"])
+
+    def scenario_thumb(self, name, size=360):
+        """A small copy of the scenario's start image for the list (kept in data/thumbs)."""
+        path = os.path.join(self.scenario_dir(name), "reference.png")
+        stat = os.stat(path)
+        out = os.path.join(DATA, "thumbs", hashlib.sha1(f"{path}|{stat.st_mtime}|{stat.st_size}|{size}".encode()).hexdigest() + ".jpg")
+        if not os.path.isfile(out):
+            image = Image.open(path).convert("RGB")
+            image.thumbnail((size, size))
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            image.save(out, "JPEG", quality=85)
+        return out
+
+    def rename_scenario(self, name, new_name):
+        """Another name for a scenario folder; the jobs and recorded works made from it follow."""
+        wanted = sanitize_name(new_name) + "_prompts"
+        if not (new_name or "").strip():
+            raise AppError("새 이름을 입력하세요")
+        source, target = self.scenario_dir(name), self.scenario_dir(wanted)
+        if not os.path.isfile(os.path.join(source, "prompts.json")):
+            raise AppError(f"시나리오가 없습니다: {name}")
+        if wanted == name:
+            return name
+        if os.path.exists(target) and os.path.normcase(source) != os.path.normcase(target):
+            raise AppError(f"같은 이름의 시나리오가 이미 있습니다: {wanted[:-len('_prompts')]}")
+        os.rename(source, target)
+        self.store.rename_scenario(name, wanted)
+        return wanted
+
+    def delete_scenario(self, name):
+        """Remove a scenario folder for good (its prompts and its copy of the start image)."""
+        folder = self.scenario_dir(name)
+        if not os.path.isfile(os.path.join(folder, "prompts.json")):
+            raise AppError(f"시나리오가 없습니다: {name}")
+        shutil.rmtree(folder)
 
     async def chat_models(self):
         """{'hf': [...], 'gguf': [...]} from the QwenVL-Mod chat endpoint, or None when it is not installed."""
@@ -1648,7 +1734,35 @@ async def api_upload(request):
 
 
 async def api_scenarios(request):
-    return web.json_response({"scenarios": request.app["app"].list_scenarios()})
+    app = request.app["app"]
+    return web.json_response({"scenarios": await asyncio.to_thread(app.list_scenarios), "folder": app.scenario_root})
+
+
+async def api_scenario_rename(request):
+    app, body = request.app["app"], await request.json()
+    if app.lock.locked():
+        raise AppError("실행 중인 작업이 있어 지금은 이름을 바꿀 수 없습니다")
+    try:
+        return web.json_response({"dir": app.rename_scenario(body.get("dir", ""), body.get("name", ""))})
+    except OSError as e:
+        raise AppError(f"이름을 바꾸지 못했습니다: {e.strerror or e}")
+
+
+async def api_scenario_delete(request):
+    """Delete one scenario ({'dir'}) or the chosen ones ({'dirs': [...]})."""
+    app, body = request.app["app"], await request.json()
+    if app.lock.locked():
+        raise AppError("실행 중인 작업이 있어 지금은 지울 수 없습니다")
+    removed, failed = [], []
+    for name in body["dirs"] if isinstance(body.get("dirs"), list) else [body.get("dir", "")]:
+        try:
+            app.delete_scenario(str(name))
+            removed.append(name)
+        except AppError as e:
+            failed.append({"dir": name, "error": str(e)})
+        except OSError as e:
+            failed.append({"dir": name, "error": e.strerror or str(e)})
+    return web.json_response({"removed": removed, "failed": failed})
 
 
 async def api_scenario_get(request):
@@ -1698,6 +1812,11 @@ async def api_scenario_image(request):
     path = os.path.join(app.scenario_dir(request.query.get("dir", "")), "reference.png")
     if not os.path.isfile(path):
         return json_error("not found", 404)
+    if request.query.get("thumb"):
+        try:
+            return web.FileResponse(await asyncio.to_thread(app.scenario_thumb, request.query["dir"]), headers={"Cache-Control": "max-age=3600"})
+        except OSError:
+            pass
     return web.FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
@@ -2022,6 +2141,8 @@ def make_app(cfg):
         web.get("/api/scenario", api_scenario_get),
         web.post("/api/scenario", api_scenario_save),
         web.get("/api/scenario/image", api_scenario_image),
+        web.post("/api/scenario/rename", api_scenario_rename),
+        web.post("/api/scenario/delete", api_scenario_delete),
         web.get("/api/video/info", api_video_info),
         web.get("/api/workflows", api_workflows),
         web.get("/api/view", api_view),

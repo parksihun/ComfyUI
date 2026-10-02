@@ -101,7 +101,7 @@
   #working .box { display:flex; gap:12px; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 22px; box-shadow:0 12px 32px rgba(0,0,0,.55); }
   #working .spin { width:22px; height:22px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  #viewer, #folderPicker { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.72); display:flex; align-items:center; justify-content:center; padding:18px; }
+  #viewer, #folderPicker, #scnViewer { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.72); display:flex; align-items:center; justify-content:center; padding:18px; }
   .dialog { background:var(--card); border:1px solid var(--line); border-radius:10px; width:min(620px,100%); max-height:100%; display:flex; flex-direction:column; padding:16px; }
   .folders { flex:none; height:46vh; overflow:auto; margin-top:10px; background:#12141a; border:1px solid var(--line); border-radius:6px; padding:4px; }
   .folders button { display:block; width:100%; text-align:left; background:transparent; color:var(--text); font-weight:normal; padding:6px 10px; }
@@ -156,7 +156,7 @@
 <body>
 <aside>
   <h1>ComfyUI-Manager</h1>
-  <nav class="menu"><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuLibrary">보관함</button></nav>
+  <nav class="menu"><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuScenarios">시나리오</button><button id="menuLibrary">보관함</button></nav>
 </aside>
 
 <div class="content">
@@ -330,6 +330,26 @@
   </section>
 </main>
 
+<main id="tabScenarios" hidden>
+  <section>
+    <h2>시나리오 <span id="scnFolder"></span></h2>
+    <div class="row">
+      <div style="flex:3"><label>이름 / 프롬프트 검색</label><input type="text" id="scnSearch" placeholder="예: cafe, 카페"></div>
+      <div style="flex:0"><button class="sub" id="btnScnReload">새로 고침</button></div>
+    </div>
+    <div class="hint" id="scnInfo"></div>
+    <div class="pickbar" id="scnPickBar" hidden>
+      <b id="scnPickCount"></b>
+      <button class="sub" id="scnPickAll">보이는 것 전체 선택</button>
+      <button class="sub" id="scnPickNone">선택 해제</button>
+      <span class="spacer"></span>
+      <span id="scnPickInfo"></span>
+      <button class="danger" id="scnPickDelete" title="선택한 시나리오를 지웁니다. 되돌릴 수 없습니다">선택한 시나리오 삭제</button>
+    </div>
+    <div class="grid" id="scnGrid"></div>
+  </section>
+</main>
+
 <main id="tabLibrary" hidden>
   <section>
     <h2>파일 확인 <span>이미지나 영상을 넣으면 그것을 만든 워크플로우와 프롬프트를 보여 줍니다</span></h2>
@@ -364,6 +384,33 @@
     <div class="grid" id="libGrid"></div>
   </section>
 </main>
+</div>
+
+<div id="scnViewer" hidden>
+  <div class="sheet">
+    <div class="media"><img id="svImage" alt=""></div>
+    <div>
+      <div class="actions" style="margin-top:0;justify-content:space-between">
+        <b id="svName" style="word-break:break-all"></b><button class="sub" id="svClose">닫기</button></div>
+      <div class="actions">
+        <button id="svOpen" title="이 시나리오와 시작 이미지를 새 작업의 시나리오 탭에 불러옵니다. 프롬프트를 고치거나 영상을 만들 수 있습니다">새 작업에서 열기</button>
+      </div>
+      <div class="actions">
+        <input type="text" id="svNewName" style="flex:1;width:auto;min-width:160px" placeholder="새 이름">
+        <button class="sub" id="svRename">이름 변경</button>
+        <button class="danger" id="svDelete" title="이 시나리오(프롬프트와 시작 이미지 사본)를 지웁니다. 되돌릴 수 없습니다">삭제</button>
+      </div>
+      <div class="job" id="svInfo"></div>
+      <h3>요약</h3>
+      <div class="kv" id="svSummary"></div>
+      <h3 id="svSegHead">구간 프롬프트</h3>
+      <div id="svSegments"></div>
+      <h3>공통 프롬프트 / 네거티브</h3>
+      <div id="svOther"></div>
+      <h3>정보</h3>
+      <div class="kv" id="svFile"></div>
+    </div>
+  </div>
 </div>
 
 <div id="working" hidden><div class="box"><div class="spin"></div><div id="workingText">작업 중…</div></div></div>
@@ -600,7 +647,7 @@ function showScenario(dir, sc) {
   if (dir !== state.dir) { state.videoDone = null; showRecord(); }
   state.dir = dir;
   $('scEmpty').hidden = true; $('scEditor').hidden = false;
-  $('scDir').textContent = 'output/' + dir + '/prompts.json';
+  $('scDir').textContent = '시나리오 폴더의 ' + dir;
   $('scSaveName').value = dir.replace(/_prompts$/, '');
   $('scSummary').value = sc.summary_ko || '';
   $('scCommon').value = sc.common_prompt || '';
@@ -644,7 +691,7 @@ async function saveScenario() {
                                             scenario: { summary_ko: $('scSummary').value, common_prompt: $('scCommon').value,
                                                         negative_prompt: $('scNegative').value, prompts } });
   if (res.dir !== was) {      // saved under a new name: the steps go on with that one
-    state.dir = res.dir; $('scDir').textContent = 'output/' + res.dir + '/prompts.json'; $('scSaveName').value = res.dir.replace(/_prompts$/, '');
+    state.dir = res.dir; $('scDir').textContent = '시나리오 폴더의 ' + res.dir; $('scSaveName').value = res.dir.replace(/_prompts$/, '');
     loadScenarioList(); updateContext();
   }
   $('saveInfo').textContent = (res.dir !== was ? res.dir.replace(/_prompts$/, '') + ' (으)로 새로 저장했습니다 ' : '저장했습니다 ') + new Date().toLocaleTimeString();
@@ -654,7 +701,7 @@ async function loadScenarioList() {
   try {
     const res = await api('/api/scenarios'), sel = $('loadScenario');
     sel.length = 1;
-    for (const s of res.scenarios) { const o = document.createElement('option'); o.value = s.dir; o.textContent = s.dir; sel.appendChild(o); }
+    for (const s of res.scenarios) { const o = document.createElement('option'); o.value = s.dir; o.textContent = s.name; sel.appendChild(o); }
   } catch (e) { /* list stays as it was */ }
 }
 
@@ -981,10 +1028,11 @@ $('btnFree').onclick = async () => {
 const STEPS = { image: 'stepImage', scenario: 'stepScenario', video: 'stepVideo' };
 const TAB_BUTTONS = { image: 'tabBtnImage', scenario: 'tabBtnScenario', video: 'tabBtnVideo' };
 function showTab(name) {
-  if (name !== 'library' && name !== 'history' && !STEPS[name]) name = 'image';
+  if (name !== 'library' && name !== 'history' && name !== 'scenarios' && !STEPS[name]) name = 'image';
   const create = !!STEPS[name];
   $('tabCreate').hidden = $('stepTabs').hidden = $('createButtons').hidden = !create;
-  $('tabHistory').hidden = name !== 'history'; $('tabLibrary').hidden = name !== 'library';
+  $('tabHistory').hidden = name !== 'history'; $('tabLibrary').hidden = name !== 'library'; $('tabScenarios').hidden = name !== 'scenarios';
+  $('menuScenarios').classList.toggle('on', name === 'scenarios');
   // a recorded work opened into the steps belongs to 작업 이력
   $('menuCreate').classList.toggle('on', create && !state.work);
   $('menuHistory').classList.toggle('on', name === 'history' || (create && !!state.work)); $('menuLibrary').classList.toggle('on', name === 'library');
@@ -996,6 +1044,7 @@ function showTab(name) {
   localStorage.setItem('vw_tab', name);
   if (name === 'library') loadLibrary();
   if (name === 'history') loadWorks();
+  if (name === 'scenarios') loadScenarios();
   if (name === 'video' && $('paramBox').open) loadParams();
   updateContext();
   window.scrollTo(0, 0);
@@ -1006,6 +1055,7 @@ $('menuCreate').onclick = () => {      // back to the step it was left at; from 
 };
 $('menuHistory').onclick = () => showTab('history');
 $('menuLibrary').onclick = () => showTab('library');
+$('menuScenarios').onclick = () => showTab('scenarios');
 // What the next step will work with, shown at the top of steps 2 and 3.
 function updateContext() {
   const strip = (id, ok, text, src) => {
@@ -1015,7 +1065,7 @@ function updateContext() {
   };
   const hasImage = !$('imgView').hidden;
   strip('ctxScenario', hasImage, hasImage ? '시작 이미지: ' + $('imgInfo').textContent : "먼저 '이미지' 탭에서 이미지를 만들거나 올리세요.", $('imgView').src);
-  strip('ctxVideo', !!state.dir, state.dir ? '시나리오: output/' + state.dir + ' · 구간 ' + state.segCount + '개 (영상 생성을 누르면 지금 내용으로 저장한 뒤 실행합니다)'
+  strip('ctxVideo', !!state.dir, state.dir ? '시나리오: ' + state.dir.replace(/_prompts$/, '') + ' · 구간 ' + state.segCount + '개 (영상 생성을 누르면 지금 내용으로 저장한 뒤 실행합니다)'
                                            : "먼저 '시나리오' 탭에서 시나리오를 만들거나 불러오세요.",
         state.dir ? '/api/scenario/image?dir=' + encodeURIComponent(state.dir) : '');
 }
@@ -1086,6 +1136,127 @@ function jobHead(h) {
               ' · ' + fmtDate(h.time) + ' · ' + fmtSec(h.elapsed));
   return head;
 }
+// ---- scenarios: every scenario of the scenario folder, to look at, open, rename and delete ----
+const scn = { items: [], picked: new Set(), last: null };
+const scnImage = (dir, thumb) => '/api/scenario/image?dir=' + encodeURIComponent(dir) + (thumb ? '&thumb=1' : '');
+async function loadScenarios() {
+  const info = $('scnInfo');
+  let res;
+  try { res = await api('/api/scenarios'); }
+  catch (e) { info.className = 'job err'; info.textContent = e.message; return; }
+  scn.items = res.scenarios; $('scnFolder').textContent = res.folder;
+  showScenarios();
+}
+function showScenarios() {
+  const q = $('scnSearch').value.trim().toLowerCase(), grid = $('scnGrid'), info = $('scnInfo');
+  const shown = scn.items.filter(s => !q || s.search.includes(q));
+  info.className = 'hint';
+  info.textContent = shown.length ? shown.length + '개' : scn.items.length ? '검색에 맞는 시나리오가 없습니다.'
+    : '아직 시나리오가 없습니다. 새 작업의 시나리오 탭에서 만들거나, 보관함의 영상에서 새 작업에서 사용을 누르면 여기에 모입니다.';
+  const names = new Set(shown.map(s => s.dir));
+  for (const d of [...scn.picked]) if (!names.has(d)) scn.picked.delete(d);
+  scn.last = null; grid.innerHTML = '';
+  for (const s of shown) {
+    const card = el('div', 'card'), pic = el('div', 'pic'), img = el('img'), meta = el('div', 'meta'), pick = el('input', 'pick');
+    img.loading = 'lazy'; img.alt = ''; img.src = scnImage(s.dir, true); img.onerror = () => img.remove();
+    pick.type = 'checkbox'; pick.title = '선택 (Shift를 누르고 누르면 여기까지 한꺼번에)'; pick.checked = scn.picked.has(s.dir);
+    card.dataset.dir = s.dir; card.classList.toggle('picked', pick.checked);
+    pick.onclick = e => {
+      e.stopPropagation();
+      const cards = [...grid.querySelectorAll('.card')], here = cards.indexOf(card);
+      const from = e.shiftKey && scn.last != null ? Math.min(scn.last, here) : here, to = e.shiftKey && scn.last != null ? Math.max(scn.last, here) : here;
+      for (const c of cards.slice(from, to + 1)) pickScenario(c, pick.checked);
+      scn.last = here; showScenarioPicks();
+    };
+    pic.append(img, el('span', 'tag', '구간 ' + s.segments + '개' + (s.empty ? ' (빈 칸 ' + s.empty + ')' : '')), pick);
+    meta.append(el('b', '', s.name), el('span', 'wf', s.summary || s.snippet || ''),
+                el('span', 'dim', fmtDate(s.mtime) + (s.works ? ' · 기록한 작업 ' + s.works + '건' : '')));
+    card.title = s.snippet;
+    card.append(pic, meta); card.onclick = () => openScenarioView(s.dir);
+    grid.append(card);
+  }
+  showScenarioPicks();
+}
+function pickScenario(card, on) {
+  card.classList.toggle('picked', on); card.querySelector('.pick').checked = on;
+  if (on) scn.picked.add(card.dataset.dir); else scn.picked.delete(card.dataset.dir);
+}
+function showScenarioPicks() {
+  $('scnPickBar').hidden = !scn.picked.size;
+  $('scnPickCount').textContent = scn.picked.size + '개 선택';
+  $('scnPickDelete').textContent = '선택한 시나리오 삭제'; $('scnPickInfo').textContent = ''; $('scnPickInfo').style.color = '';
+}
+$('scnPickAll').onclick = () => { for (const c of $('scnGrid').querySelectorAll('.card')) pickScenario(c, true); showScenarioPicks(); };
+$('scnPickNone').onclick = () => { scn.picked.clear(); for (const c of $('scnGrid').querySelectorAll('.card')) pickScenario(c, false); showScenarioPicks(); };
+$('scnPickDelete').onclick = async () => {
+  const b = $('scnPickDelete'), info = $('scnPickInfo');
+  if (b.textContent === '선택한 시나리오 삭제') {      // first click asks, the second one deletes
+    b.textContent = '정말 삭제 (' + scn.picked.size + '개, 되돌릴 수 없음)';
+    info.textContent = '프롬프트와 시작 이미지 사본을 지웁니다. 기록한 작업과 만든 영상은 남습니다. 한 번 더 누르면 삭제합니다.';
+    return;
+  }
+  try {
+    const res = await post('/api/scenario/delete', { dirs: [...scn.picked] });
+    scn.picked.clear(); for (const f of res.failed) scn.picked.add(f.dir);
+    if (res.removed.includes(state.dir)) resetSteps();      // the steps were working with one of them
+    await loadScenarios(); loadScenarioList();
+    if (res.failed.length) { info.style.color = 'var(--bad)'; info.textContent = res.failed.length + '개는 지우지 못했습니다: ' + res.failed[0].error; }
+  } catch (e) { info.style.color = 'var(--bad)'; info.textContent = e.message; }
+};
+$('btnScnReload').onclick = loadScenarios;
+$('scnSearch').oninput = showScenarios;
+// One scenario: its start image and its prompts, with what can be done to it.
+async function openScenarioView(dir) {
+  const info = $('svInfo');
+  let doc;
+  try { doc = (await api('/api/scenario?dir=' + encodeURIComponent(dir))).scenario; }
+  catch (e) { $('scnInfo').className = 'job err'; $('scnInfo').textContent = e.message; return; }
+  const item = scn.items.find(s => s.dir === dir) || {}, name = dir.replace(/_prompts$/, '');
+  $('svName').textContent = name; $('svNewName').value = name; $('svImage').src = scnImage(dir);
+  info.className = 'job'; info.textContent = ''; $('svDelete').textContent = '삭제';
+  $('svSummary').textContent = doc.summary_ko || '—';
+  const segs = $('svSegments'); segs.innerHTML = '';
+  $('svSegHead').textContent = '구간 프롬프트 (' + doc.segments.length + '개)';
+  doc.segments.forEach((sg, i) => segs.append(promptBox({ title: '구간 ' + (i + 1) + (sg.label ? ' (' + sg.label + ')' : ''), text: sg.positive_prompt || '(비어 있음)' }, false)));
+  const other = $('svOther'); other.innerHTML = '';
+  if (doc.common_prompt) other.append(promptBox({ title: '공통 프롬프트', text: doc.common_prompt }, false));
+  if (doc.negative_prompt) other.append(promptBox({ title: '네거티브', text: doc.negative_prompt }, true));
+  const file = $('svFile'); file.innerHTML = '';
+  const row = (k, v) => { if (v) { const r = el('div'); r.append(el('span', '', k + ': '), v); file.append(r); } };
+  row('고친 때', item.mtime ? fmtDate(item.mtime) : ''); row('시작 이미지 크기', doc.width ? doc.width + ' × ' + doc.height : '');
+  row('연출 방향', doc.direction); row('가져온 영상', doc.source_file); row('기록한 작업', item.works ? item.works + '건' : '');
+  row('폴더', $('scnFolder').textContent + '\\' + dir);
+  $('svOpen').onclick = () => working('작업 중… 시나리오를 여는 중입니다', async () => {
+    if (state.busy) throw new Error('실행 중인 작업이 끝난 뒤에 열 수 있습니다');
+    resetSteps(); await openScenario(dir); $('svClose').onclick(); showTab('scenario');
+  }).catch(e => { info.className = 'job err'; info.textContent = e.message; });
+  $('svRename').onclick = async () => {
+    try {
+      const res = await post('/api/scenario/rename', { dir, name: $('svNewName').value });
+      if (state.dir === dir) { state.dir = res.dir; $('scDir').textContent = '시나리오 폴더의 ' + res.dir; $('scSaveName').value = res.dir.replace(/_prompts$/, ''); updateContext(); }
+      await loadScenarios(); loadScenarioList(); await openScenarioView(res.dir);
+      $('svInfo').className = 'job ok'; $('svInfo').textContent = '이름을 바꿨습니다';
+    } catch (e) { info.className = 'job err'; info.textContent = e.message; }
+  };
+  $('svNewName').onkeydown = e => { if (e.key === 'Enter') $('svRename').onclick(); };
+  $('svDelete').onclick = async () => {
+    if ($('svDelete').textContent === '삭제') {
+      $('svDelete').textContent = '정말 삭제 (되돌릴 수 없음)';
+      info.className = 'job'; info.textContent = '프롬프트와 시작 이미지 사본을 지웁니다. 기록한 작업과 만든 영상은 남습니다. 한 번 더 누르면 삭제합니다.';
+      return;
+    }
+    try {
+      const res = await post('/api/scenario/delete', { dir });
+      if (res.failed.length) throw new Error(res.failed[0].error);
+      if (state.dir === dir) resetSteps();
+      $('svClose').onclick(); await loadScenarios(); loadScenarioList();
+    } catch (e) { info.className = 'job err'; info.textContent = e.message; }
+  };
+  $('scnViewer').hidden = false;
+}
+$('svClose').onclick = () => { $('scnViewer').hidden = true; };
+$('scnViewer').onclick = e => { if (e.target === $('scnViewer')) $('svClose').onclick(); };
+
 // ---- library ----
 const lib = { workflow: '', tag: '' };
 const refUrl = (kind, ref) => '/api/library/' + kind + '?ref=' + encodeURIComponent(ref);

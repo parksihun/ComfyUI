@@ -178,6 +178,30 @@ class Store:
     def drop_work(self, work_id):
         self._run([("DELETE FROM works WHERE id = ?", (work_id,))])
 
+    def rename_scenario(self, old, new):
+        """A scenario folder got another name: the jobs and the recorded works that point at it follow."""
+        updates = []
+        for r in self._all("SELECT id, entry FROM jobs WHERE scenario_dir = ?", (old,)):
+            entry = json.loads(r["entry"])
+            for part in ("params", "result"):
+                if isinstance(entry.get(part), dict) and entry[part].get("dir") == old:
+                    entry[part]["dir"] = new
+            updates.append(("UPDATE jobs SET scenario_dir = ?, entry = ? WHERE id = ?", (new, json.dumps(entry, ensure_ascii=False), r["id"])))
+        for r in self._all("SELECT id, entry FROM works"):
+            work = json.loads(r["entry"])
+            if (work.get("scenario") or {}).get("dir") == old:
+                work["scenario"]["dir"] = new
+                updates.append(("UPDATE works SET entry = ? WHERE id = ?", (json.dumps(work, ensure_ascii=False), r["id"])))
+        self._run(updates)
+
+    def scenario_uses(self):
+        """{scenario folder: how many recorded works were made from it}."""
+        uses = {}
+        for r in self._all("SELECT entry FROM works"):
+            name = (json.loads(r["entry"]).get("scenario") or {}).get("dir")
+            uses[name] = uses.get(name, 0) + 1
+        return uses
+
     def job_count(self):
         return self._all("SELECT COUNT(*) AS n FROM jobs")[0]["n"]
 
