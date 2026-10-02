@@ -97,6 +97,10 @@
   .card .meta .wf { display:block; color:var(--accent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .card .meta .dim { color:var(--dim); }
   [hidden] { display:none !important; }
+  #working { position:fixed; inset:0; z-index:30; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; }
+  #working .box { display:flex; gap:12px; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 22px; box-shadow:0 12px 32px rgba(0,0,0,.55); }
+  #working .spin { width:22px; height:22px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   #viewer, #folderPicker { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.72); display:flex; align-items:center; justify-content:center; padding:18px; }
   .dialog { background:var(--card); border:1px solid var(--line); border-radius:10px; width:min(620px,100%); max-height:100%; display:flex; flex-direction:column; padding:16px; }
   .folders { flex:none; height:46vh; overflow:auto; margin-top:10px; background:#12141a; border:1px solid var(--line); border-radius:6px; padding:4px; }
@@ -280,7 +284,13 @@
           <label>공통 프롬프트 (모든 구간에서 유지되는 외형·장소·조명)</label><textarea id="scCommon" rows="2"></textarea>
           <div id="segList"></div>
           <label>네거티브 프롬프트 (I2V 6구간 방식에서 사용)</label><textarea id="scNegative" rows="2"></textarea>
-          <div class="actions"><button id="btnSave" class="sub">시나리오 저장</button><span class="hint" id="saveInfo"></span></div>
+          <label>저장할 이름</label>
+          <div class="actions" style="margin-top:0">
+            <input type="text" id="scSaveName" style="flex:1;width:auto;min-width:200px" placeholder="시나리오 이름"
+                   title="이 이름으로 저장합니다. 이름을 바꾸면 그 이름의 새 시나리오로 저장되고(시작 이미지는 같음), 원래 것은 그대로 남습니다">
+            <button id="btnSave" class="sub">시나리오 저장</button>
+          </div>
+          <div class="hint" id="saveInfo"></div>
         </div>
       </div>
     </div>
@@ -355,6 +365,8 @@
   </section>
 </main>
 </div>
+
+<div id="working" hidden><div class="box"><div class="spin"></div><div id="workingText">작업 중…</div></div></div>
 
 <div id="folderPicker" hidden>
   <div class="dialog">
@@ -589,6 +601,7 @@ function showScenario(dir, sc) {
   state.dir = dir;
   $('scEmpty').hidden = true; $('scEditor').hidden = false;
   $('scDir').textContent = 'output/' + dir + '/prompts.json';
+  $('scSaveName').value = dir.replace(/_prompts$/, '');
   $('scSummary').value = sc.summary_ko || '';
   $('scCommon').value = sc.common_prompt || '';
   $('scNegative').value = sc.negative_prompt || '';
@@ -626,9 +639,15 @@ async function saveScenario() {
   if (!state.dir) throw new Error('먼저 시나리오를 만들거나 불러오세요');
   const prompts = [];
   for (let i = 0; i < state.segCount; i++) prompts.push($('seg' + i).value);
-  await post('/api/scenario', { dir: state.dir, scenario: { summary_ko: $('scSummary').value, common_prompt: $('scCommon').value,
-                                                             negative_prompt: $('scNegative').value, prompts } });
-  $('saveInfo').textContent = '저장했습니다 ' + new Date().toLocaleTimeString();
+  const typed = $('scSaveName').value.trim(), was = state.dir;
+  const res = await post('/api/scenario', { dir: state.dir, name: typed === state.dir.replace(/_prompts$/, '') ? '' : typed,
+                                            scenario: { summary_ko: $('scSummary').value, common_prompt: $('scCommon').value,
+                                                        negative_prompt: $('scNegative').value, prompts } });
+  if (res.dir !== was) {      // saved under a new name: the steps go on with that one
+    state.dir = res.dir; $('scDir').textContent = 'output/' + res.dir + '/prompts.json'; $('scSaveName').value = res.dir.replace(/_prompts$/, '');
+    loadScenarioList(); updateContext();
+  }
+  $('saveInfo').textContent = (res.dir !== was ? res.dir.replace(/_prompts$/, '') + ' (으)로 새로 저장했습니다 ' : '저장했습니다 ') + new Date().toLocaleTimeString();
 }
 
 async function loadScenarioList() {
@@ -736,7 +755,7 @@ async function loadWorks() {
                 el('span', 'dim', fmtDate(w.time) + (w.image.label ? ' · ' + w.image.label : '')));
     card.title = w.image.prompt || w.title;
     card.append(pic, meta);
-    card.onclick = () => openWork(w.id).catch(e => { info.className = 'job err'; info.textContent = e.message; window.scrollTo(0, 0); });
+    card.onclick = () => working('작업 중… 기록한 작업을 여는 중입니다', () => openWork(w.id)).catch(e => { info.className = 'job err'; info.textContent = e.message; window.scrollTo(0, 0); });
     grid.append(card);
   }
 }
@@ -1012,6 +1031,13 @@ function historyText(h) {
   if (h.kind === 'scenario') return [r.dir, r.summary_ko, p.direction ? '연출 방향: ' + p.direction : ''].filter(Boolean).join('\n');
   return [p.dir, '워크플로우: ' + (used || (p.backend === 'i2v' ? 'Wan 2.2 I2V 6구간' : 'Wan 2.2 SVI'))].filter(Boolean).join('\n');
 }
+// Runs something that may take a while; when it does (longer than a moment), a "working" popup covers the page
+// until it ends, so nothing is clicked meanwhile.
+async function working(text, fn) {
+  const timer = setTimeout(() => { $('workingText').textContent = text; $('working').hidden = false; }, 350);
+  try { return await fn(); }
+  finally { clearTimeout(timer); $('working').hidden = true; }
+}
 // Starts a new work from a file of the library: what ComfyUI recorded in it (prompts, start image, workflow).
 async function useFile(ref) {
   if (state.busy) throw new Error('실행 중인 작업이 끝난 뒤에 쓸 수 있습니다');
@@ -1209,7 +1235,7 @@ async function openDetail(ref, shownName) {
   }
   $('dUseHint').textContent = d.kind === 'video' ? '구간 프롬프트와 시작 이미지로 새 시나리오를 만듭니다' : '시작 이미지와 프롬프트로 넣습니다';
   $('dUse').disabled = !d.has_prompt && d.kind === 'video';      // a video without ComfyUI's record has no prompts to take
-  $('dUse').onclick = () => useFile(ref).catch(e => { $('dFileInfo').className = 'job err'; $('dFileInfo').textContent = e.message; });
+  $('dUse').onclick = () => working('작업 중… 파일에서 프롬프트와 시작 이미지를 가져와 새 작업을 준비하고 있습니다', () => useFile(ref)).catch(e => { $('dFileInfo').className = 'job err'; $('dFileInfo').textContent = e.message; });
   // rename / delete: only for files of the output folder, not for a file dropped on the page
   const info = $('dFileInfo'); info.className = 'job'; info.textContent = '';
   $('dFileActions').style.display = ref.startsWith('output:') ? 'flex' : 'none';

@@ -18,6 +18,7 @@ import asyncio
 import base64
 import copy
 import ctypes
+import hashlib
 import io
 import json
 import logging
@@ -26,6 +27,7 @@ import os
 import posixpath
 import random
 import re
+import shutil
 import socket
 import string
 import sys
@@ -254,7 +256,9 @@ def sanitize_name(name):
 def upload_name(scenario_dir):
     """File name for the start image in ComfyUI's input folder. ASCII only: multipart file names get
     percent-encoded on the way, and the scenario folder may be Korean."""
-    return "".join(c for c in scenario_dir if c.isascii() and (c.isalnum() or c == "_")).strip("_") + ".png"
+    plain = "".join(c for c in scenario_dir if c.isascii() and (c.isalnum() or c == "_")).strip("_")
+    # the hash keeps two folders apart whose names differ only in what was left out (Korean names)
+    return (plain or "scenario") + "_" + hashlib.sha1(scenario_dir.encode("utf-8")).hexdigest()[:8] + ".png"
 
 
 # ---------------------------------------------------------------------------------------------- #
@@ -1674,6 +1678,17 @@ async def api_scenario_save(request):
                       label=f"{_fmt_time(start)} - {_fmt_time(end)}", positive_prompt=_clean(text))
             doc["segments"].append(sg)
         doc["duration"] = round(len(doc["segments"]) * seconds, 3)
+    # saved under another name: a new folder '<name>_prompts' with the same start image; the one it came from stays
+    wanted = sanitize_name(body.get("name")) + "_prompts" if (body.get("name") or "").strip() else name
+    if wanted != name:
+        source, target = app.scenario_dir(name), app.scenario_dir(wanted)
+        if os.path.exists(target):
+            raise AppError(f"같은 이름의 시나리오가 이미 있습니다: {wanted[:-len('_prompts')]}. 다른 이름을 쓰세요")
+        os.makedirs(target)
+        for extra in ("reference.png", "model_answer.txt"):
+            if os.path.isfile(os.path.join(source, extra)):
+                shutil.copy2(os.path.join(source, extra), os.path.join(target, extra))
+        name = wanted
     app.save_scenario(name, doc)
     return web.json_response({"dir": name, "scenario": doc})
 
