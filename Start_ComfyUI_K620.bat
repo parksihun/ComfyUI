@@ -1,5 +1,5 @@
 @Echo off&&cd /D %~dp0
-Title ComfyUI-Easy-Install
+Title ComfyUI-Easy-Install [K620]
 
 set "path=%windir%\System32;%windir%\System32\WindowsPowerShell\v1.0;%PATH%"
 
@@ -11,7 +11,11 @@ if "%INUSE%"=="1" (
     echo [93mPress any key to exit...[0m&&pause>nul&&exit
 )
 
-.\python_embeded\python.exe -I -W ignore::FutureWarning ComfyUI\main.py --windows-standalone-build --cpu --input-directory "%~dp0input" --output-directory "%~dp0output" --temp-directory "%~dp0." --extra-model-paths-config "%~dp0extra_model_paths.yaml"
+REM  Quadro K620 PC: the card is too old for this torch build, so ComfyUI runs with --cpu.
+REM  input / output live on V: on this PC (kept there on purpose; do not point them back at the install folder)
+if not exist "V:\input" mkdir "V:\input"
+if not exist "V:\output" mkdir "V:\output"
+.\python_embeded\python.exe -I -W ignore::FutureWarning ComfyUI\main.py --windows-standalone-build --cpu --input-directory "V:\input" --output-directory "V:\output" --temp-directory "%~dp0." --extra-model-paths-config "%~dp0extra_model_paths.yaml"
 
 echo.
 echo [92m:: Press any key to exit ::[0m&Pause>nul

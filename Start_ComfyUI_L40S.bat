@@ -18,13 +18,12 @@ REM  --highvram 제거 (2026-09-29): Wan 2.2 14B high/low 두 모델 + Qwen3-VL 
 REM  모델을 전부 VRAM 에 상주시키면 46GB 를 넘겨 "Not enough GPU memory" 가 남. 기본(normal) 모드는 안 쓰는 모델을 RAM 으로 내림.
 set "COMFY_ARGS=--windows-standalone-build --use-sage-attention --disable-cuda-malloc --bf16-vae --preview-method auto --listen 0.0.0.0 --port 8188 --disable-auto-launch"
 
-REM  input / output / temp 를 ComfyUI-Easy-Install 루트 폴더로 (ComfyUI\input 등이 아니라 .\input .\output .\temp)
-REM  --temp-directory 는 ComfyUI 가 뒤에 \temp 를 붙이므로 루트(.)를 넘김
+REM  input / output / temp live on E:\ComfyUI on this server (kept there on purpose; do not point them back at the install folder)
+REM  --temp-directory : ComfyUI appends \temp itself, so E:\ComfyUI is passed and the files go to E:\ComfyUI\temp
 REM  --extra-model-paths-config : 루트의 extra_model_paths.yaml (model\ 폴더) 을 읽음. ComfyUI 는 기본적으로 ComfyUI\extra_model_paths.yaml 만 찾음
-REM  input / output live on E: on this server (kept there on purpose; do not point them back at the install folder)
 if not exist "E:\ComfyUI\input" mkdir "E:\ComfyUI\input"
 if not exist "E:\ComfyUI\output" mkdir "E:\ComfyUI\output"
-set "COMFY_ARGS=%COMFY_ARGS% --input-directory "E:\ComfyUI\input" --output-directory "E:\ComfyUI\output" --temp-directory "%~dp0." --extra-model-paths-config "%~dp0extra_model_paths.yaml""
+set "COMFY_ARGS=%COMFY_ARGS% --input-directory "E:\ComfyUI\input" --output-directory "E:\ComfyUI\output" --temp-directory "E:\ComfyUI" --extra-model-paths-config "%~dp0extra_model_paths.yaml""
 
 REM ============================================================
 REM  오프라인 서버: huggingface_hub / transformers 가 인터넷을 시도하지 않게 함

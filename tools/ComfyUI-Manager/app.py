@@ -23,7 +23,7 @@ import sys
 import time
 import uuid
 import webbrowser
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 
 import aiohttp
 import av
@@ -359,6 +359,7 @@ class App:
         self.cfg = config
         self.comfy = Comfy(config["comfy_url"])
         self.output_dir = config["output_dir"] or os.path.join(ROOT, "output")
+        self.output_chosen = bool(config["output_dir"])      # False: follow the ComfyUI on this machine
         self.jobs = {}
         self.by_prompt = {}
         self.lock = asyncio.Lock()       # one stage at a time: the stages hand VRAM over to each other
@@ -546,8 +547,21 @@ class App:
             f.write("")
         os.remove(probe)
         self.output_dir = path
+        self.output_chosen = True
         self.library.roots["output"] = path
         self.remember(output_dir=path)
+
+    def follow_comfy_output(self, argv):
+        """No save folder chosen and ComfyUI runs on this machine: use the folder it was started with
+        (--output-directory), so the launchers' V:\\output / E:\\ComfyUI\\output need no second setting here."""
+        if self.output_chosen or urlparse(self.comfy.url).hostname not in ("127.0.0.1", "localhost", "::1"):
+            return
+        if "--output-directory" not in argv[:-1]:
+            return
+        path = os.path.normpath(argv[argv.index("--output-directory") + 1])
+        if os.path.isdir(path) and os.path.normcase(path) != os.path.normcase(self.output_dir):
+            self.output_dir = path
+            self.library.roots["output"] = path
 
     @staticmethod
     def remember(**changes):
@@ -899,7 +913,10 @@ async def api_status(request):
     try:
         queue = await app.comfy.get_json("/queue", timeout=5)
         out.update(comfy_ok=True, running=len(queue.get("queue_running", [])), pending=len(queue.get("queue_pending", [])))
-        devices = (await app.comfy.get_json("/system_stats", timeout=5)).get("devices") or []
+        stats = await app.comfy.get_json("/system_stats", timeout=5)
+        app.follow_comfy_output((stats.get("system") or {}).get("argv") or [])
+        out["output_dir"] = app.output_dir
+        devices = stats.get("devices") or []
         if devices and devices[0].get("vram_total"):
             out["vram"] = {"name": devices[0].get("name", ""), "total": devices[0]["vram_total"], "free": devices[0].get("vram_free", 0)}
         out["chat"] = await app.chat_models()

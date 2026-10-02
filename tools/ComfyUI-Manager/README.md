@@ -56,7 +56,8 @@ Video Combine이 영상 옆에 같이 저장하는 미리보기 PNG는 기본으
 - 이 프로그램으로 만든 이미지와 최종 영상이 여기에 들어옵니다. ComfyUI가 다른 서버에 있거나 다른 폴더에 저장하더라도 끝난 뒤 이 폴더로 받아 옵니다 (이 PC의 ComfyUI가 같은 폴더에 저장하는 경우에는 이미 있는 파일이라 다시 받지 않습니다)
 - 보관함이 이 폴더를 읽습니다
 
-기본값은 `ComfyUI-Easy-Install\output`이고, 바꾼 값은 주소와 함께 `data\settings.json`에 저장됩니다. 실행 옵션 `--output-dir`가 우선합니다.
+저장 폴더를 정하지 않았고 ComfyUI가 이 PC(`127.0.0.1`)에서 돌고 있으면, ComfyUI를 켤 때 준 출력 폴더(`--output-directory`, 예: `V:\output`, `E:\ComfyUI\output`)를 그대로 따라갑니다. 그 밖의 경우 기본값은 `ComfyUI-Easy-Install\output`입니다.
+화면에서 바꾼 값은 주소와 함께 `data\settings.json`에 저장되고 그때부터는 그 값을 씁니다. 실행 옵션 `--output-dir`가 우선합니다.
 이 프로그램에는 로그인이 없으니, 주소와 저장 폴더를 아무나 바꾸면 곤란한 망에서는 `host`를 `127.0.0.1`로 두세요.
 
 ## 생성 탭 화면
