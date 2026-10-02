@@ -21,7 +21,10 @@ set "COMFY_ARGS=--windows-standalone-build --use-sage-attention --disable-cuda-m
 REM  input / output / temp 를 ComfyUI-Easy-Install 루트 폴더로 (ComfyUI\input 등이 아니라 .\input .\output .\temp)
 REM  --temp-directory 는 ComfyUI 가 뒤에 \temp 를 붙이므로 루트(.)를 넘김
 REM  --extra-model-paths-config : 루트의 extra_model_paths.yaml (model\ 폴더) 을 읽음. ComfyUI 는 기본적으로 ComfyUI\extra_model_paths.yaml 만 찾음
-set "COMFY_ARGS=%COMFY_ARGS% --input-directory "%~dp0input" --output-directory "%~dp0output" --temp-directory "%~dp0." --extra-model-paths-config "%~dp0extra_model_paths.yaml""
+REM  input / output live on E: on this server (kept there on purpose; do not point them back at the install folder)
+if not exist "E:\ComfyUI\input" mkdir "E:\ComfyUI\input"
+if not exist "E:\ComfyUI\output" mkdir "E:\ComfyUI\output"
+set "COMFY_ARGS=%COMFY_ARGS% --input-directory "E:\ComfyUI\input" --output-directory "E:\ComfyUI\output" --temp-directory "%~dp0." --extra-model-paths-config "%~dp0extra_model_paths.yaml""
 
 REM ============================================================
 REM  오프라인 서버: huggingface_hub / transformers 가 인터넷을 시도하지 않게 함

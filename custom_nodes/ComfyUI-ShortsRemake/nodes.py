@@ -972,9 +972,14 @@ class ShortsYouTubeDownload:
         if not od:
             try:
                 import folder_paths
+                comfy_out = os.path.abspath(folder_paths.get_output_directory())
+                default_out = os.path.join(os.path.abspath(folder_paths.base_path), "output")
                 # ComfyUI-Easy-Install layout: <root>\ComfyUI\ and <root>\output\ side by side
                 root_out = os.path.join(os.path.dirname(os.path.abspath(folder_paths.base_path)), "output")
-                od = root_out if os.path.isdir(root_out) else folder_paths.get_output_directory()
+                if os.path.normcase(comfy_out) != os.path.normcase(default_out):
+                    od = comfy_out                    # the launcher set --output-directory: go where ComfyUI saves
+                else:
+                    od = root_out if os.path.isdir(root_out) else comfy_out
             except Exception:  # noqa: BLE001
                 od = os.path.join(os.getcwd(), "output")
         os.makedirs(od, exist_ok=True)
