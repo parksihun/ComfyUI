@@ -27,6 +27,8 @@ CREATE INDEX IF NOT EXISTS job_files_rel ON job_files (root, rel);
 CREATE TABLE IF NOT EXISTS marks (
     root TEXT NOT NULL, rel TEXT NOT NULL COLLATE NOCASE, favorite INTEGER NOT NULL DEFAULT 0,
     tags TEXT NOT NULL DEFAULT '[]', note TEXT NOT NULL DEFAULT '', PRIMARY KEY (root, rel));
+CREATE TABLE IF NOT EXISTS workflow_index (
+    server TEXT NOT NULL, name TEXT NOT NULL, modified INTEGER, entry TEXT NOT NULL, PRIMARY KEY (server, name));
 """
 
 
@@ -108,6 +110,17 @@ class Store:
         """Files that were deleted on purpose: nothing is kept about them, and their jobs no longer point at them."""
         self._run([(f"DELETE FROM {table} WHERE root = ? AND rel = ?", (root, rel))
                    for rel in rels for table in ("files", "marks", "job_files")])
+
+    # ---- what is known about the workflows a ComfyUI server keeps (can be read from the server again) -----
+    def workflow_index(self, server):
+        """{name: (modified, entry or None)}; the entry is what the library needs to recognise the workflow."""
+        return {r["name"]: (r["modified"], json.loads(r["entry"]))
+                for r in self._all("SELECT name, modified, entry FROM workflow_index WHERE server = ?", (server,))}
+
+    def put_workflows(self, server, items, gone=()):
+        self._run([("INSERT OR REPLACE INTO workflow_index (server, name, modified, entry) VALUES (?, ?, ?, ?)",
+                    (server, name, modified, json.dumps(entry, ensure_ascii=False))) for name, modified, entry in items]
+                  + [("DELETE FROM workflow_index WHERE server = ? AND name = ?", (server, name)) for name in gone])
 
     # ---- jobs and what they made ---------------------------------------------------------------------
     def add_job(self, entry, root, scenario_dir, source_rel, rels):

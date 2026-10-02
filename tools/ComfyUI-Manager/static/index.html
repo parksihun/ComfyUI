@@ -193,7 +193,7 @@
     <div class="cols">
       <div>
         <label>이미지 워크플로우</label>
-        <select id="imgWorkflow" title="workflow 폴더에서 글로 이미지를 만드는 워크플로우입니다. 프롬프트, 크기, seed를 넣어 실행합니다"><option value="">기본 (z-image turbo)</option></select>
+        <select id="imgWorkflow" title="연결된 ComfyUI 서버에 저장된 워크플로우 중 글로 이미지를 만드는 것입니다. 프롬프트, 크기, seed를 넣어 실행합니다"><option value="">기본 (z-image turbo)</option></select>
         <div class="hint" id="imgWorkflowInfo"></div>
         <label>이미지 프롬프트</label>
         <textarea id="imgPrompt" rows="6" placeholder="예: A young woman standing in a bright cafe by the window, full body, natural daylight, photorealistic"></textarea>
@@ -286,7 +286,7 @@
     <div class="row">
       <div style="flex:2">
         <label>영상 워크플로우</label>
-        <select id="videoWorkflow" title="workflow 폴더에서 시작 이미지와 프롬프트로 영상을 만드는 워크플로우입니다"></select>
+        <select id="videoWorkflow" title="연결된 ComfyUI 서버에 저장된 워크플로우 중 시작 이미지와 프롬프트로 영상을 만드는 것입니다"></select>
         <div class="hint" id="videoWorkflowInfo"></div>
       </div>
       <div><label class="check"><input type="checkbox" id="randomSeed" checked>매번 새 seed</label></div>
@@ -400,7 +400,7 @@
       <div class="actions" id="dWfActions">
         <a id="dDownload"><button class="sub">워크플로우 JSON 받기</button></a>
         <input type="text" id="dSaveName" style="width:230px" placeholder="저장할 이름">
-        <button class="sub" id="dSave" title="ComfyUI의 워크플로우 목록에 이 이름으로 나타납니다">workflow 폴더에 저장</button>
+        <button class="sub" id="dSave" title="연결된 ComfyUI 서버의 워크플로우 폴더에 저장합니다. ComfyUI의 워크플로우 목록에 이 이름으로 나타납니다">서버 workflow 폴더에 저장</button>
       </div>
       <div class="job" id="dSaveInfo"></div>
       <h3 id="dPosHead">프롬프트</h3>
@@ -496,7 +496,7 @@ async function genImage() {
 const imageInfo = r => [r.width ? r.width + ' × ' + r.height : '', 'seed ' + r.seed, r.workflow ? '워크플로우: ' + r.workflow : '', r.saved]
   .filter(Boolean).join(' · ');
 
-// ---- the workflows a step can run (files of the workflow folder) ----
+// ---- the workflows a step can run (the ones the connected ComfyUI keeps, checked against its nodes and models) ----
 const workflows = { image: null, video: null };
 async function loadWorkflows(kind, force) {
   const sel = $(kind === 'image' ? 'imgWorkflow' : 'videoWorkflow'), info = $(kind === 'image' ? 'imgWorkflowInfo' : 'videoWorkflowInfo');
@@ -508,19 +508,22 @@ async function loadWorkflows(kind, force) {
   const keep = sel.value || localStorage.getItem('vw_' + sel.id) || res.default;
   sel.innerHTML = '';
   for (const w of res.items) {
-    const o = el('option', '', w.label + (kind === 'video' ? ' · 구간 ' + w.segments + '개' : '') + (w.missing.length ? ' · 서버에 없는 노드 있음' : ''));
+    const o = el('option', '', w.label + (kind === 'video' ? ' · 구간 ' + w.segments + '개' : '')
+      + (w.missing.length ? ' · 서버에 없는 노드 있음' : '') + (w.models.length ? ' · 서버에 없는 모델 있음' : ''));
     o.value = w.name; sel.append(o);
   }
   sel.value = res.items.some(w => w.name === keep) ? keep : res.items.some(w => w.name === res.default) ? res.default : (res.items[0] || {}).name || '';
-  if (res.unread) info.dataset.note = 'ComfyUI에 연결되면 workflow 폴더의 나머지 파일 ' + res.unread + '개도 확인합니다.';
+  if (!res.connected) info.dataset.note = 'ComfyUI에 연결되면 그 서버의 워크플로우 목록을 읽습니다.';
   else delete info.dataset.note;
   workflowChosen(kind);
 }
 function workflowChosen(kind) {
   const sel = $(kind === 'image' ? 'imgWorkflow' : 'videoWorkflow'), info = $(kind === 'image' ? 'imgWorkflowInfo' : 'videoWorkflowInfo');
   const w = (workflows[kind] || []).find(x => x.name === sel.value);
-  info.textContent = [w && w.missing.length ? '이 서버에 없는 노드가 들어 있어 실행이 안 될 수 있습니다: ' + w.missing.join(', ') : '',
-                      !(workflows[kind] || []).length && kind === 'video' ? '쓸 수 있는 영상 워크플로우를 찾지 못했습니다.' : '', info.dataset.note || '']
+  info.textContent = [w && w.missing.length ? '서버에 없는 노드가 들어 있어 실행이 안 될 수 있습니다: ' + w.missing.join(', ') + '.' : '',
+                      w && w.models.length ? '서버에 없는 모델: ' + w.models.join(', ') + '.' : '',
+                      !(workflows[kind] || []).length && kind === 'video' && !info.dataset.note ? '서버에서 쓸 수 있는 영상 워크플로우를 찾지 못했습니다.' : '',
+                      info.dataset.note || '']
     .filter(Boolean).join(' ');
   if (kind === 'video') { state.paramsLoaded = null; if ($('paramBox').open) loadParams(); }
 }
@@ -1123,9 +1126,9 @@ async function openDetail(ref, shownName) {
   }
   $('dWorkflow').textContent = d.workflow;
   $('dMatch').textContent = !d.has_prompt && !d.has_workflow ? 'ComfyUI 정보가 들어 있지 않은 파일입니다 (다른 곳에서 만들었거나 메타데이터 저장을 끈 경우).'
-    : d.match === 'id' ? 'workflow 폴더의 같은 워크플로우(ID 일치)입니다.'
-    : d.match === 'similar' ? '노드 구성이 같은 워크플로우를 workflow 폴더에서 찾았습니다.'
-    : 'workflow 폴더에 같은 워크플로우가 없습니다. 아래에서 저장하면 이름이 붙습니다.';
+    : d.match === 'id' ? '서버 워크플로우 폴더의 같은 워크플로우(ID 일치)입니다.'
+    : d.match === 'similar' ? '노드 구성이 같은 워크플로우를 서버 워크플로우 폴더에서 찾았습니다.'
+    : '서버 워크플로우 폴더에 같은 워크플로우가 없습니다. 아래에서 저장하면 이름이 붙습니다.';
   $('dWfActions').style.display = d.has_workflow ? 'flex' : 'none';
   $('dDownload').href = refUrl('workflow', ref);
   $('dSaveName').value = d.name.replace(/\.\w+$/, '');
@@ -1134,7 +1137,7 @@ async function openDetail(ref, shownName) {
     ? '이 파일에는 실행 정보만 있고 화면용 워크플로우는 들어 있지 않습니다 (이 프로그램이나 API로 만든 파일).' : '';
   $('dSave').onclick = async () => {
     try { const r = await post('/api/library/save_workflow', { ref, name: $('dSaveName').value });
-          $('dSaveInfo').className = 'job ok'; $('dSaveInfo').textContent = 'workflow\\' + r.name + '.json 으로 저장했습니다. ComfyUI의 워크플로우 목록에서 열 수 있습니다.'; }
+          $('dSaveInfo').className = 'job ok'; $('dSaveInfo').textContent = '서버의 워크플로우 폴더에 ' + r.name + '.json 으로 저장했습니다. ComfyUI의 워크플로우 목록에서 열 수 있습니다.'; }
     catch (e) { $('dSaveInfo').className = 'job err'; $('dSaveInfo').textContent = e.message; }
   };
   const pos = d.prompts.filter(p => p.role !== 'negative'), neg = d.prompts.filter(p => p.role === 'negative');

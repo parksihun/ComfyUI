@@ -507,14 +507,19 @@ class App:
         self.by_prompt = {}
         self.lock = asyncio.Lock()       # one stage at a time: the stages hand VRAM over to each other
         self.last_stage = None
-        self._workflows = {}             # name -> ((file, mtime, node definitions), API prompt, warnings)
+        self._workflows = {}             # name -> ((file, modified, node definitions), API prompt, warnings)
+        self._wf_list = (0, {})          # when asked, {name: {'modified', 'created'}} of the server's workflow folder
+        self._wf_files = {}              # name -> (modified, content)
+        self._loras = (0, None)
+        self._catalogue_task = None
         self._chat_models = (0, None)
         self._combos = {}
         self._llm = (0, None)
         self.ws = None
         self.address_changed = asyncio.Event()
         self.store = store.Store(os.path.join(DATA, "manager.db"))
-        self.library = library.Library(self.output_dir, DATA, library.Catalogue(os.path.join(ROOT, "workflow"), TEMPLATES), self.store)
+        self.library = library.Library(self.output_dir, DATA, library.Catalogue(TEMPLATES), self.store)
+        self.use_catalogue()
         self.import_history(os.path.join(DATA, "history.json"))
 
     # ---- helpers -----------------------------------------------------------------------------
@@ -711,8 +716,9 @@ class App:
         self.comfy.url = url
         self.comfy._object_info = None
         self._combos, self._chat_models, self._workflows, self.last_stage = {}, (0, None), {}, None
-        self._llm = (0, None)
+        self._llm, self._wf_list, self._wf_files, self._loras = (0, None), (0, {}), {}, (0, None)
         self.remember(comfy_url=url)
+        self.use_catalogue()
         self.comfy_output = ""
         self.apply_picked()
         self.address_changed.set()
@@ -946,40 +952,60 @@ class App:
         return re.sub(r"(\.api)?\.json$", "", name) if name else App.BUILTIN_IMAGE
 
     def default_video(self):
-        """The configured SVI workflow, as a name inside workflow/."""
+        """The configured SVI workflow, as a name inside the workflow folder."""
         return re.sub(r"^workflow[\\/]", "", self.cfg["svi_workflow"]).replace("\\", "/")
 
-    def workflow_names(self):
-        """Every workflow file under workflow/ ('x.api.json', the exact export, hides its 'x.json')."""
-        base, names = os.path.join(ROOT, "workflow"), []
-        for folder, _, files in os.walk(base):
-            for f in files:
-                if f.lower().endswith(".json"):
-                    names.append(os.path.relpath(os.path.join(folder, f), base).replace("\\", "/"))
+    # The workflows are the ones the connected ComfyUI keeps (its user/default/workflows folder, read through its
+    # userdata API), not files of this PC: what is saved on the server is what the lists show.
+    async def server_workflows(self):
+        """{name: {'modified', 'created'}} of the server's workflow files ('sub/name.json'); asked every few seconds at most."""
+        stamp, files = self._wf_list
+        if time.time() - stamp > 5:
+            raw = await self.comfy.get_json("/api/userdata", timeout=20, dir="workflows", recurse="true", split="false", full_info="true")
+            files = {str(i["path"]).replace("\\", "/"): {"modified": i.get("modified") or 0, "created": i.get("created") or 0}
+                     for i in raw if isinstance(i, dict) and str(i.get("path", "")).lower().endswith(".json")}
+            self._wf_list = (time.time(), files)
+        return files
+
+    async def workflow_file(self, name):
+        """The content of one of the server's workflow files (kept until the server says it changed)."""
+        files = await self.server_workflows()
+        if name not in files:
+            raise AppError(f"서버에 그 워크플로우가 없습니다: {name}")
+        cached = self._wf_files.get(name)
+        if cached is None or cached[0] != files[name]["modified"]:
+            url = self.comfy.url + "/api/userdata/" + quote("workflows/" + name, safe="")
+            async with self.comfy.session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as r:
+                if r.status != 200:
+                    raise AppError(f"서버에서 워크플로우를 읽지 못했습니다 ({r.status}): {name}")
+                try:
+                    data = json.loads(await r.read())
+                except ValueError:
+                    raise AppError(f"워크플로우 파일이 아닙니다: {name}")
+            cached = self._wf_files[name] = (files[name]["modified"], data)
+        return cached[1]
+
+    async def workflow_names(self):
+        """The server's workflow files ('x.api.json', the exact export, hides its 'x.json')."""
+        names = list(await self.server_workflows())
         exports = {n[:-len(".api.json")] + ".json" for n in names if n.lower().endswith(".api.json")}
         return sorted((n for n in names if n not in exports), key=str.lower)
 
     async def workflow_api(self, name):
-        """(API prompt, warnings) of a workflow: '' is the built-in image template, anything else a file under
-        workflow/. A workflow saved from the UI is converted with ComfyUI's node definitions."""
-        if not name:
-            path = os.path.join(TEMPLATES, "image_zimage.api.json")
+        """(API prompt, warnings) of a workflow: '' is the built-in image template, anything else one of the server's
+        workflow files. A workflow saved from the UI is converted with that ComfyUI's node definitions."""
+        override = os.path.join(TEMPLATES, "video_svi.api.json")      # an exact export of the SVI workflow, when given
+        local = os.path.join(TEMPLATES, "image_zimage.api.json") if not name else override if (
+            name == self.default_video() and os.path.isfile(override)) else None
+        if local:
+            with open(local, encoding="utf-8") as f:
+                data, stamp = json.load(f), os.path.getmtime(local)
         else:
-            base = os.path.realpath(os.path.join(ROOT, "workflow"))
-            path = os.path.realpath(os.path.join(base, name))
-            if os.path.commonpath([path, base]) != base:
-                raise AppError("workflow 폴더 밖의 파일은 쓸 수 없습니다")
-            override = os.path.join(TEMPLATES, "video_svi.api.json")      # an exact export of the SVI workflow, when given
-            if name == self.default_video() and os.path.isfile(override):
-                path = override
-        if not os.path.isfile(path):
-            raise AppError(f"워크플로우 파일이 없습니다: {path}")
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
+            data, stamp = await self.workflow_file(name), (await self.server_workflows())[name]["modified"]
         if not isinstance(data, dict):
             raise AppError(f"워크플로우 파일이 아닙니다: {name}")
         ui = not comfy_convert.is_api_format(data)
-        key = (path, os.path.getmtime(path), id(await self.comfy.object_info()) if ui else 0)
+        key = (local, stamp, id(await self.comfy.object_info()) if ui else 0)
         cached = self._workflows.get(name)
         if cached is None or cached[0] != key:
             warnings = []
@@ -987,6 +1013,17 @@ class App:
                 data, warnings = comfy_convert.workflow_to_api(data, await self.comfy.object_info())
             cached = self._workflows[name] = (key, data, warnings)
         return copy.deepcopy(cached[1]), list(cached[2])
+
+    async def missing_models(self, api):
+        """Model files the workflow names that the server does not have."""
+        stamp, loras = self._loras
+        if time.time() - stamp > 60:
+            try:
+                loras = await self.comfy.get_json("/models/loras", timeout=20)
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                loras = None
+            self._loras = (time.time(), loras)
+        return comfy_convert.missing_models(api, await self.comfy.object_info(), loras)
 
     @staticmethod
     def usable(api, kind):
@@ -1004,21 +1041,58 @@ class App:
         return "" if slots["load"] else "시작 이미지 노드(Load Image)가 없습니다"
 
     async def workflows(self, kind):
-        """The workflows the image / video step can run, for the list on the page."""
-        items = [{"name": "", "label": self.BUILTIN_IMAGE, "segments": 1, "missing": []}] if kind == "image" else []
-        unread = 0
-        for name in self.workflow_names():
+        """The workflows of the server that the image / video step can run, for the list on the page."""
+        items = [{"name": "", "label": self.BUILTIN_IMAGE, "segments": 1, "missing": [], "models": []}] if kind == "image" else []
+        try:
+            names = await self.workflow_names()
+            items[0:1] = [dict(i, models=await self.missing_models((await self.workflow_api(""))[0])) for i in items]
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError):
+            return {"items": items, "default": "" if kind == "image" else self.default_video(), "connected": False}
+        for name in names:
             try:
                 api, warnings = await self.workflow_api(name)
-            except (AppError, aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError):
-                unread += 1      # not a workflow, or one from the UI while ComfyUI is away
+                if self.usable(api, kind):
+                    continue
+                items.append({"name": name, "label": self.workflow_label(name),
+                              "segments": 6 if self.has_fanout(api) else len(comfy_convert.find_slots(api)["prompts"]),
+                              "missing": sorted({w.split("'")[1] for w in warnings if "unknown type" in w}),
+                              "models": await self.missing_models(api)})
+            except (AppError, aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError, IndexError):
+                continue      # not a workflow
+        return {"items": items, "default": "" if kind == "image" else self.default_video(), "connected": True}
+
+    # ---- the names the library gives: from the server's workflows, remembered in the store ----------
+    def use_catalogue(self):
+        """What the store remembers about the workflows of the ComfyUI in use (the library names files with it, also
+        while that ComfyUI is off)."""
+        self.library.catalogue.remote = [entry for _, entry in self.store.workflow_index(self.comfy.url).values() if entry]
+
+    async def refresh_catalogue(self):
+        """Read the server's new and changed workflow files and remember what identifies them."""
+        files, known = await self.server_workflows(), self.store.workflow_index(self.comfy.url)
+        changed = []
+        for name, meta in files.items():
+            if name in known and known[name][0] == meta["modified"]:
                 continue
-            if self.usable(api, kind):
+            try:
+                entry = library.catalogue_entry(name, await self.workflow_file(name), meta["created"] / 1000)
+            except (AppError, aiohttp.ClientError, asyncio.TimeoutError):
                 continue
-            items.append({"name": name, "label": self.workflow_label(name),
-                          "segments": 6 if self.has_fanout(api) else len(comfy_convert.find_slots(api)["prompts"]),
-                          "missing": sorted({w.split("'")[1] for w in warnings if "unknown type" in w})})
-        return {"items": items, "default": "" if kind == "image" else self.default_video(), "unread": unread}
+            changed.append((name, meta["modified"], entry))
+        gone = [name for name in known if name not in files]
+        if changed or gone:
+            self.store.put_workflows(self.comfy.url, changed, gone)
+            self.use_catalogue()
+
+    def start_catalogue_refresh(self):
+        """From the status poll: at most one refresh at a time, and never in the way of the answer."""
+        if self._catalogue_task is None or self._catalogue_task.done():
+            async def run():
+                try:
+                    await self.refresh_catalogue()
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError):
+                    pass
+            self._catalogue_task = asyncio.create_task(run())
 
     @staticmethod
     def has_fanout(api):
@@ -1034,6 +1108,7 @@ class App:
         problem = self.usable(prompt, "image")
         if problem:
             raise AppError(f"이 워크플로우로는 이미지를 만들 수 없습니다 ({self.workflow_label(name)}): {problem}")
+        absent = await self.missing_models(prompt)      # ComfyUI refuses a missing model itself; a skipped LoRA it does not
         slots = comfy_convert.find_slots(prompt)
         for nid in slots["prompts"][0]:
             prompt[nid]["inputs"]["text"] = text
@@ -1062,6 +1137,8 @@ class App:
         saved = " · ".join(filter(None, (self.saved_text(made) if made["type"] == "output" else "", unseen)))
         if not slots["sizes"]:
             saved = " · ".join(filter(None, (saved, "이 워크플로우는 크기를 워크플로우 값 그대로 씁니다")))
+        if absent:
+            saved = " · ".join(filter(None, (saved, "서버에 없는 모델: " + ", ".join(absent))))
         size = prompt[slots["sizes"][0]]["inputs"] if slots["sizes"] else {"width": 0, "height": 0}
         return {"image": ref, "saved": saved, "seed": seed, "width": size["width"], "height": size["height"],
                 "workflow": self.workflow_label(name), "missing": sorted({w.split("'")[1] for w in warnings if "unknown type" in w})}
@@ -1190,6 +1267,9 @@ class App:
         problem = self.usable(api, "video")
         if problem:
             warnings.append(problem)
+        absent = await self.missing_models(api)
+        if absent:
+            warnings.append("서버에 없는 모델: " + ", ".join(absent))
         if self.has_fanout(api):
             return {"workflow": name, "slots": 6, "params": [], "warnings": warnings}
         items = [{"id": nid, "title": n["_meta"]["title"], "value": n["inputs"].get("value"),
@@ -1270,6 +1350,9 @@ class App:
         if problem:
             raise AppError(f"이 워크플로우로는 영상을 만들 수 없습니다 ({self.workflow_label(workflow)}): {problem}")
         job.notes.append("워크플로우: " + self.workflow_label(workflow))
+        absent = await self.missing_models(api)
+        if absent:      # a LoRA loader may just skip them, a model loader will refuse: say it before the long run
+            job.notes.append("서버에 없는 모델: " + ", ".join(absent))
         job.notes.extend(warnings)
         if self.has_fanout(api):      # reads prompts.json through a node: give it the values themselves
             api = self.build_i2v(api, doc, texts, image_name)
@@ -1326,6 +1409,7 @@ async def api_status(request):
         out.update(comfy_ok=True, running=len(queue.get("queue_running", [])), pending=len(queue.get("queue_pending", [])))
         stats = await app.comfy.get_json("/system_stats", timeout=5)
         await app.follow_comfy_output((stats.get("system") or {}).get("argv") or [])
+        app.start_catalogue_refresh()
         out.update(output_dir=app.output_dir, output_source=app.output_source, result_dir=app.result_dirs.get(app.comfy.url, ""))
         devices = stats.get("devices") or []
         if devices and devices[0].get("vram_total"):
@@ -1637,7 +1721,7 @@ async def api_library_workflow(request):
 
 
 async def api_library_save_workflow(request):
-    """Write the embedded workflow into workflow/ so ComfyUI lists it under a real name."""
+    """Write the embedded workflow into the server's workflow folder so ComfyUI lists it under a real name."""
     lib, body = _library(request), await request.json()
     try:
         workflow = await asyncio.to_thread(lib.embedded_workflow, body.get("ref", ""))
@@ -1648,13 +1732,16 @@ async def api_library_save_workflow(request):
     name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "", body.get("name") or "").strip().strip(".")
     if not name:
         raise AppError("저장할 이름을 입력하세요")
-    folder = os.path.join(ROOT, "workflow")
-    path = os.path.join(folder, name + ".json")
-    if os.path.exists(path):
-        raise AppError(f"workflow 폴더에 같은 이름이 이미 있습니다: {name}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(workflow, f, ensure_ascii=False)
-    return web.json_response({"saved": path, "name": name})
+    app = request.app["app"]      # into the workflow folder of the connected ComfyUI, where its workflow list reads
+    url = app.comfy.url + "/api/userdata/" + quote(f"workflows/{name}.json", safe="") + "?overwrite=false"
+    async with app.comfy.session.post(url, data=json.dumps(workflow, ensure_ascii=False).encode("utf-8"),
+                                      headers={"Content-Type": "application/json"}, timeout=aiohttp.ClientTimeout(total=60)) as r:
+        if r.status == 409:
+            raise AppError(f"서버의 워크플로우 폴더에 같은 이름이 이미 있습니다: {name}.json")
+        if r.status != 200:
+            raise AppError(f"서버에 저장하지 못했습니다 ({r.status}): {(await r.text())[:200]}")
+    app._wf_list = (0, {})
+    return web.json_response({"saved": name + ".json", "name": name})
 
 
 async def api_library_rename(request):

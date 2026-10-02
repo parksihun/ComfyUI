@@ -108,38 +108,47 @@ def similarity(a, b):
     return sum((a & b).values()) / union if union else 0.0
 
 
-class Catalogue:
-    """The workflows we know by name: workflow/*.json (UI and API form) and this tool's own templates."""
+def catalogue_entry(name, data, created=0.0):
+    """What is kept about a workflow file to recognise it later, or None when the file is not a workflow."""
+    shown = re.sub(r"\.api$", "", os.path.splitext(name)[0])
+    if comfy_convert.is_api_format(data) and data:
+        return {"name": shown, "id": None, "types": api_types(data), "created": created}
+    if isinstance(data, dict) and isinstance(data.get("nodes"), list):
+        return {"name": shown, "id": data.get("id"), "types": workflow_types(data), "created": created}
+    return None
 
-    def __init__(self, workflow_dir, template_dir):
-        self.dirs = [(workflow_dir, ""), (template_dir, "Manager: ")]
-        self.stamp, self.entries = None, []
+
+class Catalogue:
+    """The workflows we know by name: the ones the connected ComfyUI keeps (given by the app, which reads them from
+    that server) and this tool's own templates."""
+
+    def __init__(self, template_dir):
+        self.template_dir = template_dir
+        self.remote = []      # entries of the server's workflows
+        self.stamp, self.templates = None, []
 
     def load(self):
-        files = []      # (path, name shown): subfolders of workflow/ are included, shown as "sub/name"
-        for base, prefix in self.dirs:
-            for folder, dirs, names in os.walk(base):
-                dirs.sort()
-                for f in sorted(names):
-                    if f.lower().endswith(".json"):
-                        rel = os.path.relpath(os.path.join(folder, f), base).replace("\\", "/")
-                        files.append((os.path.join(folder, f), prefix + re.sub(r"\.api$", "", os.path.splitext(rel)[0])))
-        stamp = tuple((p, os.path.getmtime(p)) for p, _ in files)
-        if stamp == self.stamp:
-            return self.entries
-        entries = []
-        for path, name in files:
-            try:
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
-            except (OSError, ValueError):
-                continue
-            if comfy_convert.is_api_format(data) and data:
-                entries.append({"name": name, "id": None, "types": api_types(data), "created": os.path.getctime(path)})
-            elif isinstance(data, dict) and isinstance(data.get("nodes"), list):
-                entries.append({"name": name, "id": data.get("id"), "types": workflow_types(data), "created": os.path.getctime(path)})
-        self.stamp, self.entries = stamp, entries
-        return entries
+        files = []
+        for folder, dirs, names in os.walk(self.template_dir):
+            dirs.sort()
+            for f in sorted(names):
+                if f.lower().endswith(".json"):
+                    files.append(os.path.join(folder, f))
+        stamp = tuple((p, os.path.getmtime(p)) for p in files)
+        if stamp != self.stamp:
+            entries = []
+            for path in files:
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        data = json.load(f)
+                except (OSError, ValueError):
+                    continue
+                rel = os.path.relpath(path, self.template_dir).replace("\\", "/")
+                entry = catalogue_entry("Manager: " + rel, data, os.path.getctime(path))
+                if entry:
+                    entries.append(entry)
+            self.stamp, self.templates = stamp, entries
+        return [dict(e, types=Counter(e["types"])) for e in self.remote] + self.templates
 
     def match(self, types, workflow_id):
         """-> (name, how) with how in 'id' | 'similar' | None."""
