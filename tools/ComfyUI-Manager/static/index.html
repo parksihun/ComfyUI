@@ -381,6 +381,10 @@
     <div>
       <div class="actions" style="margin-top:0;justify-content:space-between">
         <b id="dName" style="word-break:break-all"></b><button class="sub" id="dClose">닫기</button></div>
+      <div class="actions">
+        <button id="dUse" title="영상: 이 영상의 구간 프롬프트와 시작 이미지로 새 시나리오를 만들고 같은 워크플로우를 골라 새 작업을 엽니다. 이미지: 시작 이미지와 프롬프트로 넣습니다">새 작업에서 사용</button>
+        <span class="hint" id="dUseHint" style="margin:0"></span>
+      </div>
       <div class="actions" id="dFileActions">
         <input type="text" id="dNewName" style="flex:1;width:auto;min-width:160px" placeholder="새 파일 이름" title="확장자는 그대로 둡니다">
         <button class="sub" id="dRename">이름 변경</button>
@@ -1008,25 +1012,31 @@ function historyText(h) {
   if (h.kind === 'scenario') return [r.dir, r.summary_ko, p.direction ? '연출 방향: ' + p.direction : ''].filter(Boolean).join('\n');
   return [p.dir, '워크플로우: ' + (used || (p.backend === 'i2v' ? 'Wan 2.2 I2V 6구간' : 'Wan 2.2 SVI'))].filter(Boolean).join('\n');
 }
-// Puts what a past job was given back into the steps of 새 작업.
-async function reuseJob(h) {
-  const p = h.params || {}, r = h.result || {}, dir = r.dir || p.dir;
-  const set = (id, v) => { if (v != null && v !== '') { $(id).value = v; localStorage.setItem('vw_' + id, $(id).value); } };
-  const choose = (id, kind) => {      // the workflow it was made with, when the list still has it
-    if (p.workflow != null && [...$(id).options].some(o => o.value === p.workflow)) { set(id, p.workflow || ' '); $(id).value = p.workflow; localStorage.setItem('vw_' + id, p.workflow); workflowChosen(kind); }
+// Starts a new work from a file of the library: what ComfyUI recorded in it (prompts, start image, workflow).
+async function useFile(ref) {
+  if (state.busy) throw new Error('실행 중인 작업이 끝난 뒤에 쓸 수 있습니다');
+  const r = await post('/api/library/use', { ref });
+  $('dClose').onclick(); resetSteps();
+  const choose = kind => {      // the same workflow, when the server keeps it and this step can run it
+    const sel = $(kind === 'image' ? 'imgWorkflow' : 'videoWorkflow');
+    const w = (workflows[kind] || []).find(x => !x.reason && r.workflow && (x.label === r.workflow || x.label === r.workflow + '.api'));
+    if (w) { sel.value = w.name; workflowChosen(kind); }
+    return w ? '워크플로우는 ' + w.label + '(으)로 골랐습니다.' : r.workflow ? '워크플로우 ' + r.workflow + '은(는) 이 단계의 목록에 없어 지금 고른 것을 씁니다.'
+      : '이 파일의 워크플로우는 서버에 저장되어 있지 않아 지금 고른 것을 씁니다 (상세 화면의 서버 workflow 폴더에 저장을 하면 고를 수 있습니다).';
   };
-  if (dir) { await openScenario(dir); if (h.kind === 'video') choose('videoWorkflow', 'video'); showTab(h.kind === 'video' ? 'video' : 'scenario'); return; }
-  if (h.kind === 'image') {
-    set('imgPrompt', p.prompt); $('imgSteps').value = p.steps || ''; choose('imgWorkflow', 'image');
-    if ([...$('imgSize').options].some(o => o.value === p.width + 'x' + p.height)) set('imgSize', p.width + 'x' + p.height);
-    $('imgSeed').value = r.seed || p.seed || 0;
-    if (r.image) setImage(r.image, imageInfo(r));
-    showTab('image');
-  } else if (h.kind === 'scenario') {      // one that did not get as far as a scenario folder
-    set('direction', p.direction); set('segments', p.segments); set('seconds', p.seconds); set('scName', p.name);
-    if (p.image) setImage(p.image);
+  if (r.kind === 'video') {
+    await openScenario(r.dir); loadScenarioList();
+    $('jobScenario').className = 'job ok';
+    $('jobScenario').textContent = '보관함의 영상에서 구간 프롬프트 ' + r.segments + '개와 시작 이미지('
+      + (r.image_from === 'input' ? '영상을 만들 때 쓴 이미지' : '영상의 첫 프레임') + ')를 가져와 새 시나리오를 만들었습니다. ' + choose('video')
+      + (r.empty ? ' 프롬프트 ' + r.empty + '개는 실행 중에 만들어진 것이라 비어 있습니다. 직접 채우세요.' : '');
     showTab('scenario');
-  } else throw new Error('이 작업에는 불러올 내용이 없습니다');
+  } else {
+    $('imgPrompt').value = r.prompt || $('imgPrompt').value;
+    setImage(r.image, [r.width ? r.width + ' × ' + r.height : '', r.seed ? 'seed ' + r.seed : '', '보관함에서 가져온 이미지'].filter(Boolean).join(' · '));
+    $('jobImage').className = 'job ok'; $('jobImage').textContent = '보관함의 이미지를 시작 이미지로 넣었습니다. ' + choose('image');
+    showTab('image');
+  }
 }
 // What a job is connected to (start image, scenario, videos made from it), as a list of things to open.
 function linkList(links) {
@@ -1191,15 +1201,15 @@ async function openDetail(ref, shownName) {
     $('dTags').onkeydown = e => { if (e.key === 'Enter') $('dMarkSave').onclick(); };
   }
   if (d.job) {
-    const box = $('dJob'), text = historyText(d.job), acts = el('div', 'actions'); box.innerHTML = ''; acts.style.marginTop = '6px';
+    const box = $('dJob'), text = historyText(d.job); box.innerHTML = '';
     box.append(jobHead(d.job));
     if (text) box.append(el('div', 'text', text));
     if (d.job.error) box.append(el('div', 'text', d.job.error));
     box.append(linkList(d.job.links));
-    const again = el('button', 'mini', '새 작업으로 불러오기');
-    again.onclick = () => reuseJob(d.job).then(() => $('dClose').onclick()).catch(e => { $('dFileInfo').className = 'job err'; $('dFileInfo').textContent = e.message; });
-    acts.append(again); box.append(acts);
   }
+  $('dUseHint').textContent = d.kind === 'video' ? '구간 프롬프트와 시작 이미지로 새 시나리오를 만듭니다' : '시작 이미지와 프롬프트로 넣습니다';
+  $('dUse').disabled = !d.has_prompt && d.kind === 'video';      // a video without ComfyUI's record has no prompts to take
+  $('dUse').onclick = () => useFile(ref).catch(e => { $('dFileInfo').className = 'job err'; $('dFileInfo').textContent = e.message; });
   // rename / delete: only for files of the output folder, not for a file dropped on the page
   const info = $('dFileInfo'); info.className = 'job'; info.textContent = '';
   $('dFileActions').style.display = ref.startsWith('output:') ? 'flex' : 'none';

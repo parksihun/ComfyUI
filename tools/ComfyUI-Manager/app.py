@@ -1734,6 +1734,73 @@ async def api_library_item(request):
     return web.json_response(info)
 
 
+async def api_library_use(request):
+    """Make a file of the library the start of a new work, from what ComfyUI recorded in it. A video gives a new
+    scenario folder holding its segment prompts and its start image; an image becomes the start image, with its prompt."""
+    app, lib, ref = request.app["app"], _library(request), (await request.json()).get("ref", "")
+    try:
+        full = lib.resolve(ref)
+        prompt, _, media = await asyncio.to_thread(library.read_metadata, full)
+        info = await asyncio.to_thread(library.describe, full, lib.catalogue)
+    except ValueError as e:
+        raise AppError(str(e))
+    rel = lib.rel_of(ref) if ref.startswith("output:") else ""
+    row = app.store.job_of(lib.root, rel) if rel else None
+    workflow = (row or {}).get("workflow") or (info["workflow"] if info.get("match") else "")      # '' = not one the server keeps
+    slots = comfy_convert.find_slots(prompt) if prompt else {"prompts": [], "load": None, "sizes": []}
+    said = lambda ids: next((prompt[n]["inputs"]["text"] for n in ids if isinstance(prompt[n]["inputs"].get("text"), str)), "")
+    texts = [said(group) for group in slots["prompts"]]      # '' where a node wrote the prompt while the workflow ran
+
+    if not full.lower().endswith(library.VIDEO_EXT):
+        if rel:      # ComfyUI reads it where it is
+            image = {"filename": os.path.basename(rel), "subfolder": os.path.dirname(rel), "type": "output"}
+        else:        # a file dropped on the page: ComfyUI gets a copy
+            png = io.BytesIO()
+            Image.open(full).convert("RGB").save(png, "PNG")
+            image = await app.comfy.upload_image(png.getvalue(), time.strftime("%Y%m%d_%H%M%S") + "_upload.png")
+        seeds = [n["inputs"][k] for n in (prompt or {}).values() for k in ("seed", "noise_seed") if isinstance(n["inputs"].get(k), int)]
+        return web.json_response({"kind": "image", "image": image, "prompt": texts[0] if texts else "", "workflow": workflow,
+                                  "seed": seeds[0] if seeds else 0, "width": media["width"], "height": media["height"]})
+
+    if not texts:
+        raise AppError("이 영상에는 프롬프트 정보가 들어 있지 않아 새 작업에 쓸 수 없습니다")
+    # the start image: the file the workflow loaded, when the ComfyUI in use still has it; else the video's first frame
+    image, image_ref, source = None, {}, "frame"
+    loaded = prompt[slots["load"]]["inputs"].get("image") if slots["load"] else None
+    if isinstance(loaded, str) and loaded:
+        folder, _, filename = loaded.replace("\\", "/").rpartition("/")
+        candidate = {"filename": filename, "subfolder": folder, "type": "input"}
+        try:
+            image, image_ref, source = Image.open(io.BytesIO(await app.comfy.view_bytes(candidate))).convert("RGB"), candidate, "input"
+        except (AppError, aiohttp.ClientError, asyncio.TimeoutError, OSError):
+            pass
+    if image is None:
+        try:
+            image = Image.open(await asyncio.to_thread(lib.frame, ref, "first")).convert("RGB")
+        except (ValueError, OSError, StopIteration, AttributeError, IndexError, av.FFmpegError) as e:
+            raise AppError(f"시작 이미지를 구하지 못했습니다: {e}")
+    name = time.strftime("%Y%m%d_%H%M%S") + "_" + sanitize_name(os.path.splitext(os.path.basename(full))[0]) + "_prompts"
+    folder = app.scenario_dir(name)
+    os.makedirs(folder, exist_ok=True)
+    png = io.BytesIO()
+    image.save(png, "PNG")
+    with open(os.path.join(folder, "reference.png"), "wb") as f:
+        f.write(png.getvalue())
+    if not image_ref:      # so the scenario can be written again from this image
+        try:
+            image_ref = await app.comfy.upload_image(png.getvalue(), upload_name(name))
+        except (AppError, aiohttp.ClientError, asyncio.TimeoutError):
+            pass
+    seconds = round(media["duration"] / len(texts), 1) if media.get("duration") else 5
+    doc = build_scenario_doc({"summary_ko": "", "common_prompt": "", "segments": [{"positive_prompt": t, "scene_ko": ""} for t in texts]},
+                             len(texts), seconds, image.width, image.height, "", image_ref)
+    negative = said(sorted(comfy_convert.text_encoders(prompt)[1]))
+    doc.update(source_file=os.path.basename(full), negative_prompt=negative or doc["negative_prompt"])
+    app.save_scenario(name, doc)
+    return web.json_response({"kind": "video", "dir": name, "workflow": workflow, "segments": len(texts),
+                              "empty": sum(1 for t in texts if not t), "image_from": source})
+
+
 async def api_library_mark(request):
     """Favourite, tags and note of a file: only what is given is changed."""
     lib, body = _library(request), await request.json()
@@ -1950,6 +2017,7 @@ def make_app(cfg):
         web.get("/api/library/frame", api_library_frame),
         web.get("/api/library/workflow", api_library_workflow),
         web.post("/api/library/save_workflow", api_library_save_workflow),
+        web.post("/api/library/use", api_library_use),
         web.post("/api/library/mark", api_library_mark),
         web.post("/api/library/rename", api_library_rename),
         web.post("/api/library/delete", api_library_delete),
