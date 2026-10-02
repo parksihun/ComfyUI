@@ -651,7 +651,7 @@ class App:
                     message = str(data.get("exception_message", ""))
                     if "CUDA error: invalid argument" in message:      # not this node: nothing big loads to the GPU any more
                         message = ("ComfyUI 서버의 GPU 메모리 상태가 깨져 큰 모델을 GPU에 올리지 못합니다 (CUDA error: invalid argument). "
-                                   "이 상태에서는 다시 실행해도 같은 오류가 나니 서버에서 ComfyUI를 재시작하세요. 영상 작업 뒤에 반복되면 "
+                                   "이 상태에서는 다시 실행해도 같은 오류가 나니 ComfyUI를 재시작하세요 (설정의 'ComfyUI 재시작'). 영상 작업 뒤에 반복되면 "
                                    "서버의 ComfyUI 실행 옵션에 --disable-pinned-memory 가 있는지 확인하세요 (Start_ComfyUI_L40S.bat).")
                     raise AppError(f"[{data.get('node_id')} {title}] {data.get('exception_type', '')}: {message}")
             raise AppError("ComfyUI 실행 중 오류가 났습니다 (ComfyUI 콘솔을 확인하세요)")
@@ -1350,6 +1350,29 @@ async def api_folders(request):
         raise AppError(f"폴더를 열 수 없습니다: {e.strerror or e}")
 
 
+async def api_comfy_restart(request):
+    """Restart the ComfyUI in use. ComfyUI itself cannot do that; the ComfyUI-Manager node pack on that server can
+    (POST /manager/reboot), and starts it again with the options it was started with."""
+    app = request.app["app"]
+    if app.lock.locked():
+        raise AppError("실행 중인 작업이 있습니다. 먼저 중단한 뒤 재시작하세요")
+    try:
+        async with app.comfy.session.post(app.comfy.url + "/manager/reboot", json={}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+            status, text = r.status, (await r.text())[:300]
+    except (aiohttp.ServerDisconnectedError, aiohttp.ClientPayloadError, aiohttp.ClientOSError, asyncio.TimeoutError):
+        status, text = 200, ""      # the process is replaced before it answers
+    if status == 404:
+        raise AppError("이 ComfyUI에는 재시작 기능이 없습니다 (서버에 ComfyUI-Manager 노드 팩이 있어야 합니다). 서버에서 직접 재시작하세요")
+    if status == 403:
+        raise AppError("서버의 ComfyUI-Manager가 재시작을 막고 있습니다 (security_level 설정). 서버에서 직접 재시작하세요")
+    if status >= 400:
+        raise AppError(f"재시작 요청이 거부되었습니다 ({status}): {text}")
+    # what was known about that ComfyUI belongs to the process that is gone
+    app.comfy._object_info = None
+    app._combos, app._chat_models, app._llm, app._svi_cache, app.last_stage, app._followed = {}, (0, None), (0, None), None, None, None
+    return web.json_response({"message": "ComfyUI에 재시작을 요청했습니다. 다시 연결될 때까지 1~2분 걸립니다 (연결 표시가 파란색으로 돌아오면 끝난 것입니다)"})
+
+
 async def api_free(request):
     app = request.app["app"]
     await app.comfy.post_json("/qwenvl/chat/unload", {"backend": "all"}, timeout=60)
@@ -1639,6 +1662,7 @@ def make_app(cfg):
         web.post("/api/job/{id}/cancel", api_cancel),
         web.post("/api/free", api_free),
         web.post("/api/comfy", api_comfy),
+        web.post("/api/comfy/restart", api_comfy_restart),
         web.post("/api/result_dir", api_result_dir),
         web.get("/api/folders", api_folders),
         web.post("/api/upload", api_upload),

@@ -161,7 +161,7 @@
     <button id="btnCancel" class="danger" disabled>중단</button>
   </span>
   <span class="status" title="ComfyUI 연결 상태 (파란색: 연결됨, 빨간색: 연결 안 됨)"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></span>
-  <button class="sub gear" id="btnSettings" title="설정: 서버 연결, 서버 결과 폴더, VRAM 비우기" aria-label="설정">&#9881;</button>
+  <button class="sub gear" id="btnSettings" title="설정: 서버 연결, 서버 결과 폴더, VRAM 비우기, ComfyUI 재시작" aria-label="설정">&#9881;</button>
 </header>
 
 <div class="panel" id="settings" hidden>
@@ -182,6 +182,8 @@
     <button class="sub" id="btnFree" title="ComfyUI와 Qwen Chat이 잡고 있는 모델을 VRAM에서 내립니다">VRAM 비우기</button>
     <span class="hint" id="vramInfo" style="margin:0"></span>
   </div>
+  <label>ComfyUI 서버 재시작</label>
+  <button class="danger" id="btnRestart" title="연결된 ComfyUI를 켤 때와 같은 옵션으로 다시 시작합니다. 실행 중이던 작업과 대기열은 사라집니다. 서버에 ComfyUI-Manager 노드 팩이 있어야 합니다">ComfyUI 재시작</button>
   <div class="job" id="setInfo"></div>
 </div>
 
@@ -784,6 +786,19 @@ const choose = async path => {
 $('fpChoose').onclick = () => choose($('fpPath').value.trim());
 $('fpNone').onclick = () => choose('');
 $('btnCancel').onclick = async () => { if (state.currentJob) await post('/api/job/' + state.currentJob + '/cancel', {}).catch(() => {}); };
+$('btnRestart').onclick = async () => {
+  const b = $('btnRestart');
+  if (b.textContent === 'ComfyUI 재시작') {      // first click asks, the second one restarts
+    b.textContent = '정말 재시작 (작업과 대기열이 사라짐)';
+    setInfo('연결된 ComfyUI(' + ((state.status || {}).comfy_url || '') + ')를 다시 시작합니다. 한 번 더 누르면 실행합니다.');
+    setTimeout(() => { b.textContent = 'ComfyUI 재시작'; }, 6000);
+    return;
+  }
+  b.textContent = 'ComfyUI 재시작';
+  try { setInfo((await post('/api/comfy/restart', {})).message, 'ok'); state.status = null; state.paramsLoaded = null; }
+  catch (e) { setInfo(e.message, 'err'); }
+  setTimeout(refreshStatus, 3000);
+};
 $('btnFree').onclick = async () => {
   try { await post('/api/free', {}); setInfo('VRAM 비우기를 요청했습니다', 'ok'); }
   catch (e) { setInfo(e.message, 'err'); }
