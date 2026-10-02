@@ -2,8 +2,8 @@
 and which job made which file, so a file can be asked for its job and a job for its files.
 
 Files are kept per result folder (root), so looking at another server's folder does not throw away what was read
-from the first one. Everything in `files` can be rebuilt from the files themselves; `jobs`, `job_files` and `marks`
-(favourite, tags and note the user gave a file) cannot.
+from the first one. Everything in `files` can be rebuilt from the files themselves; `jobs`, `job_files`, `marks`
+(favourite, tags and note the user gave a file) and `works` (the finished works the user chose to record) cannot.
 """
 import json
 import os
@@ -27,6 +27,7 @@ CREATE INDEX IF NOT EXISTS job_files_rel ON job_files (root, rel);
 CREATE TABLE IF NOT EXISTS marks (
     root TEXT NOT NULL, rel TEXT NOT NULL COLLATE NOCASE, favorite INTEGER NOT NULL DEFAULT 0,
     tags TEXT NOT NULL DEFAULT '[]', note TEXT NOT NULL DEFAULT '', PRIMARY KEY (root, rel));
+CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, time REAL, root TEXT, entry TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS workflow_index (
     server TEXT NOT NULL, name TEXT NOT NULL, modified INTEGER, entry TEXT NOT NULL, PRIMARY KEY (server, name));
 """
@@ -156,6 +157,26 @@ class Store:
     def jobs(self, limit=500):
         """Newest first. Each: the columns, 'entry' (what the page shows) and 'files' {output number: path now}."""
         return self._jobs(limit=limit)
+
+    def job(self, job_id):
+        found = self._jobs("WHERE id = ?", (job_id,), 1) if job_id else []
+        return found[0] if found else None
+
+    # ---- works: what the user recorded after finishing a video (the 작업 이력 page) ------------------------
+    def add_work(self, work, root):
+        self._run([("INSERT OR REPLACE INTO works (id, time, root, entry) VALUES (?, ?, ?, ?)",
+                    (work["id"], work["time"], root, json.dumps(work, ensure_ascii=False)))])
+
+    def works(self, limit=500):
+        """Newest first."""
+        return [json.loads(r["entry"]) for r in self._all("SELECT entry FROM works ORDER BY time DESC LIMIT ?", (limit,))]
+
+    def work(self, work_id):
+        found = self._all("SELECT entry FROM works WHERE id = ?", (work_id,))
+        return json.loads(found[0]["entry"]) if found else None
+
+    def drop_work(self, work_id):
+        self._run([("DELETE FROM works WHERE id = ?", (work_id,))])
 
     def job_count(self):
         return self._all("SELECT COUNT(*) AS n FROM jobs")[0]["n"]

@@ -4,8 +4,10 @@ Create: z-image turbo image -> Qwen scenario (N prompts) -> Wan 2.2 video. Nothi
 step is queued on a running ComfyUI through its HTTP API (/prompt, /history, /view, /upload/image, /free, /ws).
 Library: lists the output folder and shows, for any image or video, the workflow and prompts it was made with
 (read from the metadata ComfyUI embeds in the file); works without ComfyUI running.
-History: the jobs that were run. Jobs, the library's index and the user's tags / notes live in one SQLite file
-(data/manager.db, see store.py), which is what connects a job to the files it made.
+History: the works the user recorded after finishing a video; one opens into the create steps with the image and
+prompts it was made with. Every job that ran is also kept (not shown as a list), which is what connects a file of the
+library to the job that made it. All of it, with the library's index and the user's tags / notes, lives in one
+SQLite file (data/manager.db, see store.py).
 
 A small aiohttp server with a one-page UI; it only needs packages ComfyUI already ships (aiohttp, Pillow, PyAV).
 
@@ -859,13 +861,77 @@ class App:
         except (OSError, ValueError, KeyError):
             log.exception("history.json not imported")
 
-    def stored_entry(self, row):
-        """A job of the store as the page shows it: its files where they are now, and what it is connected to."""
+    def with_refs(self, row):
+        """A job of the store with its files where they are now (renamed ones followed, deleted ones without ref)."""
         entry, here = row["entry"], row["root"] == store.root_key(self.output_dir)
         for n, f in enumerate(entry.get("outputs") or []):
             f["ref"] = "output:" + row["files"][n] if here and n in row["files"] else ""
+        return entry
+
+    def stored_entry(self, row):
+        """A job of the store as the page shows it: its files where they are now, and what it is connected to."""
+        entry = self.with_refs(row)
         entry["links"] = self.links(row)
         return entry
+
+    # ---- works: a finished image -> scenario -> video the user recorded ---------------------------------
+    def record_work(self, body):
+        """Keep a finished video with everything it was made from, so it can be opened into the steps again."""
+        job_id = str(body.get("video_job") or "")
+        job = self.jobs.get(job_id)
+        row = self.store.job(job_id)
+        entry = row["entry"] if row else self.history_entry(job) if job else None
+        if not entry or entry["kind"] != "video" or entry["state"] != "done":
+            raise AppError("영상까지 끝난 작업만 기록할 수 있습니다")
+        result, params = entry["result"], entry["params"]
+        doc = result.get("scenario") or self.load_scenario(result["dir"])
+        ref = doc.get("image_ref") or {}
+        # what the page knows about the start image (prompt, workflow, seed), when it made it in this session
+        made = (body.get("images") or {}).get(ref.get("filename") or "") or {}
+        text = lambda v, n=4000: str(v if v is not None else "")[:n]
+        work = {
+            "id": uuid.uuid4().hex[:12], "time": time.time(),
+            "title": text(doc.get("summary_ko") or made.get("prompt") or result["dir"], 200),
+            "image": {"ref": ref, "workflow": text(made.get("workflow"), 300), "label": text(made.get("label"), 300),
+                      "prompt": text(made.get("prompt")), "size": text(made.get("size"), 20), "steps": text(made.get("steps"), 10),
+                      "seed": made.get("seed") or 0, "info": text(made.get("info"), 600)},
+            "scenario": {"dir": result["dir"], "doc": doc,
+                         "form": {k: text(v, 2000) for k, v in (body.get("scenario") or {}).items() if isinstance(k, str)}},
+            "video": {"job": entry["id"], "workflow": params.get("workflow") or self.video_workflow(params),
+                      "label": result.get("workflow") or "", "final": result["final"], "elapsed": entry.get("elapsed", 0),
+                      "options": {k: bool(params.get(k, k != "prepend_common")) for k in ("random_seed", "match_size", "prepend_common")},
+                      "params": params.get("params") or {}},
+        }
+        self.store.add_work(work, store.root_key(self.output_dir))
+        return work
+
+    def work_view(self, work):
+        """A recorded work for the page: with its final video as the library has it now ('' when it is gone)."""
+        row = self.store.job(work["video"].get("job"))
+        final, ref = work["video"].get("final") or {}, ""
+        if row:
+            ref = next((f["ref"] for f in self.with_refs(row)["outputs"]
+                        if (f["filename"], f["type"]) == (final.get("filename"), final.get("type"))), "")
+            if not ref:      # renamed in the library: the job's files follow, the name kept in the record does not
+                ref = next((f["ref"] for f in row["entry"]["outputs"] if f.get("ref") and f["kind"] == "video"), "")
+        return dict(work, final_ref=ref)
+
+    async def open_work(self, work):
+        """Put the scenario folder back as it was when the work was recorded, so the steps show the prompts it was made
+        with. Returns '' or what could not be restored."""
+        name, doc = work["scenario"]["dir"], work["scenario"]["doc"]
+        folder = self.scenario_dir(name)
+        if not os.path.isfile(os.path.join(folder, "reference.png")):      # the folder was deleted: the start image again
+            try:
+                image = Image.open(io.BytesIO(await self.comfy.view_bytes(work["image"]["ref"]))).convert("RGB")
+                os.makedirs(folder, exist_ok=True)
+                image.save(os.path.join(folder, "reference.png"), "PNG")
+            except (AppError, aiohttp.ClientError, asyncio.TimeoutError, OSError, KeyError, TypeError):
+                return ("시나리오 폴더와 시작 이미지가 없어져서 되살리지 못했습니다. 프롬프트는 기록에 남아 있지만 "
+                        "이 화면에서 다시 실행하려면 이미지를 새로 만들거나 올려야 합니다")
+        self.save_scenario(name, doc)
+        return ""
+
 
     def links(self, row):
         """What a job is connected to: the scenario and start image it used, the scenarios and videos made from it.
@@ -1349,7 +1415,8 @@ class App:
             job.notes.append("저장: " + self.saved_text(final[-1]))
         if unseen:
             job.notes.append(unseen)
-        return {"dir": name, "final": final[-1], "workflow": self.workflow_label(workflow)}
+        # the scenario as it was run: a recorded work keeps it, whatever is done to the folder later
+        return {"dir": name, "final": final[-1], "workflow": self.workflow_label(workflow), "scenario": doc}
 
 
 # ---------------------------------------------------------------------------------------------- #
@@ -1426,11 +1493,37 @@ async def api_job(request):
     return web.json_response(job.to_dict())
 
 
-async def api_history(request):
-    """Jobs run with this program, newest first: the ones still running, then the finished ones on record."""
+async def api_works(request):
+    """The recorded works, newest first, without the scenarios they carry."""
     app = request.app["app"]
-    live = [app.history_entry(j) for j in sorted(app.jobs.values(), key=lambda j: -j.created) if j.finished is None]
-    return web.json_response({"items": live + [app.stored_entry(row) for row in app.store.jobs(300)]})
+    items = []
+    for work in app.store.works():
+        view = app.work_view(work)
+        view["scenario"] = {"dir": work["scenario"]["dir"], "segments": len(work["scenario"]["doc"].get("segments") or [])}
+        items.append(view)
+    return web.json_response({"items": items})
+
+
+async def api_work_add(request):
+    app = request.app["app"]
+    return web.json_response({"work": app.work_view(app.record_work(await request.json()))})
+
+
+async def api_work_open(request):
+    app = request.app["app"]
+    work = app.store.work(request.match_info["id"])
+    if work is None:
+        return json_error("기록을 찾을 수 없습니다", 404)
+    if app.lock.locked():
+        raise AppError("실행 중인 작업이 있어 지금은 기록을 열 수 없습니다 (시나리오 폴더를 기록할 때의 내용으로 되돌려야 합니다)")
+    warning = await app.open_work(work)
+    return web.json_response({"work": app.work_view(work), "warning": warning})
+
+
+async def api_work_delete(request):
+    """Forget a recorded work. Its files stay where they are."""
+    request.app["app"].store.drop_work(request.match_info["id"])
+    return web.json_response({"ok": True})
 
 
 async def api_cancel(request):
@@ -1860,7 +1953,10 @@ def make_app(cfg):
         web.post("/api/library/mark", api_library_mark),
         web.post("/api/library/rename", api_library_rename),
         web.post("/api/library/delete", api_library_delete),
-        web.get("/api/history", api_history),
+        web.get("/api/works", api_works),
+        web.post("/api/works", api_work_add),
+        web.post("/api/works/{id}/open", api_work_open),
+        web.post("/api/works/{id}/delete", api_work_delete),
         web.post("/api/inspect", api_inspect),
     ])
     web_app.on_startup.append(on_startup)

@@ -116,7 +116,7 @@
   .links a { color:var(--accent); cursor:pointer; word-break:break-all; }
   .jobbox { background:#12141a; border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:13px; }
   .jobbox .text { margin-top:4px; white-space:pre-wrap; word-break:break-word; max-height:6em; overflow:auto; }
-  .hist.flash { background:#18263a; }
+  .card .del { position:absolute; right:6px; bottom:6px; padding:2px 8px; font-size:12px; font-weight:normal; background:rgba(0,0,0,.65); color:#ffd7d7; }
   .hist { display:flex; gap:12px; padding:12px 0; border-top:1px solid var(--line); }
   .hist .thumbs { flex:none; width:84px; display:flex; flex-direction:column; gap:6px; }
   .hist .thumbs img { width:84px; height:84px; object-fit:cover; border-radius:6px; cursor:pointer; background:#000; }
@@ -162,6 +162,7 @@
   <span id="createButtons" style="display:flex;gap:10px">
     <button id="btnAll" title="이미지 → 시나리오 → 영상을 현재 입력값으로 이어서 실행">한 번에 실행</button>
     <button id="btnCancel" class="danger" disabled>중단</button>
+    <button id="btnRecord" class="sub" disabled title="영상까지 만든 작업을 작업 이력에 남깁니다. 영상 생성이 끝나면 누를 수 있습니다">기록</button>
   </span>
   <span class="status" title="ComfyUI 연결 상태 (초록색: 연결됨, 빨간색: 연결 안 됨)"><span class="dot" id="dot"></span><span id="statusText">ComfyUI 확인 중…</span></span>
   <button class="sub gear" id="btnSettings" title="설정: 서버 연결, 서버 결과 폴더, VRAM 비우기, ComfyUI 재시작" aria-label="설정">&#9881;</button>
@@ -191,6 +192,7 @@
 </div>
 
 <main id="tabCreate">
+  <div class="ctx" id="workBanner" hidden></div>
   <section id="stepImage">
     <h2>이미지 생성 · 입력 <span>고른 워크플로우로 영상의 첫 프레임을 만듭니다 (또는 가지고 있는 이미지를 올립니다)</span></h2>
     <div class="cols">
@@ -312,17 +314,9 @@
 
 <main id="tabHistory" hidden>
   <section>
-    <h2>작업 이력 <span>이 프로그램으로 실행한 작업의 기록입니다 (최신순)</span></h2>
-    <div class="row">
-      <div><label>단계</label>
-        <select id="histKind"><option value="">전체</option><option value="image">이미지</option><option value="scenario">시나리오</option><option value="video">영상</option></select></div>
-      <div><label>결과</label>
-        <select id="histState"><option value="">전체</option><option value="done">완료</option><option value="failed">오류 · 중단</option></select></div>
-      <div style="flex:3"></div>
-      <div style="flex:0"><button class="sub" id="btnHistReload">새로 고침</button></div>
-    </div>
+    <h2>작업 이력 <span>새 작업에서 영상까지 만든 뒤 <b>기록</b>을 누른 작업입니다. 누르면 그때의 이미지와 프롬프트가 들어간 화면이 열립니다</span></h2>
     <div class="hint" id="histInfo"></div>
-    <div id="histList"></div>
+    <div class="grid" id="workGrid"></div>
   </section>
 </main>
 
@@ -430,7 +424,10 @@
 <script>
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const state = { image: null, dir: null, segCount: 0, currentJob: null, busy: false, status: null, paramsLoaded: null };
+const state = { image: null, dir: null, segCount: 0, currentJob: null, busy: false, status: null, paramsLoaded: null,
+                videoDone: null,      // the finished video job of what is on screen, not recorded yet
+                work: null };         // the recorded work the steps were opened from
+const imageMade = {};                 // file name -> how an image of this session was made (prompt, workflow, seed...)
 const SAVED = ['imgPrompt', 'imgSize', 'direction', 'segments', 'seconds', 'scName', 'analyzer', 'model', 'detail'];
 
 async function api(path, opts) {
@@ -502,6 +499,8 @@ async function genImage() {
   const [w, h] = $('imgSize').value.split('x').map(Number);
   const j = await runJob('image', { workflow: $('imgWorkflow').value, prompt: $('imgPrompt').value, width: w, height: h,
                                     seed: Number($('imgSeed').value) || 0, steps: Number($('imgSteps').value) || 0 }, $('jobImage'));
+  imageMade[j.result.image.filename] = { workflow: $('imgWorkflow').value, label: j.result.workflow || '', prompt: $('imgPrompt').value,
+    size: $('imgSize').value, steps: $('imgSteps').value, seed: j.result.seed, info: imageInfo(j.result) };
   setImage(j.result.image, imageInfo(j.result));
 }
 // What is said under a generated image: size, seed, the workflow it was made with, where it was saved.
@@ -582,6 +581,7 @@ function fillModels() {
 }
 
 function showScenario(dir, sc) {
+  if (dir !== state.dir) { state.videoDone = null; showRecord(); }
   state.dir = dir;
   $('scEmpty').hidden = true; $('scEditor').hidden = false;
   $('scDir').textContent = 'output/' + dir + '/prompts.json';
@@ -685,8 +685,109 @@ async function genVideo() {
   const params = {};
   for (const i of $('params').querySelectorAll('input')) if (i.value !== '') params[i.dataset.node] = i.value;
   $('videos').innerHTML = '';
-  await runJob('video', { dir: state.dir, workflow: $('videoWorkflow').value, random_seed: $('randomSeed').checked,
+  state.videoDone = null; showRecord();
+  state.videoDone = await runJob('video', { dir: state.dir, workflow: $('videoWorkflow').value, random_seed: $('randomSeed').checked,
                           match_size: $('matchSize').checked, prepend_common: $('prependCommon').checked, params }, $('jobVideo'), renderOutputs);
+  showRecord();
+}
+
+// ---- recording a finished work, and the recorded works (작업 이력) ----
+function showRecord(done) {
+  $('btnRecord').disabled = !state.videoDone;
+  $('btnRecord').textContent = done ? '기록됨' : '기록';
+  $('btnRecord').classList.toggle('sub', !state.videoDone);      // lights up when there is something to record
+}
+$('btnRecord').onclick = async () => {
+  const box = $('jobVideo');
+  try {
+    const form = {};
+    for (const id of ['direction', 'segments', 'seconds', 'scName', 'analyzer', 'model', 'detail']) form[id] = $(id).value;
+    await post('/api/works', { video_job: state.videoDone.id, images: imageMade, scenario: form });
+    state.videoDone = null; showRecord(true);
+    box.className = 'job ok'; box.textContent = '작업 이력에 기록했습니다. 다시 실행하면 새 작업이 되어 또 기록할 수 있습니다.';
+  } catch (e) { box.className = 'job err'; box.textContent = '기록하지 못했습니다: ' + e.message; }
+};
+async function loadWorks() {
+  const info = $('histInfo'), grid = $('workGrid');
+  let res;
+  try { res = await api('/api/works'); }
+  catch (e) { info.className = 'job err'; info.textContent = e.message; return; }
+  info.className = 'hint';
+  info.textContent = res.items.length ? res.items.length + '건' : '아직 기록한 작업이 없습니다. 새 작업에서 영상까지 만든 뒤 위쪽의 기록을 누르면 여기에 남습니다.';
+  grid.innerHTML = '';
+  for (const w of res.items) {
+    const card = el('div', 'card'), pic = el('div', 'pic'), img = el('img'), meta = el('div', 'meta'), del = el('button', 'del', '기록 삭제');
+    img.loading = 'lazy'; img.alt = '';
+    const start = '/api/scenario/image?dir=' + encodeURIComponent(w.scenario.dir);
+    img.src = w.final_ref ? refUrl('thumb', w.final_ref) : start;
+    img.onerror = () => { if (!img.src.endsWith(start)) img.src = start; };      // the video is gone: the start image
+    del.title = '이 기록만 지웁니다. 이미지와 영상 파일은 그대로 둡니다';
+    del.onclick = async e => {
+      e.stopPropagation();
+      if (del.textContent === '기록 삭제') { del.textContent = '정말 삭제'; setTimeout(() => { del.textContent = '기록 삭제'; }, 4000); return; }
+      await post('/api/works/' + w.id + '/delete', {}).catch(() => {}); loadWorks();
+    };
+    pic.append(img, el('span', 'tag', '구간 ' + w.scenario.segments + '개'), del);
+    meta.append(el('b', '', w.title), el('span', 'wf', w.video.label || w.video.workflow),
+                el('span', 'dim', fmtDate(w.time) + (w.image.label ? ' · ' + w.image.label : '')));
+    card.title = w.image.prompt || w.title;
+    card.append(pic, meta);
+    card.onclick = () => openWork(w.id).catch(e => { info.className = 'job err'; info.textContent = e.message; window.scrollTo(0, 0); });
+    grid.append(card);
+  }
+}
+// The create steps as they were for a recorded work: its image, its prompts, its settings and its video.
+async function openWork(id) {
+  if (state.busy) throw new Error('실행 중인 작업이 끝난 뒤에 열 수 있습니다');
+  const res = await post('/api/works/' + id + '/open', {}), w = res.work;
+  resetSteps();
+  state.work = w;
+  const pick = (id, v) => { if (v != null && v !== '' && ($(id).tagName !== 'SELECT' || [...$(id).options].some(o => o.value === v))) $(id).value = v; };
+  pick('imgWorkflow', w.image.workflow); workflowChosen('image');
+  pick('imgPrompt', w.image.prompt); pick('imgSize', w.image.size); $('imgSteps').value = w.image.steps || ''; $('imgSeed').value = 0;
+  const f = w.scenario.form || {};
+  for (const id of ['direction', 'segments', 'seconds', 'scName', 'analyzer', 'detail']) pick(id, f[id]);
+  fillModels(); pick('model', f.model);
+  if (!res.warning) {
+    await openScenario(w.scenario.dir);
+    $('jobScenario').textContent = '';
+  } else if (w.image.ref && w.image.ref.filename) { state.image = w.image.ref; $('imgView').src = viewUrl(w.image.ref); $('imgView').hidden = false; }
+  $('imgInfo').textContent = w.image.info || ('seed ' + (w.image.seed || '?'));
+  pick('videoWorkflow', w.video.workflow); workflowChosen('video');
+  for (const [id, key] of [['randomSeed', 'random_seed'], ['matchSize', 'match_size'], ['prependCommon', 'prepend_common']]) $(id).checked = !!w.video.options[key];
+  if (Object.keys(w.video.params || {}).length) {
+    $('paramBox').open = true; state.paramsLoaded = null; await loadParams();
+    for (const i of $('params').querySelectorAll('input')) if (w.video.params[i.dataset.node] != null) i.value = w.video.params[i.dataset.node];
+  }
+  const final = w.video.final, fig = el('figure', 'final'), media = el('video'), cap = el('figcaption', '', final.filename);
+  media.controls = true; media.loop = true; media.muted = true;
+  media.src = w.final_ref ? refUrl('file', w.final_ref) : viewUrl(final, !final.playable);
+  fig.append(media, cap); $('videos').append(fig);
+  $('videoNotes').hidden = false; $('videoNotes').textContent = '기록한 작업의 영상입니다 (' + fmtDate(w.time) + ', 워크플로우: ' + (w.video.label || w.video.workflow) + ')';
+  if (res.warning) { $('jobVideo').className = 'job err'; $('jobVideo').textContent = res.warning; }
+  const banner = $('workBanner'), back = el('button', 'mini', '작업 이력 목록');
+  banner.innerHTML = ''; banner.hidden = false;
+  banner.append(el('span', '', '기록한 작업 (' + fmtDate(w.time) + ')을 연 화면입니다. 여기서 다시 실행하면 seed가 달라져 새 작업이 되고, 끝나면 다시 기록할 수 있습니다.'), back);
+  back.onclick = () => showTab('history');
+  updateContext(); showRecord(true);
+  showTab('video');
+}
+// The steps as they are when the page opens: nothing made yet, the fields as they were last typed.
+function resetSteps() {
+  state.image = null; state.dir = null; state.segCount = 0; state.videoDone = null; state.work = null;
+  $('imgView').hidden = true; $('imgView').removeAttribute('src'); $('imgInfo').textContent = '아직 이미지가 없습니다.'; $('gallery').innerHTML = '';
+  $('scEmpty').hidden = false; $('scEditor').hidden = true; $('segList').innerHTML = ''; $('scWarning').hidden = true; $('rawBox').hidden = true;
+  $('videos').innerHTML = ''; $('videoNotes').hidden = true; $('videoBar').hidden = true;
+  for (const id of ['jobImage', 'jobScenario', 'jobVideo']) { $(id).className = 'job'; $(id).textContent = ''; }
+  for (const id of SAVED) { const v = localStorage.getItem('vw_' + id); if (v !== null && id !== 'model') $(id).value = v; }
+  $('imgSeed').value = 0; $('imgSteps').value = '';
+  for (const kind of ['image', 'video']) {
+    const sel = $(kind === 'image' ? 'imgWorkflow' : 'videoWorkflow'), v = localStorage.getItem('vw_' + sel.id);
+    if (v !== null && [...sel.options].some(o => o.value === v)) { sel.value = v; workflowChosen(kind); }
+  }
+  for (const i of $('params').querySelectorAll('input')) i.value = '';
+  $('workBanner').hidden = true;
+  fillModels(); updateContext(); showRecord();
 }
 
 // ---- status ----
@@ -699,7 +800,6 @@ async function refreshStatus() {
     $('dot').classList.toggle('on', s.comfy_ok);
     let text = s.comfy_ok ? 'ComfyUI 연결됨' : 'ComfyUI에 연결할 수 없음';
     syncLists(s);
-    if (!$('tabHistory').hidden) loadHistory();
     if (s.comfy_ok) text += ' · 대기열 ' + s.running + '+' + s.pending;
     const vram = s.vram ? ((s.vram.total - s.vram.free) / 2 ** 30).toFixed(1) + ' / ' + (s.vram.total / 2 ** 30).toFixed(1) + ' GB' : '';
     if (vram) text += ' · VRAM ' + vram;
@@ -800,7 +900,6 @@ async function applyResultDir(path) {
     setInfo(res.message, 'ok');
     loadScenarioList();      // scenarios, the library and the history thumbnails all come from this folder
     if (!$('tabLibrary').hidden) loadLibrary();
-    if (!$('tabHistory').hidden) loadHistory(true);
     return true;
   } catch (e) { setInfo(e.message, 'err'); if (state.status) syncLists(state.status, true); return false; }
 }
@@ -863,8 +962,9 @@ function showTab(name) {
   const create = !!STEPS[name];
   $('tabCreate').hidden = $('stepTabs').hidden = $('createButtons').hidden = !create;
   $('tabHistory').hidden = name !== 'history'; $('tabLibrary').hidden = name !== 'library';
-  $('menuCreate').classList.toggle('on', create);
-  $('menuHistory').classList.toggle('on', name === 'history'); $('menuLibrary').classList.toggle('on', name === 'library');
+  // a recorded work opened into the steps belongs to 작업 이력
+  $('menuCreate').classList.toggle('on', create && !state.work);
+  $('menuHistory').classList.toggle('on', name === 'history' || (create && !!state.work)); $('menuLibrary').classList.toggle('on', name === 'library');
   if (create) {
     for (const [key, id] of Object.entries(STEPS)) $(id).hidden = key !== name;
     for (const [key, id] of Object.entries(TAB_BUTTONS)) $(id).classList.toggle('on', key === name);
@@ -872,12 +972,15 @@ function showTab(name) {
   }
   localStorage.setItem('vw_tab', name);
   if (name === 'library') loadLibrary();
-  if (name === 'history') loadHistory(true);
+  if (name === 'history') loadWorks();
   if (name === 'video' && $('paramBox').open) loadParams();
   updateContext();
   window.scrollTo(0, 0);
 }
-$('menuCreate').onclick = () => showTab(localStorage.getItem('vw_step'));      // back to the step it was left at
+$('menuCreate').onclick = () => {      // back to the step it was left at; from an opened record, to an empty new work
+  if (state.work && state.busy) return;
+  if (state.work) { resetSteps(); showTab('image'); } else showTab(localStorage.getItem('vw_step'));
+};
 $('menuHistory').onclick = () => showTab('history');
 $('menuLibrary').onclick = () => showTab('library');
 // What the next step will work with, shown at the top of steps 2 and 3.
@@ -895,7 +998,7 @@ function updateContext() {
 }
 for (const [key, id] of Object.entries(TAB_BUTTONS)) $(id).onclick = () => showTab(key);
 
-// ---- job history: what was run with this program ----
+// ---- the job that made a file (shown in the file's detail view) ----
 const KIND = { image: '이미지', scenario: '시나리오', video: '영상' };
 const STATE = { done: '완료', error: '오류', cancelled: '중단됨', running: '실행 중', queued: '대기 중' };
 function historyText(h) {
@@ -947,54 +1050,6 @@ function jobHead(h) {
               ' · ' + fmtDate(h.time) + ' · ' + fmtSec(h.elapsed));
   return head;
 }
-// Shows the job in the history list, scrolled to and lit up for a moment.
-async function showInHistory(id) {
-  $('dClose').onclick(); $('histKind').value = ''; $('histState').value = '';
-  showTab('history'); await loadHistory(true);
-  const row = document.getElementById('hist-' + id);
-  if (row) { row.scrollIntoView({ block: 'center' }); row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 2500); }
-}
-async function loadHistory(force) {
-  const info = $('histInfo');
-  let res;
-  try { res = await api('/api/history'); }
-  catch (e) { info.className = 'job err'; info.textContent = e.message; return; }
-  const kind = $('histKind').value, st = $('histState').value;
-  const items = res.items.filter(h => (!kind || h.kind === kind) && (!st || (st === 'done' ? h.state === 'done' : h.state === 'error' || h.state === 'cancelled')));
-  const sig = kind + st + items.map(h => h.id + h.state + h.outputs.map(f => f.ref).join() + (h.links || []).length).join();
-  if (sig === loadHistory.sig && !force) return;      // the periodic refresh leaves an unchanged list (and what was opened in it) alone
-  loadHistory.sig = sig;
-  info.className = 'hint';
-  info.textContent = items.length ? items.length + '건' : res.items.length ? '조건에 맞는 기록이 없습니다.' : '아직 실행한 작업이 없습니다. 새 작업에서 실행하면 여기에 남습니다.';
-  const list = $('histList'); list.innerHTML = '';
-  for (const h of items) {
-    const row = el('div', 'hist'), thumbs = el('div', 'thumbs'), body = el('div', 'body');
-    row.id = 'hist-' + h.id;
-    const shown = h.outputs.filter(f => f.ref), final = (h.result || {}).final;
-    for (const f of (final ? shown.filter(f => f.filename === final.filename) : shown).slice(0, 3)) {
-      const img = el('img'); img.loading = 'lazy'; img.alt = ''; img.src = refUrl('thumb', f.ref); img.title = f.filename;
-      img.onerror = () => img.remove();      // renamed or deleted since
-      img.onclick = () => openDetail(f.ref);
-      thumbs.append(img);
-    }
-    body.append(jobHead(h));
-    const text = historyText(h);
-    if (text) { const t = el('div', 'text', text); t.title = '누르면 전체를 봅니다'; t.onclick = () => t.classList.toggle('open'); body.append(t); }
-    if (h.error) body.append(el('div', 'text open err', h.error));
-    const where = h.outputs.filter(f => f.saved).map(f => f.saved);
-    if (where.length) body.append(el('div', 'hint', where.slice(-2).join('\n')));
-    if ((h.links || []).length) body.append(linkList(h.links));
-    if (h.state !== 'running' && h.state !== 'queued') {
-      const again = el('button', 'mini', '새 작업으로 불러오기');
-      again.onclick = () => reuseJob(h).catch(e => { info.className = 'job err'; info.textContent = e.message; window.scrollTo(0, 0); });
-      const acts = el('div', 'actions'); acts.style.marginTop = '6px'; acts.append(again); body.append(acts);
-    }
-    row.append(thumbs, body); list.append(row);
-  }
-}
-for (const id of ['histKind', 'histState']) $(id).onchange = () => loadHistory(true);
-$('btnHistReload').onclick = () => loadHistory(true);
-
 // ---- library ----
 const lib = { workflow: '', tag: '' };
 const refUrl = (kind, ref) => '/api/library/' + kind + '?ref=' + encodeURIComponent(ref);
@@ -1141,10 +1196,9 @@ async function openDetail(ref, shownName) {
     if (text) box.append(el('div', 'text', text));
     if (d.job.error) box.append(el('div', 'text', d.job.error));
     box.append(linkList(d.job.links));
-    const again = el('button', 'mini', '새 작업으로 불러오기'), list = el('button', 'mini', '작업 이력에서 보기');
+    const again = el('button', 'mini', '새 작업으로 불러오기');
     again.onclick = () => reuseJob(d.job).then(() => $('dClose').onclick()).catch(e => { $('dFileInfo').className = 'job err'; $('dFileInfo').textContent = e.message; });
-    list.onclick = () => showInHistory(d.job.id);
-    acts.append(again, list); box.append(acts);
+    acts.append(again); box.append(acts);
   }
   // rename / delete: only for files of the output folder, not for a file dropped on the page
   const info = $('dFileInfo'); info.className = 'job'; info.textContent = '';
