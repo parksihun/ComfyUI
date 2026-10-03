@@ -1238,6 +1238,60 @@ class App:
                               "reason": "워크플로우로 읽지 못한 파일입니다"})
         return {"items": items, "default": wanted, "connected": True}
 
+    # ---- home: what the connected ComfyUI can make right now -----------------------------------------
+    BASE_FOLDERS = ("checkpoints", "diffusion_models", "unet_gguf")      # ComfyUI's lists of the models that make the picture
+
+    @staticmethod
+    def workflow_kind(api):
+        """(group, step) of a workflow: group 'image' / 'video_sound' / 'video' / 'other' is what it makes, step is the
+        step of 새 작업 that can run it ('image', 'video' or '')."""
+        slots = comfy_convert.find_slots(api)
+        step = "image" if not App.usable(api, "image") else "video" if not App.usable(api, "video") else ""
+        if slots["video"]:
+            sound = any(library.is_link(n.get("inputs", {}).get("audio")) for n in api.values() if "video" in n["class_type"].lower())
+            return ("video_sound" if sound else "video"), step
+        return ("image" if slots["saves"] else "other"), step
+
+    async def home(self):
+        """The server's workflows by what they make, each with the model files it loads and whether the server has
+        them, and the server's models that no workflow loads."""
+        try:
+            names = await self.workflow_names()
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError):
+            return {"connected": False, "comfy": self.comfy.url, "workflows": [], "models": []}
+        known = await self.listed_models()
+        listed = known[1] if known else None
+
+        def have(name):
+            return None if listed is None else name.replace("\\", "/").lower() in listed
+
+        items, loaded = [], {}
+        for name in names:
+            item = {"name": name, "label": self.workflow_label(name), "group": "other", "step": "", "start_image": False,
+                    "models": [], "loras": [], "missing_nodes": [], "error": ""}
+            try:
+                api, warnings = await self.workflow_api(name)
+                item["group"], item["step"] = self.workflow_kind(api)
+                item["start_image"] = bool(comfy_convert.find_slots(api)["loads"])
+                models, loras = library.GraphReader(api).models()
+                item["models"] = [{"kind": m["kind"], "name": m["name"], "present": have(m["name"])} for m in models]
+                item["loras"] = [{"name": l["name"], "strength": l.get("strength"), "present": have(l["name"])} for l in loras]
+                item["missing_nodes"] = sorted({w.split("'")[1] for w in warnings if "unknown type" in w})
+                for m in models + loras:
+                    loaded.setdefault(m["name"].replace("\\", "/").lower(), []).append(item["label"])
+            except (AppError, aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError, IndexError):
+                item["error"] = "워크플로우로 읽지 못한 파일입니다"
+            items.append(item)
+        lists = await asyncio.gather(*(self.comfy.get_json(f"/models/{f}", timeout=20) for f in self.BASE_FOLDERS), return_exceptions=True)
+        base, seen = [], set()
+        for folder, one in zip(self.BASE_FOLDERS, lists):
+            for model in one if isinstance(one, list) else []:
+                key = str(model).replace("\\", "/").lower()
+                if isinstance(model, str) and key not in seen:      # diffusion_models and unet_gguf look into the same folders
+                    seen.add(key)
+                    base.append({"folder": folder, "name": model, "workflows": loaded.get(key, [])})
+        return {"connected": True, "comfy": self.comfy.url, "models_listed": listed is not None, "workflows": items, "models": base}
+
     # ---- the names the library gives: from the server's workflows, remembered in the store ----------
     def use_catalogue(self):
         """What the store remembers about the workflows of the ComfyUI in use (the library names files with it, also
@@ -1867,6 +1921,11 @@ async def api_workflows(request):
     return web.json_response(await request.app["app"].workflows("image" if kind == "image" else "video"))
 
 
+async def api_home(request):
+    """The first screen: the server's workflows by what they make, with their models, and the models nothing loads."""
+    return web.json_response(await request.app["app"].home())
+
+
 # ---- library ---------------------------------------------------------------------------------------
 def _library(request):
     return request.app["app"].library
@@ -2375,6 +2434,7 @@ def make_app(cfg):
         web.post("/api/scenario/delete", api_scenario_delete),
         web.get("/api/video/info", api_video_info),
         web.get("/api/workflows", api_workflows),
+        web.get("/api/home", api_home),
         web.get("/api/view", api_view),
         web.get("/api/library", api_library),
         web.get("/api/library/item", api_library_item),

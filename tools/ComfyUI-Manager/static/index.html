@@ -85,6 +85,22 @@
   .chip { background:#12141a; border:1px solid var(--line); color:var(--text); border-radius:14px; padding:4px 11px; font-size:12px; font-weight:normal; }
   .chip.on { border-color:var(--accent); background:#18263a; }
   .chip i { color:var(--dim); font-style:normal; margin-left:5px; }
+  .homegroup { margin-top:16px; }
+  .homegroup h3 { margin:0 0 6px; font-size:14px; }
+  .homegroup h3 span { color:var(--dim); font-weight:normal; font-size:12px; margin-left:6px; }
+  .homegrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:10px; }
+  .wf { background:#12141a; border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:13px; }
+  .wf.go { cursor:pointer; }
+  .wf.go:hover { border-color:var(--accent); }
+  .wf h4 { margin:0 0 4px; font-size:14px; word-break:break-all; }
+  .wf .tags { color:var(--dim); font-size:12px; }
+  .wf .tags b { font-weight:normal; color:var(--ok); }
+  .wf .tags b.bad { color:var(--bad); }
+  .wf ul { margin:6px 0 0; padding:0; list-style:none; }
+  .wf li { color:var(--dim); font-size:12px; word-break:break-all; }
+  .wf li span { color:var(--text); }
+  .wf li.gone, .wf li.gone span { color:var(--bad); }
+  .chip.unused { color:var(--dim); }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; margin-top:12px; }
   .grid h3 { grid-column:1/-1; margin:14px 0 0; font-size:13px; color:var(--accent); font-weight:600; }
   .grid h3 span { color:var(--dim); font-weight:normal; margin-left:6px; }
@@ -206,7 +222,7 @@
 <body>
 <aside>
   <h1>ComfyUI-Manager</h1>
-  <nav class="menu"><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuScenarios">시나리오</button><button id="menuLibrary">보관함</button><button id="menuInspect">파일 확인</button><button id="menuModels">모델</button></nav>
+  <nav class="menu"><button id="menuHome">홈</button><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuScenarios">시나리오</button><button id="menuLibrary">보관함</button><button id="menuInspect">파일 확인</button><button id="menuModels">모델</button></nav>
 </aside>
 
 <div class="content">
@@ -243,6 +259,22 @@
   <button class="danger" id="btnRestart" title="연결된 ComfyUI를 켤 때와 같은 옵션으로 다시 시작합니다. 실행 중이던 작업과 대기열은 사라집니다. 서버에 ComfyUI-Manager 노드 팩이 있어야 합니다">ComfyUI 재시작</button>
   <div class="job" id="setInfo"></div>
 </div>
+
+<main id="tabHome" hidden>
+  <section>
+    <h2>지금 만들 수 있는 것 <span id="homeServer"></span></h2>
+    <div class="row">
+      <div class="hint" id="homeInfo" style="flex:3;margin:0"></div>
+      <div style="flex:0"><button class="sub" id="btnHomeReload">새로 고침</button></div>
+    </div>
+    <div id="homeGroups"></div>
+  </section>
+  <section>
+    <h2>설치된 모델 <span>이미지와 영상을 만드는 본체 모델입니다. LoRA, 텍스트 인코더, VAE는 모델 메뉴에 있습니다</span></h2>
+    <div class="hint" id="homeModelInfo" style="margin:0"></div>
+    <div id="homeModels"></div>
+  </section>
+</main>
 
 <main id="tabCreate">
   <div class="ctx" id="workBanner" hidden></div>
@@ -1134,13 +1166,14 @@ $('btnFree').onclick = async () => {
   catch (e) { setInfo(e.message, 'err'); }
   setTimeout(refreshStatus, 2500);
 };
-// ---- menu (새 작업 / 작업 이력 / 시나리오 / 보관함 / 파일 확인) and the step tabs of 새 작업 ----
+// ---- menu (홈 / 새 작업 / 작업 이력 / 시나리오 / 보관함 / 파일 확인 / 모델) and the step tabs of 새 작업 ----
 const STEPS = { image: 'stepImage', scenario: 'stepScenario', video: 'stepVideo' };
 const TAB_BUTTONS = { image: 'tabBtnImage', scenario: 'tabBtnScenario', video: 'tabBtnVideo' };
 function showTab(name) {
-  if (name !== 'library' && name !== 'inspect' && name !== 'history' && name !== 'scenarios' && name !== 'models' && !STEPS[name]) name = 'image';
+  if (name !== 'home' && name !== 'library' && name !== 'inspect' && name !== 'history' && name !== 'scenarios' && name !== 'models' && !STEPS[name]) name = 'image';
   const create = !!STEPS[name];
   $('tabCreate').hidden = $('stepTabs').hidden = $('createButtons').hidden = !create;
+  $('tabHome').hidden = name !== 'home'; $('menuHome').classList.toggle('on', name === 'home');
   $('tabHistory').hidden = name !== 'history'; $('tabLibrary').hidden = name !== 'library'; $('tabScenarios').hidden = name !== 'scenarios';
   $('tabInspect').hidden = name !== 'inspect'; $('menuInspect').classList.toggle('on', name === 'inspect');
   $('tabModels').hidden = name !== 'models'; $('menuModels').classList.toggle('on', name === 'models');
@@ -1154,6 +1187,7 @@ function showTab(name) {
     localStorage.setItem('vw_step', name);
   }
   localStorage.setItem('vw_tab', name);
+  if (name === 'home') loadHome();
   if (name === 'library') loadLibrary();
   if (name === 'history') loadWorks();
   if (name === 'scenarios') loadScenarios();
@@ -1167,11 +1201,93 @@ $('menuCreate').onclick = () => {      // back to the step it was left at; from 
   if (state.work && state.busy) return;
   if (state.work) { resetSteps(); showTab('image'); } else showTab(localStorage.getItem('vw_step'));
 };
+$('menuHome').onclick = () => showTab('home');
 $('menuHistory').onclick = () => showTab('history');
 $('menuLibrary').onclick = () => showTab('library');
 $('menuInspect').onclick = () => showTab('inspect');
 $('menuScenarios').onclick = () => showTab('scenarios');
 $('menuModels').onclick = () => showTab('models');
+// ---- home: the workflows of the connected ComfyUI by what they make, with the models they load, and its models ----
+const HOME_GROUPS = [['image', '이미지 생성', ''], ['video_sound', '영상 · 소리 있음', ''], ['video', '영상 · 소리 없음', ''],
+                     ['other', '그 밖', '이미지나 영상을 저장하지 않거나 읽지 못한 워크플로우']];
+const HOME_KIND = { unet: '모델', ckpt: '체크포인트', clip: '텍스트 인코더', clip1: '텍스트 인코더', clip2: '텍스트 인코더', vae: 'VAE',
+                    control_net: 'ControlNet' };
+const HOME_FOLDER = { checkpoints: '체크포인트', diffusion_models: 'diffusion 모델', unet_gguf: 'GGUF' };
+const homeGone = w => [...w.models, ...w.loras].filter(m => m.present === false).length;
+const homeReady = w => !w.error && !w.missing_nodes.length && !homeGone(w);
+function homeCard(w) {
+  const card = el('div', 'wf' + (w.step ? ' go' : '')), tags = el('div', 'tags'), list = el('ul'), gone = homeGone(w);
+  card.append(el('h4', '', w.label));
+  tags.append(el('b', homeReady(w) ? '' : 'bad', w.error ? w.error : w.missing_nodes.length ? '서버에 없는 노드 ' + w.missing_nodes.length + '개'
+    : gone ? '서버에 없는 모델 ' + gone + '개' : '실행 가능'));
+  const to = w.group === 'image' ? '이미지' : '영상';
+  if (w.group !== 'other') tags.append(' · ' + (w.start_image ? '이미지' : '글') + ' → ' + to);
+  if (!w.error) tags.append(' · ' + (w.step ? '새 작업의 ' + (w.step === 'image' ? '이미지' : '영상') + ' 단계에서 실행' : 'ComfyUI에서 직접 실행'));
+  for (const m of w.models) {
+    const li = el('li', m.present === false ? 'gone' : '', (HOME_KIND[m.kind] || m.kind) + ': ');
+    li.append(el('span', '', m.name)); if (m.present === false) li.append(' (서버에 없음)'); list.append(li);
+  }
+  for (const l of w.loras) {
+    const li = el('li', l.present === false ? 'gone' : '', 'LoRA: ');
+    li.append(el('span', '', l.name + (l.strength != null ? ' × ' + l.strength : ''))); if (l.present === false) li.append(' (서버에 없음)'); list.append(li);
+  }
+  for (const n of w.missing_nodes) list.append(el('li', 'gone', '노드 없음: ' + n));
+  card.append(tags, list);
+  if (w.step) { card.title = '새 작업에서 이 워크플로우를 골라 엽니다'; card.onclick = () => openWorkflow(w); }
+  return card;
+}
+async function openWorkflow(w) {      // to the step that runs it, with the workflow chosen there
+  if (state.busy) return;
+  const sel = $(w.step === 'image' ? 'imgWorkflow' : 'videoWorkflow');
+  showTab(w.step);
+  await loadWorkflows(w.step, true);
+  if ([...sel.options].some(o => o.value === w.name)) { sel.value = w.name; sel.dispatchEvent(new Event('change')); }
+}
+async function loadHome() {
+  const info = $('homeInfo'), groups = $('homeGroups'), models = $('homeModels'), minfo = $('homeModelInfo');
+  info.style.color = ''; info.textContent = '읽는 중…';
+  let res;
+  try { res = await api('/api/home'); }
+  catch (e) { info.style.color = 'var(--bad)'; info.textContent = e.message; return; }
+  $('homeServer').textContent = res.comfy;
+  groups.innerHTML = ''; models.innerHTML = ''; minfo.textContent = '';
+  if (!res.connected) { info.textContent = 'ComfyUI에 연결되지 않았습니다. 연결되면 그 서버의 워크플로우와 모델이 여기에 나옵니다.'; return; }
+  info.textContent = '서버에 저장된 워크플로우 ' + res.workflows.length + '개 중 ' + res.workflows.filter(homeReady).length + '개를 바로 실행할 수 있습니다.'
+    + (res.models_listed ? '' : ' 모델 목록을 읽지 못해 모델이 있는지는 확인하지 못했습니다.');
+  for (const [key, title, note] of HOME_GROUPS) {      // what can run, by what it makes
+    const list = res.workflows.filter(w => w.group === key && homeReady(w));
+    if (!list.length) continue;
+    const box = el('div', 'homegroup'), head = el('h3', '', title), grid = el('div', 'homegrid');
+    head.append(el('span', '', list.length + '개' + (note ? ' · ' + note : '')));
+    for (const w of list) grid.append(homeCard(w));
+    box.append(head, grid); groups.append(box);
+  }
+  const rest = res.workflows.filter(w => !homeReady(w));      // the others stay out of the way, one click from here
+  if (rest.length) {
+    const more = el('details'), grid = el('div', 'homegrid');
+    more.append(el('summary', '', '지금 실행할 수 없는 워크플로우 ' + rest.length + '개 (모델이나 노드가 서버에 없음)'));
+    grid.style.marginTop = '10px';
+    for (const w of rest) grid.append(homeCard(w));
+    more.append(grid); groups.append(more);
+  }
+  const used = res.models.filter(m => m.workflows.length).length;
+  minfo.textContent = res.models.length + '개 중 ' + used + '개는 저장된 워크플로우가 불러옵니다. 나머지는 워크플로우의 모델 로더에서 골라 쓸 수 있습니다.';
+  for (const [folder, title] of Object.entries(HOME_FOLDER)) {
+    const list = res.models.filter(m => m.folder === folder);
+    if (!list.length) continue;
+    const box = el('div', 'homegroup'), head = el('h3', '', title), chips = el('div', 'chips');
+    head.append(el('span', '', list.length + '개')); chips.style.marginTop = '0';
+    for (const m of list) {
+      const chip = el('span', 'chip' + (m.workflows.length ? '' : ' unused'), m.name);
+      if (m.workflows.length) { chip.append(el('i', '', '워크플로우 ' + m.workflows.length + '개')); chip.title = m.workflows.join('\n'); }
+      else chip.title = '이 모델을 불러오는 워크플로우가 서버에 없습니다';
+      chips.append(chip);
+    }
+    box.append(head, chips); models.append(box);
+  }
+}
+$('btnHomeReload').onclick = loadHome;
+
 // What the next step will work with, shown at the top of steps 2 and 3.
 function updateContext() {
   const strip = (id, ok, text, src) => {
@@ -2042,7 +2158,10 @@ $('mdlSearch').oninput = showModels;
 $('btnMdlReload').onclick = loadModels;
 
 refreshStatus(); loadScenarioList();
-showTab(localStorage.getItem('vw_tab'));
+// The page opens on 홈; a reload in the same browser tab goes back to the menu it was on.
+const reopened = sessionStorage.getItem('vw_open');
+sessionStorage.setItem('vw_open', '1');
+showTab(reopened ? localStorage.getItem('vw_tab') || 'home' : 'home');
 setInterval(refreshStatus, 5000);
 // this page calls in every few seconds and says goodbye when it closes: started with --close-with-page, the server
 // stops once no page is left (a reload comes back within the grace time, so it does not count as closing)
