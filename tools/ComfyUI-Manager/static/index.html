@@ -148,16 +148,6 @@
   .copybox .bar div { height:100%; width:0; background:var(--accent); transition:width .3s; }
   #cardMenu button + button { margin-top:4px; }
   #mdlTotal { flex:none; color:var(--text); font-weight:600; }
-  #mdlTip { position:fixed; z-index:24; width:min(460px, calc(100vw - 24px)); background:var(--card); border:1px solid var(--line); border-radius:8px;
-            padding:10px 12px; box-shadow:0 8px 24px rgba(0,0,0,.55); font-size:13px; line-height:1.45; }
-  #mdlTip .t { font-weight:600; font-size:14px; word-break:break-word; }
-  #mdlTip .src { color:var(--dim); font-size:12px; margin-left:6px; }
-  #mdlTip .src.guess { color:var(--warn); }
-  #mdlTip .d { color:var(--accent); margin-top:2px; }
-  #mdlTip .s { margin-top:4px; color:var(--text); word-break:break-word; }
-  #mdlTip .w { margin-top:4px; color:var(--warn); word-break:break-word; }
-  #mdlTip .f { margin-top:6px; color:var(--dim); font-size:12px; }
-  #mdlTip a { color:var(--accent); }
   #cardMenu { position:fixed; z-index:25; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.55); }
   #cardMenu button { display:block; white-space:nowrap; }
   .pickbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; padding:8px 10px; background:#18263a; border:1px solid var(--accent); border-radius:8px; font-size:13px; }
@@ -444,7 +434,7 @@
     <div class="panes">
       <div class="pane" id="paneL">
         <div class="phead"><b>모델 폴더</b><span class="path" id="mdlFolder"></span><b id="mdlTotal" title="모델 폴더 전체 용량"></b><button class="mini" id="btnMdlReload">새로 고침</button></div>
-        <div class="hint"><span id="mdlInfo"></span><span id="mdlPickInfo"></span> <button class="mini" id="copyToR" hidden title="왼쪽에서 고른 것을 오른쪽의 현재 폴더로 복사합니다 (F5)"></button><span id="mdlLookup"></span></div>
+        <div class="hint"><span id="mdlInfo"></span><span id="mdlPickInfo"></span> <button class="mini" id="copyToR" hidden title="왼쪽에서 고른 것을 오른쪽의 현재 폴더로 복사합니다 (F5)"></button></div>
         <div class="tree" id="mdlList"></div>
       </div>
       <div class="pmid" id="paneSplit" title="끌어서 너비 조절"></div>
@@ -511,8 +501,7 @@
   </div>
 </div>
 
-<div id="cardMenu" hidden><button class="danger" id="cmDelete"></button><button class="sub" id="cmRename" hidden>이름 변경</button><button class="sub" id="cmInfo" hidden>웹에서 다시 검색</button></div>
-<div id="mdlTip" hidden></div>
+<div id="cardMenu" hidden><button class="danger" id="cmDelete"></button><button class="sub" id="cmRename" hidden>이름 변경</button></div>
 
 <div id="viewer" hidden>
   <div class="sheet">
@@ -1408,7 +1397,7 @@ function aimAt(refs, x, y) {
   for (const c of rowsOf(listOf())) c.classList.toggle('aimed', aimed.includes(c.dataset.ref));
   $('cmDelete').textContent = (aimed.length > 1 ? '선택한 ' + aimed.length + '개 삭제' : '삭제') + ' (되돌릴 수 없음)';
   const one = rowsOf(listOf()).find(c => c.dataset.ref === refs[0]);
-  $('cmRename').hidden = $('cmInfo').hidden = !(listOf() === LISTS.models && refs.length === 1 && one && !one.classList.contains('dir'));
+  $('cmRename').hidden = !(listOf() === LISTS.models && refs.length === 1 && one && !one.classList.contains('dir'));
   const m = $('cardMenu'); m.hidden = false;
   m.style.left = Math.max(4, Math.min(x - 14, innerWidth - m.offsetWidth - 4)) + 'px';
   m.style.top = Math.max(4, Math.min(y - 14, innerHeight - m.offsetHeight - 4)) + 'px';
@@ -1436,7 +1425,6 @@ $('cmDelete').onclick = async () => {
   } catch (e) { $(L.note).textContent = e.message; }
 };
 $('cmRename').onclick = () => { const row = rowsOf(listOf()).find(c => c.dataset.ref === aimed[0]); hideCardMenu(); if (row) renameModel(row); };
-$('cmInfo').onclick = () => { const row = rowsOf(listOf()).find(c => c.dataset.ref === aimed[0]), f = mdl.data.files.find(x => x.ref === aimed[0]); hideCardMenu(); if (row && f) showTip(row, f, true); };
 document.addEventListener('click', e => { if (!e.target.closest('#cardMenu')) hideCardMenu(); }, true);
 document.addEventListener('contextmenu', hideCardMenu, true);
 window.addEventListener('scroll', hideCardMenu, true);
@@ -1721,7 +1709,7 @@ async function loadModels() {
   catch (e) { $('mdlInfo').textContent = e.message; $('mdlList').innerHTML = ''; return; }
   $('mdlFolder').textContent = mdl.data.folder; $('mdlFolder').title = mdl.data.folder;
   $('mdlTotal').textContent = fmtBig(mdl.data.folders.reduce((n, f) => n + f.size, 0));
-  showModels(); pollLookups();
+  showModels();
   if (!$('rList').children.length) loadRight(mdl.rRoot);
 }
 function modelTree() {      // the flat list as nested folders, each with its count and size
@@ -1743,7 +1731,7 @@ function showModels() {
   const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   const order = sort === 'size' ? (a, b) => b.size - a.size : sort === 'new' ? (a, b) => b.mtime - a.mtime
               : sort === 'unused' ? (a, b) => a.used - b.used || b.size - a.size : byName;
-  const list = $('mdlList'); list.innerHTML = ''; hideTip();
+  const list = $('mdlList'); list.innerHTML = '';
   let shown = 0, bytes = 0;
   const hit = f => !q || (f.folder + '/' + f.name).toLowerCase().includes(q);
   const has = node => node.files.some(hit) || [...node.dirs.values()].some(has);      // a folder with a matching file
@@ -1760,7 +1748,7 @@ function showModels() {
       const row = treeRow('L', f.ref, f.file, depth, false);
       if (f.known === false) { const flag = el('span', 'flag', 'ComfyUI 목록에 없음'); flag.title = 'ComfyUI가 이 파일을 모델 목록에 넣지 않습니다. 폴더가 다르거나 읽지 않는 형식입니다'; row.querySelector('.name').append(flag); }
       row.querySelector('.meta').append(el('b', '', fmtBig(f.size)));
-      tipOnHover(row, f);
+      row.title = f.file + '\n' + fmtBig(f.size) + ' · ' + fmtDate(f.mtime) + ' · 보관함에서 ' + (f.used ? f.used + '개 파일에 사용' : '사용 안 함');
       list.append(row); shown++; bytes += f.size;
     }
   };
@@ -1898,70 +1886,6 @@ $('paneGrip').onpointerdown = e => {
                      localStorage.setItem('vw_mdl_h', panes.style.getPropertyValue('--tree-h')); };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 };
-// ---- what a model is: the server asks the web (Civitai by file name or hash, then Hugging Face) once per file and
-// ---- keeps the answer; it goes through the whole folder in the background, and the tip shows the answer when the
-// ---- mouse rests on a file (asking for it right away when the background has not reached it yet)
-let lookupTimer = null;
-async function pollLookups() {      // the background run's progress on the pane's line, while the menu is open
-  clearTimeout(lookupTimer);
-  if ($('tabModels').hidden) return;
-  let s;
-  try { s = await api('/api/models/lookups'); } catch (e) { return; }
-  $('mdlLookup').textContent = s.running ? ' · 설명 준비 중 ' + s.done + '/' + s.total + (s.current ? ': ' + s.current : '')
-    : s.offline ? ' · 웹에 연결되지 않아 설명을 찾지 못했습니다' : '';
-  if (s.running) lookupTimer = setTimeout(pollLookups, 3000);
-}
-let tipTimer = null, tipRow = null, tipPoll = null;
-function tipOnHover(row, f) {
-  row.addEventListener('mouseenter', () => { clearTimeout(tipTimer); tipTimer = setTimeout(() => showTip(row, f, false), 400); });
-  row.addEventListener('mouseleave', () => { clearTimeout(tipTimer); tipTimer = setTimeout(hideTip, 250); });
-}
-$('mdlTip').onmouseenter = () => clearTimeout(tipTimer);
-$('mdlTip').onmouseleave = () => { tipTimer = setTimeout(hideTip, 250); };
-$('mdlList').addEventListener('scroll', hideTip);
-function hideTip() { $('mdlTip').hidden = true; tipRow = null; clearTimeout(tipPoll); }
-function showTip(row, f, again) {
-  tipRow = row; const tip = $('mdlTip'); tip.hidden = false; tip.innerHTML = '';
-  tip.append(el('div', 't', f.file), el('div', 'f', '웹에서 찾는 중…'));
-  placeTip(row);
-  const poll = async () => {
-    if (tipRow !== row) return;
-    let r;
-    try { r = await api('/api/models/info?ref=' + encodeURIComponent(f.ref) + (again ? '&again=1' : '')); }
-    catch (e) { tip.querySelector('.f').textContent = e.message; return; }
-    again = false;
-    if (r.state === 'offline') { tip.querySelector('.f').textContent = '웹(Civitai, Hugging Face)에 연결되지 않아 찾지 못했습니다'; return; }
-    if (r.state === 'pending') {      // the background run has not reached this file; the tip waits for it
-      const l = r.lookups;
-      tip.querySelector('.f').textContent = l.running ? '아직 준비 중입니다 (뒤에서 찾는 중 ' + l.done + '/' + l.total + (l.current ? ': ' + l.current : '') + ')'
-        : l.offline ? '웹에 연결되지 않아 아직 찾지 못했습니다' : '아직 찾지 않았습니다 — 우클릭 → 웹에서 다시 검색';
-      tipPoll = setTimeout(poll, 3000); return;
-    }
-    if (r.state === 'working') { tip.querySelector('.f').textContent = r.step; tipPoll = setTimeout(poll, 1500); return; }
-    fillTip(tip, f, r.info, r.used); placeTip(row);
-  };
-  poll();
-}
-function fillTip(tip, f, info, used) {
-  tip.innerHTML = '';
-  const head = el('div'); head.append(el('span', 't', info.source ? info.title : f.file));
-  if (info.source) head.append(el('span', 'src' + (info.sure ? '' : ' guess'), (info.source === 'civitai' ? 'Civitai' : 'Hugging Face') + (info.sure ? '' : ' · 추정 (이름으로 찾음)')));
-  tip.append(head);
-  if (info.source) {
-    tip.append(el('div', 'd', [info.type, info.base, info.version, info.creator ? '제작 ' + info.creator : ''].filter(Boolean).join(' · ')));
-    if (info.ko) tip.append(el('div', 's', info.ko));      // the Korean summary Qwen Chat wrote; else the web's own words
-    else if (info.summary) { tip.append(el('div', 's', info.summary.slice(0, 400) + (info.summary.length > 400 ? '…' : ''))); tip.append(el('div', 'f', '한국어 요약은 Qwen Chat이 있는 ComfyUI에 연결되어 있을 때 뒤에서 만들어집니다')); }
-    if (info.words && info.words.length) tip.append(el('div', 'w', '트리거 단어: ' + info.words.join(', ')));
-    const a = el('a', '', '페이지 열기 ↗'); a.href = info.url; a.target = '_blank'; a.rel = 'noopener'; tip.append(a);
-  } else tip.append(el('div', 's', '웹(Civitai, Hugging Face)에서 찾지 못했습니다' + (info.query ? ' — 검색어: ' + info.query : '')));
-  tip.append(el('div', 'f', f.file + ' · ' + fmtBig(f.size) + ' · ' + fmtDate(f.mtime) + ' · 보관함에서 ' + (used ? used + '개 파일에 사용' : '사용 안 함') + ' · 우클릭 → 웹에서 다시 검색'));
-}
-function placeTip(row) {
-  const r = row.getBoundingClientRect(), tip = $('mdlTip');
-  tip.style.left = Math.max(8, Math.min(r.left + 30, innerWidth - tip.offsetWidth - 8)) + 'px';
-  const below = r.bottom + 4, h = tip.offsetHeight;
-  tip.style.top = (below + h > innerHeight - 8 ? Math.max(8, r.top - h - 4) : below) + 'px';
-}
 function renameModel(row) {      // the name becomes a box; Enter renames, Esc or leaving it puts the name back
   const cell = row.querySelector('.name'), name = row.dataset.ref.split('/').pop();
   const ext = name.match(/\.\w+$/)?.[0] || '', input = el('input', 'rename');

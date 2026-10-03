@@ -9,7 +9,6 @@ import json
 import os
 import sqlite3
 import threading
-import time
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS files (
@@ -31,8 +30,6 @@ CREATE TABLE IF NOT EXISTS marks (
 CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, time REAL, root TEXT, entry TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS workflow_index (
     server TEXT NOT NULL, name TEXT NOT NULL, modified INTEGER, entry TEXT NOT NULL, PRIMARY KEY (server, name));
-CREATE TABLE IF NOT EXISTS model_info (
-    name TEXT NOT NULL COLLATE NOCASE, size INTEGER NOT NULL, time REAL, entry TEXT NOT NULL, PRIMARY KEY (name, size));
 """
 
 
@@ -69,15 +66,6 @@ class Store:
         with self.lock, self.db:
             for sql, args in statements:
                 self.db.execute(sql, args)
-
-    # ---- model_info: what the web said a model file is, by file name and size (looked up once) ----------
-    def model_info(self, name, size):
-        found = self._all("SELECT entry FROM model_info WHERE name = ? AND size = ?", (name, size))
-        return json.loads(found[0]["entry"]) if found else None
-
-    def put_model_info(self, name, size, entry):
-        self._run([("INSERT OR REPLACE INTO model_info (name, size, time, entry) VALUES (?, ?, ?, ?)",
-                    (name, size, time.time(), json.dumps(entry, ensure_ascii=False)))])
 
     # ---- files: the library's index of a result folder ---------------------------------------------
     def file_stats(self, root):

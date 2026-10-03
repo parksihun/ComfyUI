@@ -6,14 +6,9 @@ Nothing is read from inside the files; the list is the folders and files with th
 library index knows (which result files were made with the model) and what ComfyUI lists (a model file ComfyUI
 does not list is in the wrong folder or has an extension it does not load).
 """
-import asyncio
-import hashlib
-import html
 import os
 import re
 import shutil
-
-import aiohttp
 
 MODEL_EXT = (".safetensors", ".gguf", ".ckpt", ".sft", ".pt", ".pth")
 
@@ -121,121 +116,6 @@ class Models:
         full = self.resolve(ref)
         os.remove(full)
         return os.path.basename(full)
-
-
-# ---------------------------------------------------------------------------------------------- #
-# what a model file is, asked on the web (Civitai by file name or hash, Hugging Face by name)
-# ---------------------------------------------------------------------------------------------- #
-CIVITAI = "https://civitai.com/api/v1"
-HUGGINGFACE = "https://huggingface.co/api/models"
-NOISE = re.compile(r"\b(fp\d+|bf16|fp16|fp8|e4m3fn|e5m2|q\d(_[0-9a-z])*|int[48]|nf4|scaled|gguf|safetensors|ckpt|pruned|comfy(ui)?|"
-                   r"v\d+(\.\d+)*|\d{5,})\b", re.I)
-
-
-def query_of(name):
-    """The words of a file name to search for: separators to spaces, precision / quantization tokens dropped."""
-    stem = os.path.splitext(name)[0]
-    words = NOISE.sub(" ", re.sub(r"[_\-.()\[\]+]+", " ", stem))
-    return " ".join(words.split())[:80]
-
-
-def plain(text, limit=1500):
-    """HTML (Civitai descriptions) -> one line of plain text."""
-    text = re.sub(r"<[^>]+>", " ", text or "")
-    text = html.unescape(" ".join(text.split()))
-    return text[:limit] + ("…" if len(text) > limit else "")
-
-
-def sha256_of(path, step):
-    """The file's SHA-256 (what Civitai keys models by), telling how far it is."""
-    h, size, done = hashlib.sha256(), os.path.getsize(path), 0
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(16 << 20)
-            if not chunk:
-                break
-            h.update(chunk)
-            done += len(chunk)
-            step[0] = f"해시 계산 중 {done * 100 // max(size, 1)}% (큰 파일은 시간이 걸립니다)"
-    return h.hexdigest()
-
-
-async def _get(session, url, **params):
-    async with session.get(url, params=params or None, timeout=aiohttp.ClientTimeout(total=25)) as r:
-        if r.status == 404:
-            return None
-        r.raise_for_status()
-        return await r.json()
-
-
-def _civitai_entry(model, version, sure, query, hash_=None):
-    creator = (model.get("creator") or {}).get("username", "")
-    return {"source": "civitai", "sure": sure, "query": query, "hash": hash_,
-            "title": model.get("name", ""), "version": version.get("name", ""), "type": model.get("type", ""),
-            "base": version.get("baseModel", ""), "creator": creator, "nsfw": bool(model.get("nsfw")),
-            "words": [w for w in (version.get("trainedWords") or []) if isinstance(w, str)][:12],
-            "summary": plain(model.get("description") or version.get("description") or ""),
-            "url": f"https://civitai.com/models/{model.get('id')}?modelVersionId={version.get('id')}"}
-
-
-async def identify(session, path, step):
-    """What the file is. Civitai first: a model whose version has a file of exactly this name; else by the file's
-    SHA-256; else a Civitai result whose file is the same size; else the first Hugging Face hit for the name.
-    `step[0]` says what is being done. Returns the entry to keep (source None when nothing was found), or None
-    when the web could not be reached at all (nothing to keep: it is asked again later)."""
-    name, size = os.path.basename(path), os.path.getsize(path)
-    query = query_of(name)
-    probable, reached = None, False
-    step[0] = "Civitai에서 이름으로 검색 중"
-    try:
-        found = await _get(session, CIVITAI + "/models", query=query, limit=10) if query else None
-        reached = True
-        for model in (found or {}).get("items") or []:
-            for version in model.get("modelVersions") or []:
-                for f in version.get("files") or []:
-                    fname = str(f.get("name", ""))
-                    if fname.lower() == name.lower():
-                        return _civitai_entry(model, version, True, query)
-                    kb = f.get("sizeKB") or 0
-                    if probable is None and kb and abs(kb * 1024 - size) < size * 0.005 and fname.lower().endswith(os.path.splitext(name)[1].lower()):
-                        probable = _civitai_entry(model, version, False, query)
-    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-        pass
-    if not reached:      # no web: no point in hashing a large file now
-        step[0] = "웹에 연결되지 않습니다"
-        return None
-    hash_ = None
-    if name.lower().endswith(MODEL_EXT):
-        try:
-            hash_ = await asyncio.to_thread(sha256_of, path, step)
-            step[0] = "Civitai에서 해시로 검색 중"
-            version = await _get(session, CIVITAI + "/model-versions/by-hash/" + hash_)
-            reached = True
-            if version and version.get("modelId"):
-                model = await _get(session, CIVITAI + f"/models/{version['modelId']}") or {}
-                model.setdefault("id", version["modelId"])
-                for key in ("name", "type", "nsfw"):
-                    model.setdefault(key, (version.get("model") or {}).get(key))
-                return _civitai_entry(model, version, True, query, hash_)
-        except (OSError, aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-            pass
-    if probable:
-        probable["hash"] = hash_
-        return probable
-    step[0] = "Hugging Face에서 검색 중"
-    try:
-        hits = await _get(session, HUGGINGFACE, search=query, limit=5) if query else None
-        reached = True
-        for hit in hits or []:
-            rid = hit.get("id") or hit.get("modelId")
-            if rid:
-                tags = [t for t in hit.get("tags") or [] if isinstance(t, str) and ":" not in t][:8]
-                return {"source": "huggingface", "sure": False, "query": query, "hash": hash_, "title": rid, "version": "",
-                        "type": hit.get("pipeline_tag") or "", "base": "", "creator": rid.split("/")[0] if "/" in rid else "",
-                        "nsfw": False, "words": [], "summary": " · ".join(tags), "url": "https://huggingface.co/" + rid}
-    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-        pass
-    return {"source": None, "sure": False, "query": query, "hash": hash_} if reached else None
 
 
 def list_dir(path):
