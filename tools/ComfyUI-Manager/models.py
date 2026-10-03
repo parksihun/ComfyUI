@@ -344,6 +344,33 @@ def incoming(folder, model_root, limit=500):
     return {"path": base, "items": items, "folders": have}
 
 
+def mirrored(items, root, dest):
+    """(file, where it goes) for copying files / folders of the model folder `root` out to `dest` with the folders
+    they sit in: loras/HIGH/a -> <dest>/loras/HIGH/a. Folders `dest` already ends with are not made again
+    (<dest> = D:\\backup\\loras -> D:\\backup\\loras\\HIGH\\a). A picked folder goes whole, at its own place."""
+    root = os.path.realpath(root)
+    ends = [p.lower() for p in re.split(r"[\\/]+", os.path.realpath(dest)) if p]
+    pairs = []
+    for src in items:
+        src = os.path.realpath(src)
+        parts = os.path.relpath(src, root).split(os.sep)
+        whole = os.path.isdir(src)
+        if whole and within(dest, src):
+            raise ValueError("폴더를 자기 자신 안으로 복사할 수 없습니다: " + os.path.basename(src))
+        dirs = parts if whole else parts[:-1]
+        same = next((k for k in range(min(len(dirs), len(ends)), 0, -1) if [d.lower() for d in dirs[:k]] == ends[-k:]), 0)
+        target = os.path.join(dest, *dirs[same:])
+        if not whole:
+            pairs.append((src, os.path.join(target, parts[-1])))
+            continue
+        for here, folders, names in os.walk(src):
+            folders[:] = [d for d in folders if not d.startswith(".")]
+            for n in names:
+                full = os.path.join(here, n)
+                pairs.append((full, os.path.join(target, os.path.relpath(full, src))))
+    return pairs
+
+
 class Copy:
     """One copy job: files and folders (whole) into a folder, run in a thread, asked for its progress. A file that is
     already there is left alone and reported; a file half copied when the job is stopped or fails is removed.

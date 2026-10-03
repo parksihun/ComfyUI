@@ -2150,7 +2150,8 @@ def _model_path(app, item, folders):
 
 async def api_models_copy(request):
     """Start copying files / folders ({'items': [...]}) into a folder ({'dest'}); one side must be the model folder.
-    One copy at a time; GET asks how far it is."""
+    Out of the model folder the files keep the folders they sit in (loras/HIGH/a -> <dest>/loras/HIGH/a); into it
+    they go straight into the folder given. One copy at a time; GET asks how far it is."""
     app = request.app["app"]
     if request.method == "GET":
         return web.json_response(app.copy_job.progress() if app.copy_job else {"state": "none"})
@@ -2168,7 +2169,13 @@ async def api_models_copy(request):
         raise AppError("복사할 폴더가 아닙니다: " + dest)
     if not (app.models.inside(dest) or all(app.models.inside(it) for it in items)):
         raise AppError("모델 폴더에서 내보내거나 모델 폴더로 들여오는 복사만 됩니다")
-    app.copy_job = models.Copy(items, dest)
+    pairs = None
+    if all(app.models.inside(it) for it in items) and not app.models.inside(dest):      # out of the model folder: as it is laid out there
+        try:
+            pairs = await asyncio.to_thread(models.mirrored, items, app.model_root, dest)
+        except ValueError as e:
+            raise AppError(str(e))
+    app.copy_job = models.Copy(items, dest, pairs=pairs)
     asyncio.get_running_loop().run_in_executor(None, app.copy_job.run)
     return web.json_response({"started": len(items), "dest": dest})
 
