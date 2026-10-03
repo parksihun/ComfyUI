@@ -19,6 +19,15 @@ def _lower(name):
     return name.replace("\\", "/").lower()
 
 
+def within(path, base):
+    """Whether `path` is `base` or below it. Paths on different drives are not (os.path.commonpath raises there)."""
+    base = os.path.realpath(base)
+    try:
+        return os.path.commonpath([os.path.realpath(path), base]) == base
+    except ValueError:
+        return False
+
+
 class Models:
     def __init__(self, root_of, store, library):
         self.root_of = root_of      # () -> the model folder (depends on the result folder picked)
@@ -36,14 +45,14 @@ class Models:
         if kind != "model" or not os.path.isdir(base) or (not rel and not folders):
             raise ValueError("잘못된 파일 경로입니다")
         full = os.path.realpath(os.path.join(base, rel)) if rel else base
-        if os.path.commonpath([full, base]) != base or not (os.path.isfile(full) or (folders and os.path.isdir(full))):
+        if not within(full, base) or not (os.path.isfile(full) or (folders and os.path.isdir(full))):
             raise ValueError("파일을 찾을 수 없습니다: " + rel)
         return full
 
     def inside(self, path):
         """Whether the absolute path is in the model folder."""
         base = os.path.realpath(self.root)
-        return os.path.isdir(base) and os.path.commonpath([os.path.realpath(path), base]) == base
+        return os.path.isdir(base) and within(path, base)
 
     def used_by(self):
         """{file name in lower case: number of library files made with a model of that name}."""
@@ -356,7 +365,7 @@ class Copy:
         pairs = []
         for src in self.sources:
             if os.path.isdir(src):
-                if os.path.commonpath([os.path.realpath(self.dest), os.path.realpath(src)]) == os.path.realpath(src):
+                if within(self.dest, src):
                     raise ValueError("폴더를 자기 자신 안으로 복사할 수 없습니다: " + os.path.basename(src))
                 for here, dirs, names in os.walk(src):
                     dirs[:] = [d for d in dirs if not d.startswith(".")]
@@ -415,7 +424,7 @@ class Copy:
             if self.move and self.tidy:      # the folders the files were moved out of go too, once nothing is left in them
                 base = os.path.realpath(self.tidy)
                 for folder in sorted({os.path.dirname(os.path.realpath(s)) for s, _ in pairs}, key=len, reverse=True):
-                    while folder != base and os.path.commonpath([folder, base]) == base:
+                    while folder != base and within(folder, base):
                         try:
                             os.rmdir(folder)      # only an empty folder goes
                         except OSError:

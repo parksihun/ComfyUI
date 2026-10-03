@@ -2208,7 +2208,7 @@ async def api_models_place(request):
         dest = os.path.realpath(os.path.join(root, folder))
         if not os.path.isfile(src) or not src.lower().endswith(models.MODEL_EXT):
             raise AppError("모델 파일이 아니거나 없습니다: " + src)
-        if not folder or not os.path.isdir(dest) or os.path.commonpath([dest, root]) != root or dest == root:
+        if not folder or not os.path.isdir(dest) or not models.within(dest, root) or dest == root:
             raise AppError("모델 폴더 안의 폴더가 아닙니다: " + folder)
         sub = [p for p in re.split(r"[\\/]+", str(it.get("sub") or "")) if p]
         if any(p in (".", "..") or re.search(r'[:*?"<>|\x00-\x1f]', p) for p in sub):
