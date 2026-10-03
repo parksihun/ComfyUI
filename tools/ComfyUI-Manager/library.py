@@ -440,7 +440,7 @@ class Library:
                 "kind": "video" if rel.lower().endswith(VIDEO_EXT) else "image",
                 "width": info["media"]["width"], "height": info["media"]["height"], "duration": info["media"]["duration"],
                 "has_meta": info["has_prompt"] or info["has_workflow"], "workflow_id": info["workflow_id"],
-                "types": info["types"], "models": info["models"], "prompt_count": len(positives),
+                "types": info["types"], "models": info["models"], "loras": info["loras"], "prompt_count": len(positives),
                 "generated": any(p["text"] is None for p in positives), "snippet": first[:200],
                 "search": " ".join(p["text"] for p in info["prompts"] if p["text"]).lower()[:4000]}
 
@@ -451,6 +451,9 @@ class Library:
             return
         root = self.root
         known = {rel.lower(): (rel, stamp) for rel, stamp in self.store.file_stats(root).items()}
+        for rel, entry in self.store.files(root).items():      # indexed before the LoRAs were kept: read again
+            if "loras" not in entry:
+                known[rel.lower()] = (rel, None)
         seen = set()
         for folder, dirs, files in os.walk(base):
             dirs[:] = [d for d in dirs if not d.startswith(".")]
@@ -472,7 +475,7 @@ class Library:
                     entry = {"mtime": stat.st_mtime, "size": stat.st_size,
                              "kind": "video" if rel.lower().endswith(VIDEO_EXT) else "image",
                              "width": None, "height": None, "duration": None, "has_meta": False, "workflow_id": None,
-                             "types": {}, "models": [], "prompt_count": 0, "generated": False, "snippet": "",
+                             "types": {}, "models": [], "loras": [], "prompt_count": 0, "generated": False, "snippet": "",
                              "search": "", "error": str(e)[:200]}
                 self.store.put_file(root, rel, entry)
         self.store.drop_files(root, [rel for key, (rel, _) in known.items() if key not in seen])

@@ -6,5 +6,7 @@
   "svi_workflow": "workflow/Wan2.2_I2V_SVI_Workflow_Kenpechi_v3.5.json",
   "i2v_api": "workflow/5_I2V_6seg_from_prompts.api.json",
   "image_workflow": "image_z_image_turbo.json",
-  "scenario_dir": ""
+  "scenario_dir": "",
+  "model_dir": "",
+  "close_with_page": true
 }

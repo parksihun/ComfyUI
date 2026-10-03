@@ -22,6 +22,7 @@ import hashlib
 import io
 import json
 import logging
+import logging.handlers
 import ntpath
 import os
 import posixpath
@@ -45,6 +46,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)      # python_embeded does not put the script's folder on sys.path
 import comfy_convert  # noqa: E402
 import library  # noqa: E402
+import models  # noqa: E402
 import store  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -62,6 +64,8 @@ DEFAULT_CONFIG = {
     "i2v_api": "workflow/5_I2V_6seg_from_prompts.api.json",
     "image_workflow": "image_z_image_turbo.json",       # the image workflow picked at first
     "scenario_dir": "",                                   # empty = the folder 'scenario' next to the result folder
+    "model_dir": "",                                      # empty = the folder 'model' next to the result folder
+    "close_with_page": True,                              # stop when the last page in a browser has been closed (false: a server that keeps running)
 }
 
 DEFAULT_NEGATIVE = (
@@ -523,10 +527,19 @@ class App:
         self._chat_models = (0, None)
         self._combos = {}
         self._llm = (0, None)
+        self._listed = (0, None)         # when asked, the relative names of every model ComfyUI lists
         self.ws = None
         self.address_changed = asyncio.Event()
         self.store = store.Store(os.path.join(DATA, "manager.db"))
         self.library = library.Library(self.output_dir, DATA, library.Catalogue(TEMPLATES), self.store)
+        self.models = models.Models(lambda: self.model_root, self.store, self.library)
+        self.copy_job = None             # the copy of the model menu that is running or was run last
+        self.lookups = {}                # model files being identified on the web: (name, size) -> [step text, task]
+        self.web = None                  # the session for Civitai / Hugging Face, opened when first needed
+        self.prefetch = None             # the task that identifies every model file of the folder in the background
+        self.prefetch_state = {"running": False, "total": 0, "done": 0, "current": "", "offline": False}
+        self.pages = {}                  # pages open in browsers: id -> when it last called in
+        self.pages_gone_since = None     # when the last page went away (None while one is open or none was seen yet)
         self.use_catalogue()
         self.import_history(os.path.join(DATA, "history.json"))
 
@@ -543,6 +556,132 @@ class App:
         output = os.path.normpath(self.output_dir)
         parent = os.path.dirname(output)
         return os.path.join(parent if parent and parent != output else output, "scenario")
+
+    @property
+    def model_root(self):
+        """Where the models are: Easy-Install's top-level `model` next to the result folder (V:\\output -> V:\\model);
+        ComfyUI's own `ComfyUI\\models` when there is no such folder. config.json's model_dir names another place."""
+        if self.cfg.get("model_dir"):
+            return self.cfg["model_dir"]
+        output = os.path.normpath(self.output_dir)
+        parent = os.path.dirname(output)
+        parent = parent if parent and parent != output else output
+        own = os.path.join(parent, "model")
+        return own if os.path.isdir(own) else os.path.join(parent, "ComfyUI", "models")
+
+    async def listed_models(self):
+        """(the model folder names ComfyUI has, the relative names of the models it lists over all of them), both in
+        lower case with '/', kept for a minute. None when ComfyUI cannot be asked."""
+        stamp, found = self._listed
+        if time.time() - stamp > 60:
+            try:
+                folders = [f for f in await self.comfy.get_json("/models", timeout=10) if isinstance(f, str)]
+                lists = await asyncio.gather(*(self.comfy.get_json(f"/models/{f}", timeout=20) for f in folders), return_exceptions=True)
+                found = ({f.lower() for f in folders} | {"unet", "clip"},      # the old names of diffusion_models and text_encoders
+                         {n.replace("\\", "/").lower() for one in lists if isinstance(one, list) for n in one if isinstance(n, str)})
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError):
+                found = None
+            self._listed = (time.time(), found)
+        return found
+
+    def lookup_model(self, path):
+        """The task that asks the web what a model file is and keeps the answer; one per file at a time, shared by
+        the page (hover) and the background run. Its result is the entry, or None when the web was out of reach."""
+        name, size = os.path.basename(path), os.path.getsize(path)
+        key = (name.lower(), size)
+        if key not in self.lookups:
+            if self.web is None:
+                self.web = aiohttp.ClientSession(headers={"User-Agent": "ComfyUI-Manager (model folder lookup)"})
+            step = ["검색을 시작합니다"]
+
+            async def look():
+                try:
+                    entry = await models.identify(self.web, path, step)
+                    if entry is not None:
+                        self.store.put_model_info(name, size, entry)
+                    return entry
+                except Exception:      # a lookup that fails is tried again next time
+                    log.exception("model lookup failed: %s", name)
+                    return None
+                finally:
+                    self.lookups.pop(key, None)
+            self.lookups[key] = [step, asyncio.create_task(look())]
+        return self.lookups[key]
+
+    SUMMARY_ASK = ("아래는 이미지·영상 생성 AI 모델(체크포인트, LoRA 등)의 웹 설명입니다. 이 모델이 무엇이고 어디에 쓰는지 "
+                   "한국어로 2~3문장으로 요약하세요. 모델 이름, 베이스 모델 이름, 트리거 단어는 영어 그대로 두고, 설명에 없는 "
+                   "내용은 지어내지 말고, 요약 문장만 쓰세요.\n\n")
+
+    async def summarize_ko(self, info):
+        """A Korean summary of what the web said, written by the Qwen chat of the connected ComfyUI (QwenVL-Mod).
+        None when that is not there. Takes the stage lock so it does not run into a generation."""
+        chat = await self.chat_models()
+        if chat is None:
+            return None
+        lines = [("이름", info.get("title")), ("버전", info.get("version")), ("종류", info.get("type")), ("베이스 모델", info.get("base")),
+                 ("제작자", info.get("creator")), ("트리거 단어", ", ".join(info.get("words") or [])), ("설명", info.get("summary"))]
+        body = {"backend": "gguf" if chat.get("gguf") else "hf", "model": None,
+                "messages": [{"role": "user", "content": self.SUMMARY_ASK + "\n".join(f"{k}: {v}" for k, v in lines if v)}],
+                "graph": {"nodes": []}, "images": [], "options": {"max_tokens": 400, "temperature": 0.3}}
+        async with self.lock:
+            status, res = await self.comfy.post_json("/qwenvl/chat", body, timeout=900)
+            if status == 500:      # see analyze_chat: a freshly loaded model answers again
+                await self.comfy.post_json("/qwenvl/chat/unload", {"backend": "all"}, timeout=60)
+                status, res = await self.comfy.post_json("/qwenvl/chat", body, timeout=900)
+            self.last_stage = "chat"      # the next stage unloads it
+        if status != 200:
+            log.warning("summary: Qwen Chat %s: %s", status, str(res)[:200])
+            return None
+        text = " ".join((res.get("message") or "").split())
+        return text[:1200] or None
+
+    def start_prefetch(self):
+        """Prepare every model file of the folder in the background, one after another: what it is (the web) and a
+        Korean summary (Qwen Chat), so both are there when the mouse comes to rest on a file. Stops looking when the
+        web cannot be reached; summaries wait for a ComfyUI with Qwen Chat."""
+        if self.prefetch and not self.prefetch.done():
+            return
+
+        async def run():
+            state, chat = self.prefetch_state, True
+            try:
+                files = (await asyncio.to_thread(self.models.listing, None))[1]
+                todo = []
+                for f in files:
+                    if not f["name"].lower().endswith(models.MODEL_EXT):
+                        continue
+                    info = self.store.model_info(os.path.basename(f["name"]), f["size"])
+                    if info is None or (info.get("source") and "ko" not in info):
+                        todo.append((f, info))
+                state.update(running=True, total=len(todo), done=0, current="", offline=False)
+                for f, info in todo:
+                    try:
+                        path = self.models.resolve(f["ref"])
+                    except ValueError:      # gone meanwhile
+                        state["done"] += 1
+                        continue
+                    name, size = os.path.basename(path), os.path.getsize(path)
+                    state["current"] = name
+                    if info is None:
+                        info = await asyncio.shield(self.lookup_model(path)[1])
+                        if info is None:
+                            state["offline"] = True
+                            log.info("model lookup: the web is out of reach, not looking further")
+                            break
+                        await asyncio.sleep(1)      # not to lean on Civitai
+                    if chat and info.get("source") and "ko" not in info:
+                        ko = await self.summarize_ko(info)
+                        if ko is None:
+                            chat = False      # no Qwen Chat now: the summaries are made another time
+                        else:
+                            info["ko"] = ko
+                            self.store.put_model_info(name, size, info)
+                    state["done"] += 1
+            except Exception:
+                log.exception("model lookup run failed")
+            finally:
+                state.update(running=False, current="")
+        self.prefetch = asyncio.create_task(run())
 
     def adopt_scenarios(self):
         """Scenario folders an earlier version made inside the result folder ('<name>_prompts' holding a prompts.json)
@@ -808,7 +947,7 @@ class App:
         self.comfy.url = url
         self.comfy._object_info = None
         self._combos, self._chat_models, self._workflows, self.last_stage = {}, (0, None), {}, None
-        self._llm, self._wf_list, self._wf_files = (0, None), (0, {}), {}
+        self._llm, self._wf_list, self._wf_files, self._listed = (0, None), (0, {}), {}, (0, None)
         self.remember(comfy_url=url)
         self.use_catalogue()
         self.comfy_output = ""
@@ -2051,6 +2190,134 @@ async def api_library_delete(request):
     return web.json_response({"removed": removed, "failed": failed})
 
 
+# ---- models ----------------------------------------------------------------------------------------
+async def api_models(request):
+    app = request.app["app"]
+    known = await app.listed_models()
+    await asyncio.to_thread(app.library.scan)      # the 'used by' counts come from the library index
+    try:
+        folders, files, free = await asyncio.to_thread(app.models.listing, known)
+    except ValueError as e:
+        raise AppError(str(e))
+    app.start_prefetch()      # descriptions of the files not known yet, in the background
+    return web.json_response({"folder": app.model_root, "folders": folders, "files": files, "free": free,
+                              "comfy_listed": known is not None})
+
+
+async def api_models_rename(request):
+    app, body = request.app["app"], await request.json()
+    try:
+        ref = await asyncio.to_thread(app.models.rename, body.get("ref", ""), body.get("name", ""))
+    except ValueError as e:
+        raise AppError(str(e))
+    except OSError as e:
+        raise AppError(f"이름을 바꾸지 못했습니다: {e.strerror or e}")
+    app._listed = (0, None)      # ComfyUI lists the new name
+    return web.json_response({"ref": ref, "name": os.path.basename(ref.partition(":")[2])})
+
+
+async def api_models_delete(request):
+    """Delete the chosen model files ({'refs': [...]}); the ones that cannot be deleted are reported, the others go."""
+    app, body = request.app["app"], await request.json()
+    removed, failed = [], []
+    for ref in (body.get("refs") if isinstance(body.get("refs"), list) else [body.get("ref", "")])[:2000]:
+        try:
+            removed.append(await asyncio.to_thread(app.models.delete, str(ref)))
+        except ValueError as e:
+            failed.append({"ref": ref, "error": str(e)})
+        except OSError as e:
+            failed.append({"ref": ref, "error": e.strerror or str(e)})
+    app._listed = (0, None)
+    return web.json_response({"removed": removed, "failed": failed})
+
+
+async def api_fs(request):
+    """The other pane of the model menu: one folder of this PC (?path=, '' for the drives)."""
+    path = request.query.get("path", "").strip().strip('"')
+    if path and not os.path.isabs(path):
+        raise AppError("전체 경로로 입력하세요 (예: D:\\models)")
+    try:
+        return web.json_response(await asyncio.to_thread(models.list_dir, path))
+    except OSError as e:
+        raise AppError(f"폴더를 열 수 없습니다: {e.strerror or e}")
+
+
+def _model_path(app, item, folders):
+    """A 'model:...' ref or an absolute path of this PC -> absolute path."""
+    item = str(item or "").strip()
+    if item.startswith("model:"):
+        return app.models.resolve(item, folders)
+    if not os.path.isabs(item) or not (os.path.isfile(item) or (folders and os.path.isdir(item))):
+        raise ValueError("찾을 수 없습니다: " + item)
+    return os.path.abspath(item)
+
+
+async def api_models_copy(request):
+    """Start copying files / folders ({'items': [...]}) into a folder ({'dest'}); one side must be the model folder.
+    One copy at a time; GET asks how far it is."""
+    app = request.app["app"]
+    if request.method == "GET":
+        return web.json_response(app.copy_job.progress() if app.copy_job else {"state": "none"})
+    if app.copy_job and app.copy_job.state in ("planning", "running"):
+        raise AppError("복사가 진행 중입니다. 끝나거나 중단한 뒤에 다시 하세요")
+    body = await request.json()
+    try:
+        items = [_model_path(app, it, True) for it in (body.get("items") or [])[:2000]]
+        dest = _model_path(app, body.get("dest"), True)
+    except ValueError as e:
+        raise AppError(str(e))
+    if not items:
+        raise AppError("복사할 파일을 고르세요")
+    if not os.path.isdir(dest):
+        raise AppError("복사할 폴더가 아닙니다: " + dest)
+    if not (app.models.inside(dest) or all(app.models.inside(it) for it in items)):
+        raise AppError("모델 폴더에서 내보내거나 모델 폴더로 들여오는 복사만 됩니다")
+    app.copy_job = models.Copy(items, dest)
+    asyncio.get_running_loop().run_in_executor(None, app.copy_job.run)
+    return web.json_response({"started": len(items), "dest": dest})
+
+
+async def api_models_info(request):
+    """What a model file is, asked on the web once and kept (by file name and size); ?again=1 asks again.
+    While the web is being asked the answer says how far it is; the page asks again until it is ready."""
+    app = request.app["app"]
+    try:
+        path = app.models.resolve(request.query.get("ref", ""))
+    except ValueError as e:
+        raise AppError(str(e))
+    name, size = os.path.basename(path), os.path.getsize(path)
+    used = app.models.used_by().get(name.lower(), 0)
+    again = bool(request.query.get("again"))
+    info = None if again else app.store.model_info(name, size)
+    if info:
+        return web.json_response({"state": "ready", "info": info, "used": used})
+    key = (name.lower(), size)
+    if not again and key not in app.lookups:      # not prepared yet: the background run gets to it; nothing is asked now
+        return web.json_response({"state": "pending", "lookups": app.prefetch_state, "used": used})
+    step, task = app.lookup_model(path)
+    if task.done():
+        entry = task.result()
+        if entry is None:
+            return web.json_response({"state": "offline", "used": used})
+        if entry.get("source") and "ko" not in entry and (ko := await app.summarize_ko(entry)):
+            entry["ko"] = ko
+            app.store.put_model_info(name, size, entry)
+        return web.json_response({"state": "ready", "info": entry, "used": used})
+    return web.json_response({"state": "working", "step": step[0], "used": used})
+
+
+async def api_models_lookups(request):
+    """How far the background identification of the model files is."""
+    return web.json_response(request.app["app"].prefetch_state)
+
+
+async def api_models_copy_cancel(request):
+    app = request.app["app"]
+    if app.copy_job:
+        app.copy_job.stop = True
+    return web.json_response({"ok": True})
+
+
 async def api_inspect(request):
     """A file dropped on the page: keep a copy under data/dropped and describe it like a library item."""
     lib = _library(request)
@@ -2089,6 +2356,43 @@ async def api_view(request):
     return await _proxy(request, path, params)
 
 
+async def api_page(request):
+    """Each open page calls in every few seconds ({'id'}) and says goodbye when it closes ({'id', 'bye': true}),
+    so the program can stop when no page is left (close_with_page)."""
+    app, body = request.app["app"], await request.json()
+    pid = str(body.get("id", ""))[:40]
+    if pid:
+        if body.get("bye"):
+            app.pages.pop(pid, None)
+        else:
+            app.pages[pid] = time.time()
+            app.pages_gone_since = None
+    return web.json_response({"pages": len(app.pages), "close_with_page": bool(app.cfg.get("close_with_page"))})
+
+
+async def page_watch(web_app):
+    """With close_with_page: stop once every page has been closed for a while (a reload is not a close), or when no
+    page came at all. Not in the middle of a stage or a copy; the ComfyUI job itself goes on without this program."""
+    app = web_app["app"]
+    started = app.pages_gone_since      # stays the value of pages_gone_since until a page has called in
+    while True:
+        await asyncio.sleep(3)
+        now = time.time()
+        for pid, seen in list(app.pages.items()):
+            if now - seen > 20:
+                del app.pages[pid]
+        if app.pages:
+            continue
+        if app.pages_gone_since is None:
+            app.pages_gone_since = now
+        quiet = now - app.pages_gone_since
+        never = app.pages_gone_since == started and quiet > 90
+        if (quiet > 10 or never) and not app.lock.locked() and not (app.copy_job and app.copy_job.state in ("planning", "running")):
+            log.info("no page is open any more: stopping" if not never else "no page came: stopping")
+            logging.shutdown()
+            os._exit(0)
+
+
 async def on_startup(web_app):
     app = web_app["app"]
     await app.comfy.start()
@@ -2096,11 +2400,19 @@ async def on_startup(web_app):
     if app.cfg.get("open"):
         host = "127.0.0.1" if app.cfg["host"] in ("0.0.0.0", "::") else app.cfg["host"]
         asyncio.get_running_loop().call_later(1.0, webbrowser.open, f"http://{host}:{app.cfg['port']}")
+    if app.cfg.get("close_with_page"):
+        app.pages_gone_since = time.time()
+        web_app["page_task"] = asyncio.create_task(page_watch(web_app))
+    asyncio.get_running_loop().call_later(15.0, app.start_prefetch)      # the model descriptions, ready before the menu is opened
 
 
 async def on_cleanup(web_app):
     web_app["ws_task"].cancel()
+    if "page_task" in web_app:
+        web_app["page_task"].cancel()
     await web_app["app"].comfy.close()
+    if web_app["app"].web is not None:
+        await web_app["app"].web.close()
 
 
 def load_config():
@@ -2117,8 +2429,10 @@ def load_config():
     ap.add_argument("--output-dir", default=cfg["output_dir"],
                     help="folder of this PC that shows what ComfyUI saves (default: picked on the page, else found)")
     ap.add_argument("--open", action="store_true", help="open the page in the default browser once the server is up")
+    ap.add_argument("--close-with-page", action="store_true", help="stop when the last page has been closed in the browser")
     args = ap.parse_args()
-    cfg.update(host=args.host, port=args.port, comfy_url=args.comfy, output_dir=args.output_dir, open=args.open)
+    cfg.update(host=args.host, port=args.port, comfy_url=args.comfy, output_dir=args.output_dir, open=args.open,
+               close_with_page=args.close_with_page or cfg["close_with_page"])
     return cfg
 
 
@@ -2157,20 +2471,50 @@ def make_app(cfg):
         web.post("/api/library/mark", api_library_mark),
         web.post("/api/library/rename", api_library_rename),
         web.post("/api/library/delete", api_library_delete),
+        web.get("/api/models", api_models),
+        web.post("/api/models/rename", api_models_rename),
+        web.post("/api/models/delete", api_models_delete),
+        web.get("/api/fs", api_fs),
+        web.get("/api/models/copy", api_models_copy),
+        web.post("/api/models/copy", api_models_copy),
+        web.post("/api/models/copy/cancel", api_models_copy_cancel),
+        web.get("/api/models/info", api_models_info),
+        web.get("/api/models/lookups", api_models_lookups),
         web.get("/api/works", api_works),
         web.post("/api/works", api_work_add),
         web.post("/api/works/{id}/open", api_work_open),
         web.post("/api/works/{id}/delete", api_work_delete),
         web.post("/api/inspect", api_inspect),
+        web.post("/api/page", api_page),
     ])
     web_app.on_startup.append(on_startup)
     web_app.on_cleanup.append(on_cleanup)
     return web_app
 
 
+def alert(text):
+    """Without a console (pythonw) the only way to tell is a message box."""
+    if sys.stderr is None and os.name == "nt":
+        ctypes.windll.user32.MessageBoxW(None, text, "ComfyUI-Manager", 0x10)
+    else:
+        print(text, file=sys.stderr)
+
+
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    # the log goes to data\manager.log as well (the only place when run without a console)
+    handlers = [logging.handlers.RotatingFileHandler(os.path.join(DATA, "manager.log"), maxBytes=1 << 20, backupCount=2, encoding="utf-8")]
+    if sys.stderr is not None:
+        handlers.append(logging.StreamHandler())
+    os.makedirs(DATA, exist_ok=True)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S", handlers=handlers)
     config = load_config()
     shown = "127.0.0.1" if config["host"] in ("0.0.0.0", "::") else config["host"]
     print(f"\n  ComfyUI-Manager:  http://{shown}:{config['port']}\n  ComfyUI:          {config['comfy_url']}\n")
-    web.run_app(make_app(config), host=config["host"], port=config["port"], print=None)
+    log.info("ComfyUI-Manager on http://%s:%s (ComfyUI %s)%s", shown, config["port"], config["comfy_url"],
+             " - stops when the page is closed" if config["close_with_page"] else " - keeps running")
+    try:
+        web.run_app(make_app(config), host=config["host"], port=config["port"], print=None)
+    except OSError as e:      # the port is taken, most likely by another copy of this program
+        log.error("cannot start: %s", e)
+        alert(f"ComfyUI-Manager를 시작하지 못했습니다.\n\n{e}\n\n포트 {config['port']}를 다른 프로그램(또는 이미 켜 둔 ComfyUI-Manager)이 쓰고 있을 수 있습니다.")
+        sys.exit(1)

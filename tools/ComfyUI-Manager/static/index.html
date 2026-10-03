@@ -31,6 +31,7 @@
   .status { color:var(--dim); font-size:13px; }
   .spacer { flex:1; }
   main { max-width:1280px; margin:0 auto; padding:16px 18px 60px; display:flex; flex-direction:column; gap:16px; }
+  main#tabModels { max-width:none; }      /* the two panes take the whole width */
   section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
   section h2 { font-size:15px; margin:0 0 12px; }
   section h2 span { color:var(--dim); font-weight:normal; font-size:13px; margin-left:8px; }
@@ -113,6 +114,50 @@
   .card .pick { position:absolute; right:6px; bottom:6px; width:20px; height:20px; margin:0; cursor:pointer; accent-color:var(--accent); }
   .card.picked { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
   .card.aimed { border-color:var(--bad); box-shadow:0 0 0 1px var(--bad); }
+  .panes { display:flex; gap:6px; margin-top:12px; align-items:stretch; --split:50%; }
+  .pane { flex:1; min-width:0; display:flex; flex-direction:column; background:#12141a; border:1px solid var(--line); border-radius:8px; padding:8px; }
+  #paneL { flex:0 0 calc(var(--split) - 8px); min-width:200px; }
+  .pmid { flex:none; width:10px; cursor:col-resize; position:relative; border-radius:5px; }      /* dragging it moves the split */
+  .pmid::before { content:""; position:absolute; left:3px; width:4px; top:40%; bottom:40%; border-radius:2px; background:var(--line); }
+  .pmid:hover::before { background:var(--accent); }
+  .hgrip { height:10px; margin-top:4px; cursor:row-resize; border-radius:5px; background:transparent; }      /* dragging it changes the height */
+  .hgrip::before { content:""; display:block; width:60px; height:4px; margin:3px auto; border-radius:2px; background:var(--line); }
+  .hgrip:hover::before { background:var(--accent); }
+  body.resizing { cursor:col-resize; user-select:none; } body.resizing-y { cursor:row-resize; user-select:none; }
+  .pane.active { border-color:var(--accent); }
+  .phead { display:flex; gap:6px; align-items:center; font-size:13px; }
+  .phead .path { flex:1; min-width:0; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; direction:rtl; text-align:left; }
+  .phead input { flex:1; width:auto; min-width:0; padding:4px 8px; font-size:13px; }
+  .pane .hint { min-height:1.2em; }
+  .tree { height:var(--tree-h, calc(100vh - 300px)); min-height:200px; overflow:auto; margin-top:6px; font-size:14px; }
+  .mrow { display:flex; gap:8px; align-items:center; padding:4px 6px; border-radius:4px; cursor:pointer; user-select:none; white-space:nowrap; }
+  .mrow:hover { background:#181c24; }
+  .mrow.picked { background:#18263a; }
+  .mrow.aimed { background:#3a1c1c; }
+  .mrow.cur { box-shadow:inset 3px 0 0 var(--accent); }
+  .mrow .arrow { flex:none; width:14px; color:var(--dim); text-align:center; }
+  .mrow .pick { flex:none; width:15px; height:15px; margin:0; accent-color:var(--accent); cursor:pointer; }
+  .mrow .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .mrow.dir .name { color:var(--text); font-weight:600; }
+  .mrow .meta { flex:none; color:var(--dim); font-size:13px; }
+  .mrow .meta b { color:var(--text); font-weight:normal; }
+  .mrow .flag { display:inline-block; margin-left:6px; padding:0 6px; border-radius:4px; font-size:11px; background:#4a3a14; color:var(--warn); }
+  .mrow input.rename { flex:1; min-width:0; padding:2px 6px; font-size:13px; }
+  .copybox { margin-top:10px; padding:8px 10px; background:#12141a; border:1px solid var(--line); border-radius:8px; font-size:13px; }
+  .copybox .bar { height:8px; background:#2b313b; border-radius:4px; overflow:hidden; }
+  .copybox .bar div { height:100%; width:0; background:var(--accent); transition:width .3s; }
+  #cardMenu button + button { margin-top:4px; }
+  #mdlTotal { flex:none; color:var(--text); font-weight:600; }
+  #mdlTip { position:fixed; z-index:24; width:min(460px, calc(100vw - 24px)); background:var(--card); border:1px solid var(--line); border-radius:8px;
+            padding:10px 12px; box-shadow:0 8px 24px rgba(0,0,0,.55); font-size:13px; line-height:1.45; }
+  #mdlTip .t { font-weight:600; font-size:14px; word-break:break-word; }
+  #mdlTip .src { color:var(--dim); font-size:12px; margin-left:6px; }
+  #mdlTip .src.guess { color:var(--warn); }
+  #mdlTip .d { color:var(--accent); margin-top:2px; }
+  #mdlTip .s { margin-top:4px; color:var(--text); word-break:break-word; }
+  #mdlTip .w { margin-top:4px; color:var(--warn); word-break:break-word; }
+  #mdlTip .f { margin-top:6px; color:var(--dim); font-size:12px; }
+  #mdlTip a { color:var(--accent); }
   #cardMenu { position:fixed; z-index:25; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.55); }
   #cardMenu button { display:block; white-space:nowrap; }
   .pickbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; padding:8px 10px; background:#18263a; border:1px solid var(--accent); border-radius:8px; font-size:13px; }
@@ -162,7 +207,7 @@
 <body>
 <aside>
   <h1>ComfyUI-Manager</h1>
-  <nav class="menu"><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuScenarios">시나리오</button><button id="menuLibrary">보관함</button><button id="menuInspect">파일 확인</button></nav>
+  <nav class="menu"><button id="menuCreate" class="on">새 작업</button><button id="menuHistory">작업 이력</button><button id="menuScenarios">시나리오</button><button id="menuLibrary">보관함</button><button id="menuInspect">파일 확인</button><button id="menuModels">모델</button></nav>
 </aside>
 
 <div class="content">
@@ -386,6 +431,36 @@
     <div class="job" id="dropInfo"></div>
   </section>
 </main>
+
+<main id="tabModels" hidden>
+  <section>
+    <h2>모델 <span>왼쪽은 서버의 모델 폴더, 오른쪽은 이 PC의 아무 폴더입니다. 한쪽에서 고르면 그 창 위에 복사 버튼이 나오고(F5), 다른 쪽의 현재 폴더로 복사합니다. 가운데 줄과 아래 손잡이를 끌어 크기를 바꿉니다</span></h2>
+    <div class="row">
+      <div style="flex:2"><label>모델 폴더에서 이름 검색</label><input type="text" id="mdlSearch" placeholder="예: wan, lightx2v"></div>
+      <div><label>폴더 안 정렬</label>
+        <select id="mdlSort"><option value="name">이름순</option><option value="size">큰 것부터</option><option value="new">최신순</option>
+          <option value="unused">보관함에서 안 쓴 것부터</option></select></div>
+    </div>
+    <div class="panes">
+      <div class="pane" id="paneL">
+        <div class="phead"><b>모델 폴더</b><span class="path" id="mdlFolder"></span><b id="mdlTotal" title="모델 폴더 전체 용량"></b><button class="mini" id="btnMdlReload">새로 고침</button></div>
+        <div class="hint"><span id="mdlInfo"></span><span id="mdlPickInfo"></span> <button class="mini" id="copyToR" hidden title="왼쪽에서 고른 것을 오른쪽의 현재 폴더로 복사합니다 (F5)"></button><span id="mdlLookup"></span></div>
+        <div class="tree" id="mdlList"></div>
+      </div>
+      <div class="pmid" id="paneSplit" title="끌어서 너비 조절"></div>
+      <div class="pane" id="paneR">
+        <div class="phead"><input type="text" id="rPath" placeholder="경로를 적고 Enter (비우면 드라이브 목록)" title="이 PC에서 보이는 경로 (네트워크 드라이브 포함)"><button class="mini" id="rUp" title="위 폴더로">위로</button><button class="mini" id="rPick">폴더 선택…</button><button class="mini" id="rReload">새로 고침</button></div>
+        <div class="hint"><span id="rInfo"></span><span id="rPickInfo"></span> <button class="mini" id="copyToL" hidden title="오른쪽에서 고른 것을 왼쪽의 현재 폴더로 복사합니다 (F5)"></button></div>
+        <div class="tree" id="rList"></div>
+      </div>
+    </div>
+    <div class="hgrip" id="paneGrip" title="끌어서 높이 조절"></div>
+    <div class="copybox" id="copyBox" hidden>
+      <div class="bar"><div id="copyBar"></div></div>
+      <div class="actions" style="margin-top:6px"><span id="copyText" style="flex:1"></span><button class="sub" id="copyStop">중단</button></div>
+    </div>
+  </section>
+</main>
 </div>
 
 <div id="scnViewer" hidden>
@@ -436,7 +511,8 @@
   </div>
 </div>
 
-<div id="cardMenu" hidden><button class="danger" id="cmDelete"></button></div>
+<div id="cardMenu" hidden><button class="danger" id="cmDelete"></button><button class="sub" id="cmRename" hidden>이름 변경</button><button class="sub" id="cmInfo" hidden>웹에서 다시 검색</button></div>
+<div id="mdlTip" hidden></div>
 
 <div id="viewer" hidden>
   <div class="sheet">
@@ -998,9 +1074,15 @@ async function browse(path) {
     if (!res.dirs.length) list.append(el('div', 'hint', '하위 폴더가 없습니다.'));
   } catch (e) { info.className = 'job err'; info.textContent = e.message; }
 }
+// the folder picker serves the result folder (with '자동으로 찾기') and the other pane of the model menu
+let fpChoose = null;
+function pickFolder(start, onChoose, auto) {
+  fpChoose = onChoose; $('fpNone').hidden = !auto;
+  $('folderPicker').hidden = false; browse(start);
+}
 $('btnResultDir').onclick = () => {
   const s = state.status || {};
-  $('folderPicker').hidden = false; browse(s.result_dir || (s.output_source === 'auto' ? s.output_dir : ''));
+  pickFolder(s.result_dir || (s.output_source === 'auto' ? s.output_dir : ''), choose, true);
 };
 $('fpClose').onclick = () => { $('folderPicker').hidden = true; };
 $('folderPicker').onclick = e => { if (e.target === $('folderPicker')) $('fpClose').onclick(); };
@@ -1010,7 +1092,7 @@ const choose = async path => {
   if (await applyResultDir(path)) $('fpClose').onclick();
   else { $('fpInfo').className = 'job err'; $('fpInfo').textContent = $('setInfo').textContent; }
 };
-$('fpChoose').onclick = () => choose($('fpPath').value.trim());
+$('fpChoose').onclick = () => fpChoose($('fpPath').value.trim());
 $('fpNone').onclick = () => choose('');
 $('btnCancel').onclick = async () => { if (state.currentJob) await post('/api/job/' + state.currentJob + '/cancel', {}).catch(() => {}); };
 $('btnRestart').onclick = async () => {
@@ -1035,11 +1117,12 @@ $('btnFree').onclick = async () => {
 const STEPS = { image: 'stepImage', scenario: 'stepScenario', video: 'stepVideo' };
 const TAB_BUTTONS = { image: 'tabBtnImage', scenario: 'tabBtnScenario', video: 'tabBtnVideo' };
 function showTab(name) {
-  if (name !== 'library' && name !== 'inspect' && name !== 'history' && name !== 'scenarios' && !STEPS[name]) name = 'image';
+  if (name !== 'library' && name !== 'inspect' && name !== 'history' && name !== 'scenarios' && name !== 'models' && !STEPS[name]) name = 'image';
   const create = !!STEPS[name];
   $('tabCreate').hidden = $('stepTabs').hidden = $('createButtons').hidden = !create;
   $('tabHistory').hidden = name !== 'history'; $('tabLibrary').hidden = name !== 'library'; $('tabScenarios').hidden = name !== 'scenarios';
   $('tabInspect').hidden = name !== 'inspect'; $('menuInspect').classList.toggle('on', name === 'inspect');
+  $('tabModels').hidden = name !== 'models'; $('menuModels').classList.toggle('on', name === 'models');
   $('menuScenarios').classList.toggle('on', name === 'scenarios');
   // a recorded work opened into the steps belongs to 작업 이력
   $('menuCreate').classList.toggle('on', create && !state.work);
@@ -1053,6 +1136,7 @@ function showTab(name) {
   if (name === 'library') loadLibrary();
   if (name === 'history') loadWorks();
   if (name === 'scenarios') loadScenarios();
+  if (name === 'models') loadModels();
   if (name === 'video' && $('paramBox').open) loadParams();
   updateContext();
   window.scrollTo(0, 0);
@@ -1065,6 +1149,7 @@ $('menuHistory').onclick = () => showTab('history');
 $('menuLibrary').onclick = () => showTab('library');
 $('menuInspect').onclick = () => showTab('inspect');
 $('menuScenarios').onclick = () => showTab('scenarios');
+$('menuModels').onclick = () => showTab('models');
 // What the next step will work with, shown at the top of steps 2 and 3.
 function updateContext() {
   const strip = (id, ok, text, src) => {
@@ -1273,27 +1358,42 @@ const fmtDate = t => new Date(t * 1000).toLocaleString('ko-KR', { dateStyle: 'sh
 const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
-// ---- picking several files of the list to delete them together ----
+// ---- picking several files of a list to delete them together: the library cards and the model rows work the same ----
+const LISTS = {
+  library: { grid: () => 'libGrid', row: '.card', info: () => 'pickInfo', note: 'libInfo', api: '/api/library/delete', reload: () => loadLibrary() },
+  models: { grid: () => mdl.active === 'R' ? 'rList' : 'mdlList', row: '.mrow', info: () => mdl.active === 'R' ? 'rPickInfo' : 'mdlPickInfo',
+            note: 'mdlInfo', api: '/api/models/delete', reload: () => loadModels() },      // the pane last clicked
+};
+const listOf = () => $('tabModels').hidden ? LISTS.library : LISTS.models;      // the list on the screen
+const rowsOf = (L, more = '') => [...$(L.grid()).querySelectorAll(L.row + more)];
 const picked = new Set();
 let lastPick = null;
 function setPicked(card, on) {
   card.classList.toggle('picked', on); card.querySelector('.pick').checked = on;
   if (on) picked.add(card.dataset.ref); else picked.delete(card.dataset.ref);
+  if (card.classList.contains('mrow')) pickBranch(card, on);
 }
 function pickTo(card, on, range) {      // range: everything from the last one picked up to this one
-  const cards = [...$('libGrid').querySelectorAll('.card')], here = cards.indexOf(card);
+  const cards = rowsOf(listOf()), here = cards.indexOf(card);
   const from = range && lastPick != null ? Math.min(lastPick, here) : here, to = range && lastPick != null ? Math.max(lastPick, here) : here;
   for (const c of cards.slice(from, to + 1)) setPicked(c, on);
   lastPick = here; showPicked();
 }
 function showPicked() {      // how many are picked goes on the line of the count, so the list does not move
-  $('pickInfo').style.color = 'var(--accent)';
-  $('pickInfo').textContent = picked.size ? ' · ' + picked.size + '개 선택 (우클릭이나 Delete로 삭제, Ctrl+A로 전체 선택, Esc로 해제)' : '';
+  if (listOf() === LISTS.models) return showModelPicks();
+  const info = $(listOf().info());
+  info.style.color = 'var(--accent)';
+  info.textContent = picked.size ? ' · ' + picked.size + '개 선택 (우클릭이나 Delete로 삭제, Ctrl+A로 전체 선택, Esc로 해제)' : '';
 }
 function pickAll(on) {
   if (!on) picked.clear();
-  for (const c of $('libGrid').querySelectorAll('.card')) setPicked(c, on);
+  for (const c of rowsOf(listOf())) setPicked(c, on);
   showPicked();
+}
+function pickOnClick(e, card, open) {      // Ctrl / Shift / while any is picked: pick; else what a plain click does
+  const range = e.shiftKey && lastPick != null;
+  if (e.ctrlKey || e.metaKey || e.shiftKey || picked.size || !open) pickTo(card, range || !picked.has(card.dataset.ref), range);
+  else open();
 }
 
 // ---- the delete button: under the pointer on a right click on a file of the list (on a picked file it deletes everything picked),
@@ -1301,34 +1401,42 @@ function pickAll(on) {
 let aimed = [];
 function hideCardMenu() {
   $('cardMenu').hidden = true;
-  for (const c of $('libGrid').querySelectorAll('.card.aimed')) c.classList.remove('aimed');
+  for (const c of document.querySelectorAll('.card.aimed, .mrow.aimed')) c.classList.remove('aimed');
 }
 function aimAt(refs, x, y) {
   hideCardMenu(); aimed = refs;
-  for (const c of $('libGrid').querySelectorAll('.card')) c.classList.toggle('aimed', aimed.includes(c.dataset.ref));
+  for (const c of rowsOf(listOf())) c.classList.toggle('aimed', aimed.includes(c.dataset.ref));
   $('cmDelete').textContent = (aimed.length > 1 ? '선택한 ' + aimed.length + '개 삭제' : '삭제') + ' (되돌릴 수 없음)';
+  const one = rowsOf(listOf()).find(c => c.dataset.ref === refs[0]);
+  $('cmRename').hidden = $('cmInfo').hidden = !(listOf() === LISTS.models && refs.length === 1 && one && !one.classList.contains('dir'));
   const m = $('cardMenu'); m.hidden = false;
   m.style.left = Math.max(4, Math.min(x - 14, innerWidth - m.offsetWidth - 4)) + 'px';
   m.style.top = Math.max(4, Math.min(y - 14, innerHeight - m.offsetHeight - 4)) + 'px';
 }
+// only the model folder's own files are deleted; a picked folder means every file in it (the folder itself stays)
+const isModelFile = r => !!mdl.data && mdl.data.files.some(f => f.ref === r);      // a left ref is a file of the list or a folder
+const deletable = () => listOf() !== LISTS.models ? [...picked] : [...new Set(picksOf('L').flatMap(r => isModelFile(r) ? [r] : modelFilesUnder(r)))];
 function cardMenu(e, card) {
   e.preventDefault(); e.stopPropagation();
-  aimAt(picked.has(card.dataset.ref) ? [...picked] : [card.dataset.ref], e.clientX, e.clientY);
+  aimAt(picked.has(card.dataset.ref) ? deletable() : [card.dataset.ref], e.clientX, e.clientY);
 }
 function aimAtPicked() {      // on a picked file that is on the screen, or in the middle when they are all scrolled away
-  const box = [...$('libGrid').querySelectorAll('.card.picked')].map(c => c.getBoundingClientRect()).find(r => r.bottom > 40 && r.top < innerHeight - 40);
-  aimAt([...picked], box ? box.left + box.width / 2 : innerWidth / 2, box ? box.top + box.width / 2 : innerHeight / 2);
+  const refs = deletable(); if (!refs.length) return;
+  const box = rowsOf(listOf(), '.picked').map(c => c.getBoundingClientRect()).find(r => r.bottom > 40 && r.top < innerHeight - 40);
+  aimAt(refs, box ? box.left + Math.min(box.width, 240) / 2 : innerWidth / 2, box ? box.top + Math.min(box.width, box.height) / 2 : innerHeight / 2);
 }
 $('cmDelete').onclick = async () => {
-  const refs = aimed; hideCardMenu();
+  const refs = aimed, L = listOf(); hideCardMenu();
   try {
-    const res = await post('/api/library/delete', { refs });
+    const res = await post(L.api, { refs });
     for (const r of refs) picked.delete(r);
     for (const f of res.failed) picked.add(f.ref);      // what could not be deleted is left picked
-    await loadLibrary();
-    if (res.failed.length) { $('pickInfo').style.color = 'var(--bad)'; $('pickInfo').textContent = ' · ' + res.failed.length + '개는 지우지 못해 선택된 채로 남았습니다: ' + res.failed[0].error; }
-  } catch (e) { $('libInfo').textContent = e.message; }
+    await L.reload();
+    if (res.failed.length) { $(L.info()).style.color = 'var(--bad)'; $(L.info()).textContent = ' · ' + res.failed.length + '개는 지우지 못해 선택된 채로 남았습니다: ' + res.failed[0].error; }
+  } catch (e) { $(L.note).textContent = e.message; }
 };
+$('cmRename').onclick = () => { const row = rowsOf(listOf()).find(c => c.dataset.ref === aimed[0]); hideCardMenu(); if (row) renameModel(row); };
+$('cmInfo').onclick = () => { const row = rowsOf(listOf()).find(c => c.dataset.ref === aimed[0]), f = mdl.data.files.find(x => x.ref === aimed[0]); hideCardMenu(); if (row && f) showTip(row, f, true); };
 document.addEventListener('click', e => { if (!e.target.closest('#cardMenu')) hideCardMenu(); }, true);
 document.addEventListener('contextmenu', hideCardMenu, true);
 window.addEventListener('scroll', hideCardMenu, true);
@@ -1396,11 +1504,7 @@ async function loadLibrary() {
     pick.onclick = e => { e.stopPropagation(); pickTo(card, pick.checked, e.shiftKey); };
     pic.append(pick);
     card.append(pic, meta);
-    card.onclick = e => {
-      const range = e.shiftKey && lastPick != null;
-      if (e.ctrlKey || e.metaKey || e.shiftKey || picked.size) pickTo(card, range || !picked.has(it.ref), range);
-      else openDetail(it.ref);
-    };
+    card.onclick = e => pickOnClick(e, card, () => openDetail(it.ref));
     card.oncontextmenu = e => cardMenu(e, card);
     grid.append(card);
   }
@@ -1559,7 +1663,7 @@ $('dNext').onclick = () => stepDetail(1);
 document.addEventListener('keydown', e => {
   if (e.altKey || e.key === 'Shift' || e.target.matches('input:not([type=checkbox]), textarea, select')) return;
   if (['working', 'folderPicker', 'scnViewer', 'settings'].some(id => !$(id).hidden)) return;
-  const inList = $('viewer').hidden && !$('tabLibrary').hidden;
+  const inList = $('viewer').hidden && (!$('tabLibrary').hidden || !$('tabModels').hidden);
   if (e.ctrlKey || e.metaKey) {
     if (e.key.toLowerCase() !== 'a' || !inList) return;
     hideCardMenu(); pickAll(true);
@@ -1573,6 +1677,8 @@ document.addEventListener('keydown', e => {
     else if (e.key === 'ArrowLeft' && !seeking) $('dPrev').click();
     else if (e.key === 'ArrowRight' && !seeking) $('dNext').click();
     else return;
+  } else if (inList && e.key === 'F5' && !$('tabModels').hidden) {      // copy from the pane in use to the other one
+    startCopy(mdl.active === 'L' ? 'R' : 'L');
   } else if (inList && picked.size) {
     if (e.key === 'Delete') aimAtPicked();
     else if (e.key === 'Escape') pickAll(false);
@@ -1602,9 +1708,321 @@ for (const id of ['libSort', 'libKind', 'libSidecars', 'libFav']) $(id).onchange
 $('libSearch').onkeydown = e => { if (e.key === 'Enter') loadLibrary(); };
 $('btnLibReload').onclick = loadLibrary;
 
+// ---- models: two panes like a file manager. Left: the server's model folder as a tree, from the flat list the server
+// ---- gives (with what the library made with each file). Right: any folder of this PC, read a folder at a time.
+// ---- What is picked in one pane is copied into the current folder (the one last clicked) of the other.
+const mdl = { data: null, active: 'L', cur: { L: '', R: '' }, open: { L: new Set(JSON.parse(localStorage.getItem('vw_mdl_open') || '["loras"]')), R: new Set() },
+              rRoot: localStorage.getItem('vw_rpath') || '', rCache: {}, rDirs: {} };      // rDirs: folder -> {parent}
+const fmtBig = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : fmtSize(b);
+const mdlRef = rel => 'model:' + rel;      // left pane rows: a ref under the model folder; right pane rows: a path of this PC
+async function loadModels() {
+  $('mdlInfo').textContent = '모델 폴더를 읽는 중…';
+  try { mdl.data = await api('/api/models'); }
+  catch (e) { $('mdlInfo').textContent = e.message; $('mdlList').innerHTML = ''; return; }
+  $('mdlFolder').textContent = mdl.data.folder; $('mdlFolder').title = mdl.data.folder;
+  $('mdlTotal').textContent = fmtBig(mdl.data.folders.reduce((n, f) => n + f.size, 0));
+  showModels(); pollLookups();
+  if (!$('rList').children.length) loadRight(mdl.rRoot);
+}
+function modelTree() {      // the flat list as nested folders, each with its count and size
+  const root = { name: '', rel: '', dirs: new Map(), files: [], count: 0, size: 0 };
+  for (const f of mdl.data.files) {
+    const parts = (f.folder + '/' + f.name).split('/'), file = parts.pop();
+    let node = root; node.count++; node.size += f.size;
+    for (const p of parts) {
+      if (!node.dirs.has(p)) node.dirs.set(p, { name: p, rel: node.rel ? node.rel + '/' + p : p, dirs: new Map(), files: [], count: 0, size: 0 });
+      node = node.dirs.get(p); node.count++; node.size += f.size;
+    }
+    node.files.push(Object.assign({ file }, f));
+  }
+  return root;
+}
+function showModels() {
+  const d = mdl.data; if (!d) return;
+  const q = $('mdlSearch').value.trim().toLowerCase(), sort = $('mdlSort').value;
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  const order = sort === 'size' ? (a, b) => b.size - a.size : sort === 'new' ? (a, b) => b.mtime - a.mtime
+              : sort === 'unused' ? (a, b) => a.used - b.used || b.size - a.size : byName;
+  const list = $('mdlList'); list.innerHTML = ''; hideTip();
+  let shown = 0, bytes = 0;
+  const hit = f => !q || (f.folder + '/' + f.name).toLowerCase().includes(q);
+  const has = node => node.files.some(hit) || [...node.dirs.values()].some(has);      // a folder with a matching file
+  const add = (node, depth) => {
+    for (const dir of [...node.dirs.values()].sort(byName)) {
+      if (q && !has(dir)) continue;
+      const open = q || mdl.open.L.has(dir.rel);
+      const row = treeRow('L', mdlRef(dir.rel), dir.name, depth, true, open);
+      row.querySelector('.meta').append(dir.count + '개 · ', el('b', '', fmtBig(dir.size)));
+      list.append(row);
+      if (open) add(dir, depth + 1);
+    }
+    for (const f of node.files.filter(hit).sort(order)) {
+      const row = treeRow('L', f.ref, f.file, depth, false);
+      if (f.known === false) { const flag = el('span', 'flag', 'ComfyUI 목록에 없음'); flag.title = 'ComfyUI가 이 파일을 모델 목록에 넣지 않습니다. 폴더가 다르거나 읽지 않는 형식입니다'; row.querySelector('.name').append(flag); }
+      row.querySelector('.meta').append(el('b', '', fmtBig(f.size)));
+      tipOnHover(row, f);
+      list.append(row); shown++; bytes += f.size;
+    }
+  };
+  add(modelTree(), 0);
+  const all = d.files.filter(hit);      // every file that matches, in open folders or not
+  $('mdlInfo').textContent = all.length ? (q ? '검색 결과 ' : '파일 ') + all.length + '개 · ' + fmtBig(all.reduce((n, f) => n + f.size, 0)) : '표시할 파일이 없습니다.';
+  $('mdlTotal').title = '모델 폴더 전체 용량' + (d.free != null ? ' · 드라이브 남은 공간 ' + fmtBig(d.free) : '');
+  const exists = new Set(d.files.map(f => f.ref).concat(allDirs(modelTree()).map(mdlRef)));      // what was deleted is no longer picked
+  for (const ref of [...picked]) if (ref.startsWith('model:') && !exists.has(ref)) picked.delete(ref);
+  if (mdl.cur.L && !exists.has(mdlRef(mdl.cur.L))) mdl.cur.L = '';
+  lastPick = null;
+  markCurrent(); showModelPicks();
+}
+const allDirs = node => [...node.dirs.values()].flatMap(d => [d.rel].concat(allDirs(d)));
+function treeRow(pane, ref, name, depth, isDir, open) {
+  const row = el('div', 'mrow' + (isDir ? ' dir' : '')); row.dataset.ref = ref; row.dataset.pane = pane;
+  row.style.paddingLeft = 6 + depth * 18 + 'px';
+  const arrow = el('span', 'arrow', isDir ? (open ? '▾' : '▸') : '');
+  const pick = el('input', 'pick'); pick.type = 'checkbox'; pick.title = isDir ? '폴더 선택 (안의 것 전부)' : '선택 (Shift를 누르고 누르면 여기까지 한꺼번에)';
+  if (underPicked(ref)) picked.add(ref);      // inside a picked folder: picked with it
+  pick.checked = picked.has(ref); row.classList.toggle('picked', pick.checked);
+  pick.onclick = e => { e.stopPropagation(); setPane(pane); pickTo(row, pick.checked, e.shiftKey); };
+  row.append(arrow, pick, el('span', 'name', name), el('span', 'meta'));
+  // a plain click on a folder opens / closes it and makes it the current folder; on a file, picks it (Ctrl / Shift as elsewhere)
+  row.onclick = e => { setPane(pane); pickOnClick(e, row, isDir ? () => toggleDir(pane, ref) : null); if (!isDir || e.ctrlKey || e.shiftKey) setCurrent(pane, ref, isDir); };
+  if (isDir) arrow.onclick = e => { e.stopPropagation(); setPane(pane); toggleDir(pane, ref); };
+  if (pane === 'L') row.oncontextmenu = e => { setPane(pane); cardMenu(e, row); };
+  return row;
+}
+function setPane(pane) {
+  if (mdl.active !== pane) { mdl.active = pane; lastPick = null; }
+  $('paneL').classList.toggle('active', pane === 'L'); $('paneR').classList.toggle('active', pane === 'R');
+}
+function setCurrent(pane, ref, isDir) {      // the folder of what was clicked: where a copy from the other pane goes
+  if (pane === 'L') { const rel = ref.slice(6); mdl.cur.L = isDir ? rel : rel.includes('/') ? rel.replace(/\/[^/]*$/, '') : ''; }
+  else mdl.cur.R = isDir ? ref : ref.replace(/[\\/][^\\/]*$/, '') || mdl.rRoot;
+  markCurrent(); showModelPicks();
+}
+function markCurrent() {
+  for (const row of document.querySelectorAll('#mdlList .mrow, #rList .mrow'))
+    row.classList.toggle('cur', row.classList.contains('dir') && (row.dataset.pane === 'L' ? row.dataset.ref === mdlRef(mdl.cur.L) : row.dataset.ref === mdl.cur.R));
+}
+function toggleDir(pane, ref) {
+  if (pane === 'L') {
+    const rel = ref.slice(6);
+    if (mdl.open.L.has(rel)) mdl.open.L.delete(rel); else mdl.open.L.add(rel);
+    localStorage.setItem('vw_mdl_open', JSON.stringify([...mdl.open.L]));
+    setCurrent('L', ref, true); showModels();
+  } else {
+    if (mdl.open.R.has(ref)) mdl.open.R.delete(ref); else mdl.open.R.add(ref);
+    setCurrent('R', ref, true); showRight();
+  }
+}
+const picksOf = pane => [...picked].filter(r => pane === 'L' ? r.startsWith('model:') : !r.startsWith('model:'));
+// a folder picked is everything inside it: the rows shown follow, and what is not shown (closed folders) counts too
+const inside = (ref, dir) => ref.startsWith(dir + (dir.startsWith('model:') ? '/' : dir.endsWith('\\') ? '' : '\\'));
+const underPicked = ref => [...picked].some(p => p !== ref && inside(ref, p));
+const topPicks = pane => picksOf(pane).filter(r => !underPicked(r));      // for copying: a folder stands for its contents
+function pickBranch(row, on) {      // the rows shown inside a picked folder follow it
+  if (!row.classList.contains('dir')) return;
+  for (const r of rowsOf(LISTS.models)) if (inside(r.dataset.ref, row.dataset.ref)) { r.classList.toggle('picked', on); r.querySelector('.pick').checked = on; if (on) picked.add(r.dataset.ref); else picked.delete(r.dataset.ref); }
+}
+const modelFilesUnder = dir => mdl.data ? mdl.data.files.map(f => f.ref).filter(r => inside(r, dir)) : [];
+function showModelPicks() {      // picked counts on each pane's line, the copy buttons say what goes where
+  for (const [pane, id] of [['L', 'mdlPickInfo'], ['R', 'rPickInfo']]) {
+    const n = picksOf(pane).length, info = $(id); info.style.color = 'var(--accent)';
+    info.textContent = n ? ' · ' + n + '개 선택 (Esc로 해제)' : '';
+  }
+  // a copy button on the line of the pane that has picks, saying where they would go (the other pane's current folder)
+  const curL = mdl.cur.L || '(모델 폴더)', curR = mdl.cur.R || mdl.rRoot || '';
+  $('copyToR').hidden = !picksOf('L').length; $('copyToR').disabled = !curR;
+  $('copyToR').textContent = curR ? '오른쪽 ' + (curR.split(/[\\/]/).filter(Boolean).pop() || curR) + ' 로 복사 (F5)' : '오른쪽에서 받을 폴더를 먼저 고르세요';
+  $('copyToL').hidden = !picksOf('R').length;
+  $('copyToL').textContent = '왼쪽 ' + curL.split('/').pop() + ' 로 복사 (F5)';
+}
+async function loadRight(path) {      // the root of the right pane; what is below is read when a folder is opened
+  $('rInfo').textContent = '읽는 중…';
+  let res;
+  try { res = await api('/api/fs?path=' + encodeURIComponent(path || '')); }
+  catch (e) {      // a folder that is gone (a drive that is away): back to the list of drives
+    if (!path) { $('rInfo').textContent = e.message; return; }
+    await loadRight(''); $('rInfo').textContent = e.message + ' — 드라이브 목록입니다'; return;
+  }
+  mdl.rRoot = res.path; localStorage.setItem('vw_rpath', res.path); $('rPath').value = res.path;
+  $('rUp').disabled = res.parent == null; $('rUp').onclick = () => loadRight(res.parent);
+  mdl.rCache = { [res.path]: res }; mdl.open.R.clear(); mdl.cur.R = res.path;
+  for (const ref of picksOf('R')) picked.delete(ref);
+  showRight();
+}
+async function showRight() {
+  const list = $('rList'); list.innerHTML = '';
+  let count = 0;
+  const add = async (path, depth) => {
+    let res = mdl.rCache[path];
+    if (!res) {
+      try { res = mdl.rCache[path] = await api('/api/fs?path=' + encodeURIComponent(path)); }
+      catch (e) { list.append(el('div', 'hint', e.message)); return; }
+    }
+    for (const d of res.dirs) {
+      const open = mdl.open.R.has(d.path);
+      list.append(treeRow('R', d.path, d.name, depth, true, open));
+      if (open) await add(d.path, depth + 1);
+    }
+    for (const f of res.files) {
+      const row = treeRow('R', f.path, f.name, depth, false);
+      row.querySelector('.meta').append(el('b', '', fmtBig(f.size))); row.title = f.name + '\n' + fmtBig(f.size) + ' · ' + fmtDate(f.mtime);
+      list.append(row); count++;
+    }
+  };
+  await add(mdl.rRoot, 0);
+  $('rInfo').textContent = mdl.rRoot ? (count ? '파일 ' + count + '개 (열린 폴더까지)' : '폴더를 열어 보세요') : '드라이브를 고르세요';
+  markCurrent(); showModelPicks();
+}
+$('rPath').onkeydown = e => { if (e.key === 'Enter') loadRight($('rPath').value.trim()); };
+$('rReload').onclick = () => loadRight(mdl.rRoot);
+$('rPick').onclick = () => pickFolder(mdl.rRoot, path => { $('fpClose').onclick(); loadRight(path); }, false);
+$('paneL').onclick = () => setPane('L'); $('paneR').onclick = () => setPane('R');
+// the split between the panes and the height of the trees follow the mouse; both are remembered
+const panes = document.querySelector('.panes');
+if (localStorage.getItem('vw_mdl_split')) panes.style.setProperty('--split', localStorage.getItem('vw_mdl_split'));
+if (localStorage.getItem('vw_mdl_h')) panes.style.setProperty('--tree-h', localStorage.getItem('vw_mdl_h'));
+$('paneSplit').onpointerdown = e => {
+  e.preventDefault(); document.body.classList.add('resizing');
+  const box = panes.getBoundingClientRect();
+  const move = ev => { const pct = Math.max(20, Math.min(80, (ev.clientX - box.left) / box.width * 100)); panes.style.setProperty('--split', pct + '%'); };
+  const up = () => { document.body.classList.remove('resizing'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+                     localStorage.setItem('vw_mdl_split', panes.style.getPropertyValue('--split')); };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+};
+$('paneGrip').onpointerdown = e => {
+  e.preventDefault(); document.body.classList.add('resizing-y');
+  const start = e.clientY, h0 = $('mdlList').getBoundingClientRect().height;
+  const move = ev => panes.style.setProperty('--tree-h', Math.max(200, h0 + ev.clientY - start) + 'px');
+  const up = () => { document.body.classList.remove('resizing-y'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+                     localStorage.setItem('vw_mdl_h', panes.style.getPropertyValue('--tree-h')); };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+};
+// ---- what a model is: the server asks the web (Civitai by file name or hash, then Hugging Face) once per file and
+// ---- keeps the answer; it goes through the whole folder in the background, and the tip shows the answer when the
+// ---- mouse rests on a file (asking for it right away when the background has not reached it yet)
+let lookupTimer = null;
+async function pollLookups() {      // the background run's progress on the pane's line, while the menu is open
+  clearTimeout(lookupTimer);
+  if ($('tabModels').hidden) return;
+  let s;
+  try { s = await api('/api/models/lookups'); } catch (e) { return; }
+  $('mdlLookup').textContent = s.running ? ' · 설명 준비 중 ' + s.done + '/' + s.total + (s.current ? ': ' + s.current : '')
+    : s.offline ? ' · 웹에 연결되지 않아 설명을 찾지 못했습니다' : '';
+  if (s.running) lookupTimer = setTimeout(pollLookups, 3000);
+}
+let tipTimer = null, tipRow = null, tipPoll = null;
+function tipOnHover(row, f) {
+  row.addEventListener('mouseenter', () => { clearTimeout(tipTimer); tipTimer = setTimeout(() => showTip(row, f, false), 400); });
+  row.addEventListener('mouseleave', () => { clearTimeout(tipTimer); tipTimer = setTimeout(hideTip, 250); });
+}
+$('mdlTip').onmouseenter = () => clearTimeout(tipTimer);
+$('mdlTip').onmouseleave = () => { tipTimer = setTimeout(hideTip, 250); };
+$('mdlList').addEventListener('scroll', hideTip);
+function hideTip() { $('mdlTip').hidden = true; tipRow = null; clearTimeout(tipPoll); }
+function showTip(row, f, again) {
+  tipRow = row; const tip = $('mdlTip'); tip.hidden = false; tip.innerHTML = '';
+  tip.append(el('div', 't', f.file), el('div', 'f', '웹에서 찾는 중…'));
+  placeTip(row);
+  const poll = async () => {
+    if (tipRow !== row) return;
+    let r;
+    try { r = await api('/api/models/info?ref=' + encodeURIComponent(f.ref) + (again ? '&again=1' : '')); }
+    catch (e) { tip.querySelector('.f').textContent = e.message; return; }
+    again = false;
+    if (r.state === 'offline') { tip.querySelector('.f').textContent = '웹(Civitai, Hugging Face)에 연결되지 않아 찾지 못했습니다'; return; }
+    if (r.state === 'pending') {      // the background run has not reached this file; the tip waits for it
+      const l = r.lookups;
+      tip.querySelector('.f').textContent = l.running ? '아직 준비 중입니다 (뒤에서 찾는 중 ' + l.done + '/' + l.total + (l.current ? ': ' + l.current : '') + ')'
+        : l.offline ? '웹에 연결되지 않아 아직 찾지 못했습니다' : '아직 찾지 않았습니다 — 우클릭 → 웹에서 다시 검색';
+      tipPoll = setTimeout(poll, 3000); return;
+    }
+    if (r.state === 'working') { tip.querySelector('.f').textContent = r.step; tipPoll = setTimeout(poll, 1500); return; }
+    fillTip(tip, f, r.info, r.used); placeTip(row);
+  };
+  poll();
+}
+function fillTip(tip, f, info, used) {
+  tip.innerHTML = '';
+  const head = el('div'); head.append(el('span', 't', info.source ? info.title : f.file));
+  if (info.source) head.append(el('span', 'src' + (info.sure ? '' : ' guess'), (info.source === 'civitai' ? 'Civitai' : 'Hugging Face') + (info.sure ? '' : ' · 추정 (이름으로 찾음)')));
+  tip.append(head);
+  if (info.source) {
+    tip.append(el('div', 'd', [info.type, info.base, info.version, info.creator ? '제작 ' + info.creator : ''].filter(Boolean).join(' · ')));
+    if (info.ko) tip.append(el('div', 's', info.ko));      // the Korean summary Qwen Chat wrote; else the web's own words
+    else if (info.summary) { tip.append(el('div', 's', info.summary.slice(0, 400) + (info.summary.length > 400 ? '…' : ''))); tip.append(el('div', 'f', '한국어 요약은 Qwen Chat이 있는 ComfyUI에 연결되어 있을 때 뒤에서 만들어집니다')); }
+    if (info.words && info.words.length) tip.append(el('div', 'w', '트리거 단어: ' + info.words.join(', ')));
+    const a = el('a', '', '페이지 열기 ↗'); a.href = info.url; a.target = '_blank'; a.rel = 'noopener'; tip.append(a);
+  } else tip.append(el('div', 's', '웹(Civitai, Hugging Face)에서 찾지 못했습니다' + (info.query ? ' — 검색어: ' + info.query : '')));
+  tip.append(el('div', 'f', f.file + ' · ' + fmtBig(f.size) + ' · ' + fmtDate(f.mtime) + ' · 보관함에서 ' + (used ? used + '개 파일에 사용' : '사용 안 함') + ' · 우클릭 → 웹에서 다시 검색'));
+}
+function placeTip(row) {
+  const r = row.getBoundingClientRect(), tip = $('mdlTip');
+  tip.style.left = Math.max(8, Math.min(r.left + 30, innerWidth - tip.offsetWidth - 8)) + 'px';
+  const below = r.bottom + 4, h = tip.offsetHeight;
+  tip.style.top = (below + h > innerHeight - 8 ? Math.max(8, r.top - h - 4) : below) + 'px';
+}
+function renameModel(row) {      // the name becomes a box; Enter renames, Esc or leaving it puts the name back
+  const cell = row.querySelector('.name'), name = row.dataset.ref.split('/').pop();
+  const ext = name.match(/\.\w+$/)?.[0] || '', input = el('input', 'rename');
+  input.value = name.replace(/\.\w+$/, ''); input.title = '확장자(' + ext + ')는 그대로 둡니다';
+  cell.textContent = ''; cell.append(input); input.focus(); input.select();
+  input.onclick = e => e.stopPropagation();
+  let done = false;
+  const back = () => { if (!done) { done = true; cell.textContent = name; } };
+  input.onblur = back;
+  input.onkeydown = async e => {
+    e.stopPropagation();
+    if (e.key === 'Escape') { back(); return; }
+    if (e.key !== 'Enter') return;
+    done = true; input.disabled = true;
+    try { await post('/api/models/rename', { ref: row.dataset.ref, name: input.value }); await loadModels(); }
+    catch (err) { done = false; input.disabled = false; $('mdlInfo').textContent = err.message; }
+  };
+}
+// ---- copying between the panes: the server copies in the background and is asked how far it is ----
+async function startCopy(to) {      // to: the pane that receives
+  const items = topPicks(to === 'R' ? 'L' : 'R'), dest = to === 'R' ? mdl.cur.R : mdlRef(mdl.cur.L);
+  if (!items.length || !dest) return;
+  const box = $('copyBox'), text = $('copyText'); box.hidden = false; $('copyStop').disabled = false; $('copyBar').style.width = '0';
+  text.textContent = '복사를 시작합니다…';
+  try { await post('/api/models/copy', { items, dest }); }
+  catch (e) { text.textContent = e.message; $('copyStop').disabled = true; return; }
+  const tick = async () => {
+    let p;
+    try { p = await api('/api/models/copy'); } catch (e) { text.textContent = e.message; return; }
+    const pct = p.total ? Math.round(p.done / p.total * 100) : 0;
+    $('copyBar').style.width = pct + '%';
+    if (p.state === 'planning' || p.state === 'running') {
+      text.textContent = '복사 중 ' + pct + '% · ' + fmtBig(p.done) + ' / ' + fmtBig(p.total) + (p.current ? ' · ' + p.current : '');
+      setTimeout(tick, 500); return;
+    }
+    $('copyStop').disabled = true;
+    text.textContent = (p.state === 'cancelled' ? '중단했습니다. ' : p.state === 'error' ? '복사하지 못했습니다. ' : '복사했습니다. ')
+      + p.copied.length + '개 복사' + (p.skipped.length ? ', ' + p.skipped.length + '개 건너뜀 (' + p.skipped[0].why + (p.skipped.length > 1 ? ' 등' : '') + ')' : '')
+      + (p.errors.length ? ', ' + p.errors.length + '개 실패: ' + p.errors[0].name + ' — ' + p.errors[0].error : '') + ' → ' + p.dest;
+    for (const r of items) picked.delete(r);      // what was copied is no longer picked
+    if (to === 'R') { delete mdl.rCache[mdl.cur.R]; showRight(); } else loadModels();
+  };
+  tick();
+}
+$('copyToR').onclick = () => startCopy('R');
+$('copyToL').onclick = () => startCopy('L');
+$('copyStop').onclick = () => post('/api/models/copy/cancel', {}).catch(() => {});
+for (const id of ['mdlSort']) $(id).onchange = showModels;
+$('mdlSearch').oninput = showModels;
+$('btnMdlReload').onclick = loadModels;
+
 refreshStatus(); loadScenarioList();
 showTab(localStorage.getItem('vw_tab'));
 setInterval(refreshStatus, 5000);
+// this page calls in every few seconds and says goodbye when it closes: started with --close-with-page, the server
+// stops once no page is left (a reload comes back within the grace time, so it does not count as closing)
+const pageId = sessionStorage.getItem('vw_page') || Math.random().toString(36).slice(2, 12);
+sessionStorage.setItem('vw_page', pageId);
+const callIn = () => post('/api/page', { id: pageId }).catch(() => {});
+callIn(); setInterval(callIn, 5000);
+window.addEventListener('pagehide', () => navigator.sendBeacon('/api/page', new Blob([JSON.stringify({ id: pageId, bye: true })], { type: 'application/json' })));
 </script>
 </body>
 </html>
