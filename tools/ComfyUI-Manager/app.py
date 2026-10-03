@@ -2194,8 +2194,10 @@ async def api_models_incoming(request):
 
 
 async def api_models_place(request):
-    """Send downloaded model files into the model folder: {'items': [{'path', 'folder'}], 'move': bool}. `folder` is
-    a folder of the model folder (it must be there). Runs as the copy job, so /api/models/copy tells how far it is."""
+    """Send downloaded model files into the model folder: {'items': [{'path', 'folder', 'sub'}], 'move': bool, 'base'}.
+    `folder` is a folder of the model folder (it must be there); `sub` the folders below it the file goes into (made
+    when missing: the folders the file sat in). After a move the folders left empty below `base` are removed.
+    Runs as the copy job, so /api/models/copy tells how far it is."""
     app, body = request.app["app"], await request.json()
     if app.copy_job and app.copy_job.state in ("planning", "running"):
         raise AppError("복사가 진행 중입니다. 끝나거나 중단한 뒤에 다시 하세요")
@@ -2208,10 +2210,14 @@ async def api_models_place(request):
             raise AppError("모델 파일이 아니거나 없습니다: " + src)
         if not folder or not os.path.isdir(dest) or os.path.commonpath([dest, root]) != root or dest == root:
             raise AppError("모델 폴더 안의 폴더가 아닙니다: " + folder)
-        pairs.append((src, os.path.join(dest, os.path.basename(src))))
+        sub = [p for p in re.split(r"[\\/]+", str(it.get("sub") or "")) if p]
+        if any(p in (".", "..") or re.search(r'[:*?"<>|\x00-\x1f]', p) for p in sub):
+            raise AppError("하위 폴더 이름이 잘못되었습니다: " + str(it.get("sub")))
+        pairs.append((src, os.path.join(dest, *sub, os.path.basename(src))))
     if not pairs:
         raise AppError("보낼 파일을 고르세요")
-    app.copy_job = models.Copy([], root, pairs=pairs, move=bool(body.get("move")))
+    base = str(body.get("base") or "")
+    app.copy_job = models.Copy([], root, pairs=pairs, move=bool(body.get("move")), tidy=base if os.path.isdir(base) else None)
     asyncio.get_running_loop().run_in_executor(None, app.copy_job.run)
     app._listed = (0, None)
     return web.json_response({"started": len(pairs), "dest": root})

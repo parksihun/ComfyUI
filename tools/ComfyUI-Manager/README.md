@@ -70,7 +70,10 @@ ComfyUI와 따로 도는 작은 웹 서버입니다. 이 프로그램은 직접 
 - **종류는 파일 안에서 알아냅니다** (이름이 아니라): `.safetensors`는 머리말의 텐서 이름과 메타데이터로 LoRA / 체크포인트(모델+VAE·텍스트 인코더) / diffusion 모델 / VAE / 텍스트 인코더 / CLIP vision / ControlNet / 임베딩을 가리고, `.gguf`는 구조 이름(`wan`, `flux`, `ltxv` … 는 diffusion 모델, 그 밖은 텍스트 인코더)으로 가립니다. 머리말만 읽으므로 수십 GB 파일도 바로 나옵니다. 종류 아래에 그렇게 본 이유가 나옵니다
 - `.ckpt`, `.pt`, `.pth`는 안전하게 열어 볼 수 없어 이름으로 판단합니다 (`vae`, `lora`, `esrgan` 등). 알아내지 못하면 `알 수 없음`으로 나오고 보낼 곳을 직접 골라야 합니다
 - 보낼 곳: LoRA → `loras`, 체크포인트 → `checkpoints`, diffusion 모델 → `diffusion_models`(GGUF는 `unet`), VAE → `vae`, 텍스트 인코더 → `text_encoders`, CLIP vision → `clip_vision`, ControlNet → `controlnet`, 업스케일 모델 → `upscale_models` / `latent_upscale_models`. 모델 폴더에 그 폴더가 없으면 다음 후보(`unet` ↔ `diffusion_models`, `text_encoders` → `clip`)를 씁니다
-- 받는 폴더에 같은 이름의 파일이 이미 있으면 줄에 그렇게 표시되고, 보내도 **덮어쓰지 않고 건너뜁니다** (원본도 그대로 남습니다)
+- **들어 있던 폴더째 보냅니다** (`들어 있던 폴더째 보내기`, 기본으로 켜짐): 파일이 받은 폴더 안의 하위 폴더에 있었으면 그 폴더 구조가 보낼 곳 아래에 그대로 만들어집니다. 경로에 모델 폴더와 같은 이름의 폴더(`lora`, `loras`, `checkpoints`, `vae`, `models` …)가 있으면 그 뒤부터만 따라갑니다: `받은폴더\lora\HIGH\a.safetensors` → `loras\HIGH\a.safetensors`, `받은폴더\묶음\스타일\b.safetensors` → `loras\묶음\스타일\b.safetensors`. 받은 폴더 자체가 `…\lora\HIGH`여도 `HIGH`가 따라갑니다. 줄마다 `→ loras/HIGH/a.safetensors`처럼 도착할 자리가 나옵니다. 끄면 폴더 없이 보낼 곳 바로 아래로 갑니다
+- 이동으로 비게 된 원래 폴더(`받은폴더\lora\HIGH` 등)는 함께 지워집니다. 다른 파일이 남아 있는 폴더와 받은 폴더 자체는 그대로 둡니다
+- 종류를 파일에서 알아내지 못했어도 모델 폴더와 같은 이름의 폴더 안에 있었으면 그 폴더를 보낼 곳으로 제안합니다
+- 받는 자리에 같은 이름의 파일이 이미 있으면 줄에 그렇게 표시되고, 보내도 **덮어쓰지 않고 건너뜁니다** (원본도 그대로 남습니다)
 - 지금 모델 폴더에 있는 77개 파일로 맞춰 봤을 때 76개가 실제 있는 폴더와 같게 나왔습니다 (나머지 하나는 `diffusion_models`에 든 LoRA였습니다)
 
 ## 보관함

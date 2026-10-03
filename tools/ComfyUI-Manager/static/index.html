@@ -442,6 +442,7 @@
       <tbody id="incList"></tbody>
     </table>
     <div class="actions" id="incActions" hidden>
+      <label class="check"><input type="checkbox" id="incTree" checked>들어 있던 폴더째 보내기</label>
       <label class="check"><input type="checkbox" id="incKeep">원본 남기기 (이동하지 않고 복사)</label>
       <span class="spacer"></span>
       <button id="incGo">선택한 모델 보내기</button>
@@ -1988,17 +1989,16 @@ async function scanIncoming() {
   const list = $('incList'); list.innerHTML = '';
   for (const it of res.items) {
     const tr = el('tr'), check = el('input'), where = el('select');
-    check.type = 'checkbox'; check.checked = !!it.folder && !it.exists; check.onchange = showIncoming;
+    check.type = 'checkbox'; check.checked = !!it.folder && !($('incTree').checked ? it.exists : it.exists_flat); check.onchange = showIncoming;
     where.append(new Option('(보내지 않음)', ''));
     for (const f of res.folders) where.append(new Option(f, f));
     where.value = it.folder;
     where.onchange = () => { check.checked = !!where.value; showIncoming(); };
-    it.check = check; it.where = where;
+    it.check = check; it.where = where; it.target = el('span', 'why');
     const name = el('td', 'name', it.name);
     const kind = el('td', '', it.kind); kind.append(el('span', 'why', it.why));
     if (!it.folder) kind.classList.add('warn');
-    const place = el('td'); place.append(where);
-    if (it.exists) place.append(el('span', 'why warn', '같은 이름의 파일이 이미 있습니다 (보내도 건너뜁니다)'));
+    const place = el('td'); place.append(where, it.target);
     const c = el('td'); c.append(check);
     tr.append(c, name, el('td', 'num', fmtBig(it.size)), kind, place);
     list.append(tr);
@@ -2009,6 +2009,13 @@ async function scanIncoming() {
   showIncoming();
 }
 function showIncoming() {
+  const tree = $('incTree').checked;
+  for (const it of inc.items) {      // where each file would land; a name already there is skipped, said in advance for the folder first proposed
+    const sub = tree && it.sub ? it.sub + '/' : '', there = it.where.value === it.folder && (tree ? it.exists : it.exists_flat);
+    it.target.className = 'why' + (there ? ' warn' : '');
+    it.target.textContent = !it.where.value ? '' : there ? '같은 이름의 파일이 이미 있습니다 (보내도 건너뜁니다)'
+      : '→ ' + it.where.value + '/' + sub + it.name.split('/').pop();
+  }
   const n = inc.items.filter(it => it.check.checked && it.where.value).length;
   $('incGo').disabled = !n; $('incGo').textContent = n ? '선택한 모델 ' + n + '개 보내기' : '선택한 모델 보내기';
   $('incAll').checked = !!n && inc.items.every(it => it.check.checked || !it.where.value);
@@ -2018,11 +2025,13 @@ $('incScan').onclick = scanIncoming;
 $('incPath').onkeydown = e => { if (e.key === 'Enter') scanIncoming(); };
 $('incPick').onclick = () => pickFolder($('incPath').value.trim(), path => { $('fpClose').onclick(); $('incPath').value = path; scanIncoming(); }, false);
 $('incGo').onclick = () => {
-  const items = inc.items.filter(it => it.check.checked && it.where.value).map(it => ({ path: it.path, folder: it.where.value }));
+  const tree = $('incTree').checked;
+  const items = inc.items.filter(it => it.check.checked && it.where.value).map(it => ({ path: it.path, folder: it.where.value, sub: tree ? it.sub : '' }));
   if (!items.length) return;
   $('incGo').disabled = true;
-  watchCopy('inc', () => post('/api/models/place', { items, move: !$('incKeep').checked }), scanIncoming);
+  watchCopy('inc', () => post('/api/models/place', { items, move: !$('incKeep').checked, base: $('incPath').value.trim() }), scanIncoming);
 };
+$('incTree').onchange = showIncoming;
 async function openIncoming() {      // the folder used last, or the user's Downloads the first time
   if ($('incPath').value) return;
   const last = localStorage.getItem('vw_incpath');

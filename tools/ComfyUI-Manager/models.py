@@ -289,13 +289,23 @@ def classify(path):
     return kind, ("이름으로 판단" if kind else "파일에서 종류를 알아내지 못했습니다")
 
 
+# other names a downloaded folder may have for a model folder ('lora/HIGH/x' belongs in loras/HIGH)
+FOLDER_ALIAS = {"lora": "loras", "checkpoint": "checkpoints", "ckpt": "checkpoints", "text_encoder": "text_encoders",
+                "diffusion_model": "diffusion_models", "embedding": "embeddings", "upscale_model": "upscale_models",
+                "controlnets": "controlnet", "vaes": "vae"}
+
+
 def incoming(folder, model_root, limit=500):
     """The model files under a folder of this PC (three levels deep), each with its kind and the model folder it
-    belongs in ('' when none fits or the kind is unknown), and whether a file of that name is already there."""
+    belongs in ('' when none fits or the kind is unknown), and whether a file of that name is already there.
+    `sub` is the folders the file sits in that go along with it: what follows a folder named like a model folder
+    (.../lora/HIGH/x -> HIGH), else the folders below the scanned one."""
     have = sorted((d for d in os.listdir(model_root) if os.path.isdir(os.path.join(model_root, d)) and not d.startswith(".")), key=str.lower)
     lower = {d.lower(): d for d in have}
+    named = set(lower) | set(FOLDER_ALIAS) | {"model", "models"}
     items = []
     base = os.path.abspath(folder)
+    tail = [p for p in re.split(r"[\\/]+", base) if p][-3:]      # the scanned folder may itself be .../lora/HIGH
     for here, dirs, names in os.walk(base):
         depth = os.path.relpath(here, base).count(os.sep) + (0 if here == base else 1)
         dirs[:] = [] if depth >= 3 else sorted(d for d in dirs if not d.startswith((".", "$")))
@@ -309,9 +319,19 @@ def incoming(folder, model_root, limit=500):
                 continue
             kind, why = classify(full)
             place = next((lower[p] for p in PLACES.get(kind, []) if p in lower), "")
-            items.append({"path": full, "name": os.path.relpath(full, base).replace("\\", "/"), "size": st.st_size, "mtime": st.st_mtime,
+            rel = os.path.relpath(full, base).replace("\\", "/")
+            below = rel.split("/")[:-1]
+            parts = tail + below
+            at = max((i for i, p in enumerate(parts) if p.lower() in named), default=-1)
+            sub = "/".join(parts[at + 1:] if at >= 0 else below)
+            if not place and at >= 0:      # the kind is not known, but it sat in a folder named like a model folder
+                hint = FOLDER_ALIAS.get(parts[at].lower(), parts[at].lower())
+                if hint in lower:
+                    place, why = lower[hint], "들어 있던 폴더 이름(" + parts[at] + ")으로 판단"
+            items.append({"path": full, "name": rel, "sub": sub, "size": st.st_size, "mtime": st.st_mtime,
                           "kind": KIND_KO.get(kind, kind), "why": why, "folder": place,
-                          "exists": bool(place) and os.path.exists(os.path.join(model_root, place, name))})
+                          "exists": bool(place) and os.path.exists(os.path.join(model_root, place, sub, name)),
+                          "exists_flat": bool(place) and os.path.exists(os.path.join(model_root, place, name))})
     return {"path": base, "items": items, "folders": have}
 
 
@@ -321,8 +341,9 @@ class Copy:
     With `pairs` it is a list of (file, where it goes) instead; with `move` the original is removed once it is there."""
     CHUNK = 8 << 20
 
-    def __init__(self, sources, dest, pairs=None, move=False):
+    def __init__(self, sources, dest, pairs=None, move=False, tidy=None):
         self.sources, self.dest, self.pairs, self.move = sources, dest, pairs, move
+        self.tidy = tidy      # after a move: the folder below which the folders left empty are removed
         self.total = self.done = 0
         self.current, self.copied, self.skipped, self.errors = "", [], [], []
         self.state, self.stop = "planning", False
@@ -391,6 +412,15 @@ class Copy:
                         os.remove(dst)
                     except OSError:
                         pass
+            if self.move and self.tidy:      # the folders the files were moved out of go too, once nothing is left in them
+                base = os.path.realpath(self.tidy)
+                for folder in sorted({os.path.dirname(os.path.realpath(s)) for s, _ in pairs}, key=len, reverse=True):
+                    while folder != base and os.path.commonpath([folder, base]) == base:
+                        try:
+                            os.rmdir(folder)      # only an empty folder goes
+                        except OSError:
+                            break
+                        folder = os.path.dirname(folder)
             self.state = "cancelled" if self.stop else "done"
         except (OSError, ValueError) as e:
             self.errors.append({"name": self.current, "error": getattr(e, "strerror", None) or str(e)})
