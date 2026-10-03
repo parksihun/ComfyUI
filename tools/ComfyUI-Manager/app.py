@@ -2173,6 +2173,50 @@ async def api_models_copy(request):
     return web.json_response({"started": len(items), "dest": dest})
 
 
+async def api_models_incoming(request):
+    """Downloaded models: the model files under ?path= (a folder of this PC) with the kind each one is and the model
+    folder it belongs in. Without a path: the folder to start from (the user's Downloads)."""
+    app = request.app["app"]
+    path = request.query.get("path", "").strip().strip('"')
+    if not path:
+        return web.json_response({"suggest": os.path.join(os.path.expanduser("~"), "Downloads")})
+    if not os.path.isabs(path) or not os.path.isdir(path):
+        raise AppError("폴더를 찾을 수 없습니다. 전체 경로로 입력하세요 (예: D:\\Downloads): " + path)
+    root = app.model_root
+    if not os.path.isdir(root):
+        raise AppError("모델 폴더가 없습니다: " + root)
+    try:
+        found = await asyncio.to_thread(models.incoming, path, root)
+    except OSError as e:
+        raise AppError(f"폴더를 읽지 못했습니다: {e.strerror or e}")
+    found["model_root"] = root
+    return web.json_response(found)
+
+
+async def api_models_place(request):
+    """Send downloaded model files into the model folder: {'items': [{'path', 'folder'}], 'move': bool}. `folder` is
+    a folder of the model folder (it must be there). Runs as the copy job, so /api/models/copy tells how far it is."""
+    app, body = request.app["app"], await request.json()
+    if app.copy_job and app.copy_job.state in ("planning", "running"):
+        raise AppError("복사가 진행 중입니다. 끝나거나 중단한 뒤에 다시 하세요")
+    root = os.path.realpath(app.model_root)
+    pairs = []
+    for it in (body.get("items") or [])[:2000]:
+        src, folder = os.path.abspath(str(it.get("path", ""))), str(it.get("folder", "")).strip().strip("/\\")
+        dest = os.path.realpath(os.path.join(root, folder))
+        if not os.path.isfile(src) or not src.lower().endswith(models.MODEL_EXT):
+            raise AppError("모델 파일이 아니거나 없습니다: " + src)
+        if not folder or not os.path.isdir(dest) or os.path.commonpath([dest, root]) != root or dest == root:
+            raise AppError("모델 폴더 안의 폴더가 아닙니다: " + folder)
+        pairs.append((src, os.path.join(dest, os.path.basename(src))))
+    if not pairs:
+        raise AppError("보낼 파일을 고르세요")
+    app.copy_job = models.Copy([], root, pairs=pairs, move=bool(body.get("move")))
+    asyncio.get_running_loop().run_in_executor(None, app.copy_job.run)
+    app._listed = (0, None)
+    return web.json_response({"started": len(pairs), "dest": root})
+
+
 async def api_models_copy_cancel(request):
     app = request.app["app"]
     if app.copy_job:
@@ -2337,6 +2381,8 @@ def make_app(cfg):
         web.get("/api/models/copy", api_models_copy),
         web.post("/api/models/copy", api_models_copy),
         web.post("/api/models/copy/cancel", api_models_copy_cancel),
+        web.get("/api/models/incoming", api_models_incoming),
+        web.post("/api/models/place", api_models_place),
         web.get("/api/works", api_works),
         web.post("/api/works", api_work_add),
         web.post("/api/works/{id}/open", api_work_open),

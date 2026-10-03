@@ -147,6 +147,15 @@
   .copybox .bar { height:8px; background:#2b313b; border-radius:4px; overflow:hidden; }
   .copybox .bar div { height:100%; width:0; background:var(--accent); transition:width .3s; }
   #cardMenu button + button { margin-top:4px; }
+  table.inc { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
+  table.inc th { text-align:left; color:var(--dim); font-weight:normal; padding:4px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.inc td { padding:5px 8px; border-bottom:1px solid #1d2129; vertical-align:middle; }
+  table.inc .num { text-align:right; white-space:nowrap; }
+  table.inc .name { word-break:break-all; }
+  table.inc .why { display:block; color:var(--dim); font-size:12px; }
+  table.inc .warn { color:var(--warn); }
+  table.inc select { width:auto; min-width:170px; padding:3px 6px; font-size:13px; }
+  table.inc input[type=checkbox] { width:15px; height:15px; margin:0; accent-color:var(--accent); }
   #mdlTotal { flex:none; color:var(--text); font-weight:600; }
   #cardMenu { position:fixed; z-index:25; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.55); }
   #cardMenu button { display:block; white-space:nowrap; }
@@ -419,6 +428,28 @@
     <div class="drop" id="dropArea">이미지나 영상 파일을 여기에 끌어다 놓으세요 &nbsp;
       <button class="sub" id="btnPick">파일 선택</button><input type="file" id="pickFile" accept="image/*,video/*,.mkv" hidden></div>
     <div class="job" id="dropInfo"></div>
+  </section>
+  <section>
+    <h2>받은 모델 보내기 <span>내려받은 모델이 있는 폴더를 적으면 파일마다 종류를 알아보고, 모델 폴더의 맞는 자리로 보냅니다</span></h2>
+    <div class="row">
+      <div style="flex:4"><label>모델을 받은 폴더 (이 PC의 경로)</label><input type="text" id="incPath" placeholder="예: C:\Users\이름\Downloads"></div>
+      <div style="flex:0"><button class="sub" id="incPick">폴더 선택…</button></div>
+      <div style="flex:0"><button id="incScan">모델 찾기</button></div>
+    </div>
+    <div class="hint" id="incInfo"></div>
+    <table class="inc" id="incTable" hidden>
+      <thead><tr><th><input type="checkbox" id="incAll" title="전체 선택"></th><th>파일</th><th class="num">크기</th><th>종류</th><th>보낼 곳 (모델 폴더 안)</th></tr></thead>
+      <tbody id="incList"></tbody>
+    </table>
+    <div class="actions" id="incActions" hidden>
+      <label class="check"><input type="checkbox" id="incKeep">원본 남기기 (이동하지 않고 복사)</label>
+      <span class="spacer"></span>
+      <button id="incGo">선택한 모델 보내기</button>
+    </div>
+    <div class="copybox" id="incBox" hidden>
+      <div class="bar"><div id="incBar"></div></div>
+      <div class="actions" style="margin-top:6px"><span id="incText" style="flex:1"></span><button class="sub" id="incStop">중단</button></div>
+    </div>
   </section>
 </main>
 
@@ -1126,6 +1157,7 @@ function showTab(name) {
   if (name === 'history') loadWorks();
   if (name === 'scenarios') loadScenarios();
   if (name === 'models') loadModels();
+  if (name === 'inspect') openIncoming();
   if (name === 'video' && $('paramBox').open) loadParams();
   updateContext();
   window.scrollTo(0, 0);
@@ -1908,31 +1940,94 @@ function renameModel(row) {      // the name becomes a box; Enter renames, Esc o
 async function startCopy(to) {      // to: the pane that receives
   const items = topPicks(to === 'R' ? 'L' : 'R'), dest = to === 'R' ? mdl.cur.R : mdlRef(mdl.cur.L);
   if (!items.length || !dest) return;
-  const box = $('copyBox'), text = $('copyText'); box.hidden = false; $('copyStop').disabled = false; $('copyBar').style.width = '0';
-  text.textContent = '복사를 시작합니다…';
-  try { await post('/api/models/copy', { items, dest }); }
-  catch (e) { text.textContent = e.message; $('copyStop').disabled = true; return; }
+  watchCopy('copy', () => post('/api/models/copy', { items, dest }), () => {
+    for (const r of items) picked.delete(r);      // what was copied is no longer picked
+    if (to === 'R') { delete mdl.rCache[mdl.cur.R]; showRight(); } else loadModels();
+  });
+}
+// start a copy / move on the server and show how far it is in the box <id>Box (<id>Bar, <id>Text, <id>Stop) until it ends
+async function watchCopy(id, start, done) {
+  const text = $(id + 'Text'), stop = $(id + 'Stop'), bar = $(id + 'Bar');
+  $(id + 'Box').hidden = false; stop.disabled = false; bar.style.width = '0';
+  text.textContent = '시작합니다…';
+  try { await start(); }
+  catch (e) { text.textContent = e.message; stop.disabled = true; return; }
   const tick = async () => {
     let p;
     try { p = await api('/api/models/copy'); } catch (e) { text.textContent = e.message; return; }
-    const pct = p.total ? Math.round(p.done / p.total * 100) : 0;
-    $('copyBar').style.width = pct + '%';
+    const pct = p.total ? Math.round(p.done / p.total * 100) : 0, verb = p.move ? '이동' : '복사';
+    bar.style.width = pct + '%';
     if (p.state === 'planning' || p.state === 'running') {
-      text.textContent = '복사 중 ' + pct + '% · ' + fmtBig(p.done) + ' / ' + fmtBig(p.total) + (p.current ? ' · ' + p.current : '');
+      text.textContent = verb + ' 중 ' + pct + '% · ' + fmtBig(p.done) + ' / ' + fmtBig(p.total) + (p.current ? ' · ' + p.current : '');
       setTimeout(tick, 500); return;
     }
-    $('copyStop').disabled = true;
-    text.textContent = (p.state === 'cancelled' ? '중단했습니다. ' : p.state === 'error' ? '복사하지 못했습니다. ' : '복사했습니다. ')
-      + p.copied.length + '개 복사' + (p.skipped.length ? ', ' + p.skipped.length + '개 건너뜀 (' + p.skipped[0].why + (p.skipped.length > 1 ? ' 등' : '') + ')' : '')
+    stop.disabled = true;
+    text.textContent = (p.state === 'cancelled' ? '중단했습니다. ' : p.state === 'error' ? verb + '하지 못했습니다. ' : verb + '했습니다. ')
+      + p.copied.length + '개 ' + verb + (p.skipped.length ? ', ' + p.skipped.length + '개 건너뜀 (' + p.skipped[0].why + (p.skipped.length > 1 ? ' 등' : '') + ')' : '')
       + (p.errors.length ? ', ' + p.errors.length + '개 실패: ' + p.errors[0].name + ' — ' + p.errors[0].error : '') + ' → ' + p.dest;
-    for (const r of items) picked.delete(r);      // what was copied is no longer picked
-    if (to === 'R') { delete mdl.rCache[mdl.cur.R]; showRight(); } else loadModels();
+    done(p);
   };
   tick();
 }
 $('copyToR').onclick = () => startCopy('R');
 $('copyToL').onclick = () => startCopy('L');
-$('copyStop').onclick = () => post('/api/models/copy/cancel', {}).catch(() => {});
+$('copyStop').onclick = $('incStop').onclick = () => post('/api/models/copy/cancel', {}).catch(() => {});
+
+// ---- downloaded models (in 파일 확인): the model files of a folder, the kind each one is, and sending them to the
+// ---- folder of the model folder they belong in
+const inc = { items: [] };
+async function scanIncoming() {
+  const path = $('incPath').value.trim(), info = $('incInfo');
+  if (!path) { info.textContent = '모델을 받은 폴더의 경로를 적으세요.'; return; }
+  info.style.color = ''; info.textContent = '폴더를 읽고 파일마다 종류를 알아보는 중…';
+  let res;
+  try { res = await api('/api/models/incoming?path=' + encodeURIComponent(path)); }
+  catch (e) { info.style.color = 'var(--bad)'; info.textContent = e.message; $('incTable').hidden = $('incActions').hidden = true; return; }
+  localStorage.setItem('vw_incpath', res.path); $('incPath').value = res.path;
+  inc.items = res.items;
+  const list = $('incList'); list.innerHTML = '';
+  for (const it of res.items) {
+    const tr = el('tr'), check = el('input'), where = el('select');
+    check.type = 'checkbox'; check.checked = !!it.folder && !it.exists; check.onchange = showIncoming;
+    where.append(new Option('(보내지 않음)', ''));
+    for (const f of res.folders) where.append(new Option(f, f));
+    where.value = it.folder;
+    where.onchange = () => { check.checked = !!where.value; showIncoming(); };
+    it.check = check; it.where = where;
+    const name = el('td', 'name', it.name);
+    const kind = el('td', '', it.kind); kind.append(el('span', 'why', it.why));
+    if (!it.folder) kind.classList.add('warn');
+    const place = el('td'); place.append(where);
+    if (it.exists) place.append(el('span', 'why warn', '같은 이름의 파일이 이미 있습니다 (보내도 건너뜁니다)'));
+    const c = el('td'); c.append(check);
+    tr.append(c, name, el('td', 'num', fmtBig(it.size)), kind, place);
+    list.append(tr);
+  }
+  $('incTable').hidden = $('incActions').hidden = !res.items.length;
+  info.textContent = res.items.length ? '모델 파일 ' + res.items.length + '개 · 모델 폴더: ' + res.model_root + ' — 보낼 곳을 확인하고 필요하면 바꾸세요'
+                                      : '이 폴더(하위 3단계까지)에 모델 파일(.safetensors, .gguf, .ckpt, .pt, .pth)이 없습니다.';
+  showIncoming();
+}
+function showIncoming() {
+  const n = inc.items.filter(it => it.check.checked && it.where.value).length;
+  $('incGo').disabled = !n; $('incGo').textContent = n ? '선택한 모델 ' + n + '개 보내기' : '선택한 모델 보내기';
+  $('incAll').checked = !!n && inc.items.every(it => it.check.checked || !it.where.value);
+}
+$('incAll').onchange = () => { for (const it of inc.items) it.check.checked = $('incAll').checked && !!it.where.value; showIncoming(); };
+$('incScan').onclick = scanIncoming;
+$('incPath').onkeydown = e => { if (e.key === 'Enter') scanIncoming(); };
+$('incPick').onclick = () => pickFolder($('incPath').value.trim(), path => { $('fpClose').onclick(); $('incPath').value = path; scanIncoming(); }, false);
+$('incGo').onclick = () => {
+  const items = inc.items.filter(it => it.check.checked && it.where.value).map(it => ({ path: it.path, folder: it.where.value }));
+  if (!items.length) return;
+  $('incGo').disabled = true;
+  watchCopy('inc', () => post('/api/models/place', { items, move: !$('incKeep').checked }), scanIncoming);
+};
+async function openIncoming() {      // the folder used last, or the user's Downloads the first time
+  if ($('incPath').value) return;
+  const last = localStorage.getItem('vw_incpath');
+  try { $('incPath').value = last || (await api('/api/models/incoming')).suggest || ''; } catch (e) { $('incPath').value = last || ''; }
+}
 for (const id of ['mdlSort']) $(id).onchange = showModels;
 $('mdlSearch').oninput = showModels;
 $('btnMdlReload').onclick = loadModels;
